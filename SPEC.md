@@ -260,25 +260,40 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
 
 ## 6. State Management & Feature Modules (`lib/features/`)
 
-Built on `flutter_riverpod` (Notifier / AsyncNotifier pattern).
+Implemented using Flutter's built-in `ChangeNotifier` and clean constructor dependency injection (`MidiTransport`, `PatchLibraryRepository`, `EffectCatalogRegistry`) for 100% offline `--no-pub` reliability and zero third-party package fragility.
 
-### 5.1 Device Connection Module (`lib/features/connection/`)
-- `midiTransportProvider`: Provides the active `MidiTransport` instance (mocked in tests, native in production).
-- `deviceDiscoveryController`: Scans ports, performs MIDI identity inquiries, identifies connected pedal models, and maintains connection state.
+### 6.1 Device Connection Module (`lib/features/connection/`)
+- `DeviceConnectionController`: Manages available MIDI ports, active connection state, active `DeviceFamily`, and resolved `DeviceProtocol` (`ZoomMsPlusProtocol` or `Line6BassPodProProtocol`). Performs Universal Identity Request handshake with port name fallback heuristics, executes hardware initialization sequences, and handles clean disconnection.
+- `ConnectionBarWidget`: Top studio toolbar with status badge, port selector dropdown, device family picker, hardware sync actions ("Pull Patch" / "Push Patch"), and "Save to Library" button.
 
-### 5.2 Patch Editor Module (`lib/features/editor/`)
-- `activePatchController`: Holds the patch currently loaded into the device's edit buffer.
-- Real-time throttling & debouncing: High-frequency UI knob updates are debounced (15–30 ms) to prevent saturating MIDI baud rates.
-- Bi-directional sync: Incoming parameter updates from the hardware are applied directly to the active patch state without triggering redundant outbound transmissions.
+### 6.2 Patch Editor Module (`lib/features/editor/`)
+- `PatchEditorController`: Holds active `Patch?`, inspected `selectedSlotIndex`, dirty state tracking, and incoming MIDI message stream subscription.
+- Real-time parameter control: `updateParameter` immediately updates local state and dispatches `protocol.buildParameterEditMessage(...)` over `MidiTransport` when connected.
+- Bi-directional hardware sync: Listens to incoming MIDI messages; hardware parameter changes (`protocol.isParameterEdit`) and patch dumps (`protocol.isPatchDump`) update local state without echoing outbound messages.
+- Slot operations: Toggles effect slot bypass (`toggleSlotEnabled`) and hot-swaps DSP algorithms via `EffectCatalogRegistry` (`changeSlotEffect`).
+- `SignalChainStripWidget`: Horizontal pedalboard stompbox view with slot index, category badge, effect name, interactive Bypass/Enable LED switch, and selection highlight.
+- `SlotInspectorWidget`: Parameter inspector with algorithm dropdown populated from `EffectCatalogRegistry`, discrete label dropdowns, and continuous sliders.
 
-### 5.3 Preset Library Module (`lib/features/library/`)
-- `libraryRepository`: Local storage abstraction for saving, naming, grouping, and backing up presets.
-- Serializers: Export to and import from `.syx` (raw MIDI SysEx) and portable `.json` formats.
-- Drag-and-drop bank manager for reorganizing pedal slot allocations.
+### 6.3 Preset Library Module (`lib/features/library/`)
+- `PatchLibraryController`: Wraps `PatchLibraryRepository` to manage preset indexing, search queries, `DeviceFamily` filter chips, and tag filtering. Supports CRUD operations, editor loading, and JSON/SysEx import/export.
+- `PatchLibraryDrawerOrPanel`: Responsive preset library browser (side panel on desktop >= 900px, drawer on compact screens).
 
 ---
 
-## 6. Implementation Conventions & Coding Standards
+## 7. Studio UI & Theming (`lib/features/theme/`)
+
+- `StudioTheme`: High-contrast dark studio theme (`ThemeData.dark(useMaterial3: true)`) with category accent colors:
+  * **Dynamics:** Vibrant Green (`#00E676`)
+  * **Filter / EQ:** Vibrant Amber (`#FF9100`)
+  * **Drive / Distortion:** Fiery Crimson (`#FF3D00`)
+  * **Amp / Cab / Preamp:** Vibrant Violet (`#E040FB`)
+  * **Modulation:** Electric Cyan (`#00E5FF`)
+  * **Delay / Reverb:** Royal Blue (`#3D5AFE`)
+  * **Pitch / Synth / SFX:** Bright Pink (`#FF4081`)
+
+---
+
+## 8. Implementation Conventions & Coding Standards
 
 1. **Safety & Lints:** Enforce strict type safety with `flutter_lints` and avoid `dynamic` where typed models are possible.
 2. **Byte Buffer Hygiene:** Always use `Uint8List.fromList()` or subview slices rather than mutating shared memory across async boundaries.

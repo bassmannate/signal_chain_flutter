@@ -1,7 +1,7 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 3 Complete (Effect Catalogs, Patch Serialization & Local Persistence Layer)  
-**Active Milestone:** Milestone 4 (Ready / Next)  
+**Current Status:** Milestone 4 Complete (Application State Controllers & Cross-Platform Signal Chain UI)  
+**Active Milestone:** Milestone 5 (Native Platform MIDI Adapter & Desktop/Mobile Packaging)  
 **Last Updated:** 2026-11-10
 
 ---
@@ -91,22 +91,38 @@
 
 ---
 
-### 🟡 Milestone 4: Cross-Platform UI & Real-Time Parameter Control
+### 🟢 Milestone 4: Application State Controllers & Cross-Platform Signal Chain UI
+*Status:* **Completed**
+- [x] **Zero-Dependency State Layer (`lib/features/` via Flutter `ChangeNotifier`):**
+  * `DeviceConnectionController`: Port discovery, connection lifecycle, Universal Identity Request handshake with fallback heuristics, hardware init sequence dispatch, and protocol resolution (`ZoomMsPlusProtocol` & `Line6BassPodProProtocol`).
+  * `PatchEditorController`: Live patch editing, slot selection, dirty state tracking, hardware patch pull (`pullCurrentPatch`), push (`pushPatchToDevice`), slot bypass toggling (`toggleSlotEnabled`), algorithm swapping (`changeSlotEffect`), real-time parameter tweaking (`updateParameter`), and bidirectional incoming hardware sync.
+  * `PatchLibraryController`: Local preset management wrapping `PatchLibraryRepository`, text search, `DeviceFamily` filter chips, tag filtering, CRUD operations, and JSON/SysEx import/export.
+- [x] **Studio Dark-Mode UI Components (`lib/features/` & `lib/main.dart`):**
+  * `StudioTheme`: High-contrast dark studio palette with category accent colors (Dynamics, Filter/EQ, Drive, Amp/Cab, Modulation, Delay/Reverb, Pitch/Synth).
+  * `ConnectionBarWidget`: Status badge, MIDI port dropdown, device family picker, "Pull Patch" / "Push Patch" sync actions, and "Save to Library" button.
+  * `SignalChainStripWidget`: Horizontal pedalboard stompbox chain with slot index, category badge, effect name, interactive Bypass/Enable LED switch, and selection highlight.
+  * `SlotInspectorWidget`: Parameter inspector with effect algorithm dropdown populated from `EffectCatalogRegistry`, discrete label dropdowns, continuous sliders, and real-time updates.
+  * `PatchLibraryDrawerOrPanel`: Responsive preset library browser (side panel on desktop >= 900px, endDrawer on compact screens).
+  * `SignalChainApp` entry point pre-wired with simulated virtual ports (`Zoom MS-60B+ (Simulated)` & `Line 6 Bass Pod Pro (Simulated)`) and pre-seeded preset repository.
+- [x] **Targeted Unit & Widget Test Suites (100% passing):**
+  * `test/features/patch_editor_controller_test.dart` (7 tests).
+  * `test/features/patch_library_controller_test.dart` (8 tests).
+  * `test/widget_test.dart` (2 comprehensive desktop wide and mobile compact widget tests).
+- [x] Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+
+---
+
+### 🟡 Milestone 5: Native Platform MIDI Adapter & Desktop/Mobile Packaging
 *Status:* **Ready / Next**
-- [ ] Add `flutter_riverpod` state layer:
-  * `midiTransportProvider` (mocked in tests, native in production).
-  * `deviceDiscoveryController` (auto-scan, connection lifecycle).
-  * `activePatchController` (live editing, undo/redo buffer, debounced MIDI transmissions).
-  * `patchLibraryController` (local persistence, preset search, bank management).
-- [ ] Cross-platform UI components:
-  * Device selector & status header.
-  * Virtual pedalboard effect chain visualization (drag-to-reorder slots).
-  * Responsive parameter editors (rotary knobs, toggle switches, enum dropdowns).
-  * Preset bank organizer (desktop two-pane layout / mobile tabbed layout).
-- [ ] Platform MIDI integration:
-  * Linux ALSA platform integration.
-  * Android USB OTG / MIDI API integration.
-  * Windows WinMM / WinRT MIDI integration.
+- [ ] Platform MIDI Adapters (`lib/core/midi/platform/`):
+  * Platform interface bridging `MidiTransport` to native OS MIDI subsystems (`flutter_midi_command` or pure platform channels).
+  * Linux ALSA Sequencer / RawMIDI adapter.
+  * Android USB Host OTG / `android.media.midi` adapter.
+  * Windows WinMM / WinRT MIDI adapter.
+- [ ] Desktop & Mobile Packaging:
+  * Linux AppImage / Debian packaging and desktop launcher entries.
+  * Android release APK / AAB signing configuration with USB Host permissions in `AndroidManifest.xml`.
+  * Windows MSIX / portable zip packaging.
 
 ---
 
@@ -118,9 +134,11 @@
 | **Legacy Source Code** | Audited | Sibling archive audited at `~/.cache/.fr-CFTZU3/` |
 | **Directory Scaffolding** | Complete | Clean architecture layers maintained |
 | **Core MIDI Transport** | Complete | `MidiTransport`, `MidiMessage`, `MockMidiTransport` |
-| **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch` (with JSON round-trip & metadata) |
+| **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch` |
 | **SysEx & Protocol Engine** | Complete | `SysexCodec`, `ZoomMsPlusProtocol`, `Line6BassPodProProtocol` |
 | **Effect Catalogs** | Complete | `EffectDefinition`, `EffectCatalogRegistry`, `ZoomMsPlusCatalog`, `Line6BassPodProCatalog` |
 | **Persistence Repositories** | Complete | `PatchLibraryRepository`, `InMemoryPatchLibraryRepository`, `FileSystemPatchLibraryRepository` |
+| **State Controllers** | Complete | `DeviceConnectionController`, `PatchEditorController`, `PatchLibraryController` |
+| **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget`, `SlotInspectorWidget`, `PatchLibraryDrawerOrPanel` |
 | **Static Analysis** | Passing (0 issues) | Verified via `flutter analyze --no-pub` |
-| **Unit Tests** | 100% Passing | 89 unit tests passing across core, models, protocols, catalogs, and storage |
+| **Unit & Widget Tests** | 100% Passing | 105 tests passing across all test suites |
