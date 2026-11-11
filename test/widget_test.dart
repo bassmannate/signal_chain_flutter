@@ -103,4 +103,59 @@ void main() {
     expect(find.byType(PatchLibraryDrawerOrPanel), findsOneWidget);
     expect(find.text('PRESET LIBRARY'), findsOneWidget);
   });
+
+  testWidgets('PatchLibraryDrawerOrPanel opens import and export dialogs', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(const SignalChainApp());
+    await tester.pumpAndSettle();
+
+    // Test Export Dialog
+    final exportButton = find.byKey(const Key('export_patch_zoom_sample_slap_punch_button'));
+    expect(exportButton, findsOneWidget);
+    await tester.tap(exportButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Export: Slap & Punch'), findsOneWidget);
+    expect(find.byKey(const Key('export_json_text')), findsOneWidget);
+    expect(find.byKey(const Key('copy_json_button')), findsOneWidget);
+
+    // Switch to SysEx tab
+    await tester.tap(find.text('SysEx Hex Dump'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('export_sysex_text')), findsOneWidget);
+    expect(find.byKey(const Key('copy_sysex_button')), findsOneWidget);
+
+    // Close export dialog
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+
+    // Test Import Dialog
+    final importButton = find.byKey(const Key('import_preset_button'));
+    expect(importButton, findsOneWidget);
+    await tester.tap(importButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import Preset (JSON / SysEx)'), findsOneWidget);
+    final inputField = find.byKey(const Key('import_text_field'));
+    expect(inputField, findsOneWidget);
+
+    // Enter JSON patch
+    await tester.enterText(inputField, '''
+{
+  "id": "imported_test_preset",
+  "name": "Imported Slap",
+  "deviceFamily": "zoomMs60bPlus",
+  "slots": []
+}
+''');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('confirm_import_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Imported Slap'), findsOneWidget);
+  });
 }

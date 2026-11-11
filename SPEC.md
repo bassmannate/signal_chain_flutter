@@ -73,6 +73,24 @@ abstract class MidiTransport {
 - **Outgoing Buffer Assertion:** Stores transmitted byte frames in a history log for unit test verification (verifying correct handshake byte strings, parameter change messages, etc.).
 - **Latency / Error Simulation:** Simulates dropped packets, fragmented SysEx chunks, and disconnection events.
 
+### 2.3 Zero-Dependency Linux ALSA RawMIDI Transport (`LinuxAlsaMidiTransport`)
+- **Port Discovery (`getAvailablePorts()`):**
+  * Parses `amidi -l` stdout into `MidiPortDescriptor` hardware ports with device ID (`hw:X,Y,Z`), hardware labels, and `I`/`O`/`IO` direction flags.
+  * Gracefully falls back to `/proc/asound/cards` and `/dev/snd/midiC*D*` when `amidi` is uninstalled or restricted.
+- **Background Stream Reassembly:**
+  * Background `amidi -p <port> -d` process streaming hex bytes from stdout.
+  * Reassembles fragmented multi-line SysEx (`F0 ... F7`), Continuous Controller (`B0 cc vv`), and Program Change (`C0 pp`) messages without data loss.
+- **Outbound Transmission:**
+  * Formats byte payloads into uppercase hex strings dispatched via `amidi -p <port> -S "<hex>"`.
+- **Process Lifecycle Safety:**
+  * Cleanly kills background listener process on `disconnect()` or `dispose()`.
+  * Fully injectable `ProcessRunner` and `ProcessStarter` enabling deterministic offline unit tests.
+
+### 2.4 Composite Transport Architecture (`CompositeMidiTransport`)
+- Aggregates multiple `MidiTransport` implementations (e.g. `LinuxAlsaMidiTransport` + `MockMidiTransport`) into a unified surface.
+- Discovers ports across all underlying transports concurrently.
+- Automatically routes `connect`, `send`, `onMessageReceived`, and `disconnect` calls to the transport managing the target port.
+
 ---
 
 ## 3. Pure Dart Protocol & SysEx Engine (`lib/protocols/`)

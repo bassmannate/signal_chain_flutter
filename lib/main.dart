@@ -1,9 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
+import 'core/midi/composite_midi_transport.dart';
+import 'core/midi/linux_alsa_midi_transport.dart';
 import 'core/midi/midi_message.dart';
 import 'core/midi/midi_port_descriptor.dart';
 import 'core/midi/midi_transport.dart';
 import 'core/midi/mock_midi_transport.dart';
+import 'core/storage/file_system_patch_library_repository.dart';
 import 'core/storage/in_memory_patch_library_repository.dart';
 import 'core/storage/patch_library_repository.dart';
 import 'features/connection/connection_bar_widget.dart';
@@ -65,81 +70,33 @@ class _SignalChainAppState extends State<SignalChainApp> {
     final zoomSample = _createSampleZoomPatch();
     final line6Sample = _createSampleLine6Patch();
 
-    // 1. Initialize Transport
+    // 1. Initialize Transport (Composite Linux ALSA + Simulation, or provided)
     if (widget.transport != null) {
       _transport = widget.transport!;
     } else {
-      final mock = MockMidiTransport(
-        initialPorts: const [
-          MidiPortDescriptor(
-            id: 'sim_zoom',
-            name: 'Zoom MS-60B+ (Simulated)',
-            manufacturer: 'Zoom Corporation',
-            isInput: true,
-            isOutput: true,
-          ),
-          MidiPortDescriptor(
-            id: 'sim_line6',
-            name: 'Line 6 Bass Pod Pro (Simulated)',
-            manufacturer: 'Line 6',
-            isInput: true,
-            isOutput: true,
-          ),
-        ],
-      );
-
-      // Auto-responder for Universal Identity Requests
-      mock.registerResponder(
-        (req) =>
-            req.isSysEx &&
-            req.data.length >= 5 &&
-            req.data[1] == 0x7E &&
-            req.data[3] == 0x06 &&
-            req.data[4] == 0x01,
-        (req) {
-          if (mock.connectedPort?.id == 'sim_line6') {
-            return MidiMessage.sysEx([
-              0x7E, 0x00, 0x06, 0x02, 0x00, 0x01, 0x0C, 0x01, 0x00, 0x03, 0x00,
-            ]);
-          }
-          // Default: Zoom MS-60B+
-          return MidiMessage.sysEx([
-            0x7E, 0x00, 0x06, 0x02, 0x52, 0x6E, 0x00, 0x27, 0x00, 0x31, 0x2E, 0x30, 0x30,
-          ]);
-        },
-      );
-
-      // Auto-responder for Zoom Current Patch Request (64 13)
-      mock.registerResponder(
-        (req) =>
-            req.isSysEx &&
-            req.data.length >= 7 &&
-            req.data[1] == 0x52 &&
-            req.data[4] == 0x64 &&
-            req.data[5] == 0x13,
-        (req) => const ZoomMsPlusProtocol().encodePatch(zoomSample),
-      );
-
-      // Auto-responder for Line 6 Edit Buffer Dump Request (F0 00 01 0C 01 00 F7)
-      mock.registerResponder(
-        (req) =>
-            req.isSysEx &&
-            req.data.length >= 6 &&
-            req.data[1] == 0x00 &&
-            req.data[2] == 0x01 &&
-            req.data[3] == 0x0C &&
-            req.data[5] == 0x00,
-        (req) => const Line6BassPodProProtocol().encodePatch(line6Sample),
-      );
-
-      _transport = mock;
+      final mock = _createMockTransportWithResponders(zoomSample, line6Sample);
+      if (_isRunningInWidgetTest) {
+        _transport = mock;
+      } else {
+        final childTransports = <MidiTransport>[];
+        if (Platform.isLinux) {
+          childTransports.add(LinuxAlsaMidiTransport());
+        }
+        childTransports.add(mock);
+        _transport = CompositeMidiTransport(transports: childTransports);
+      }
     }
 
     // 2. Initialize Library Repository
-    _libraryRepo = widget.libraryRepository ??
-        InMemoryPatchLibraryRepository(
-          initialPatches: [zoomSample, line6Sample],
-        );
+    if (widget.libraryRepository != null) {
+      _libraryRepo = widget.libraryRepository!;
+    } else if (_isRunningInWidgetTest) {
+      _libraryRepo = InMemoryPatchLibraryRepository(
+        initialPatches: [zoomSample, line6Sample],
+      );
+    } else {
+      _libraryRepo = _createDefaultLibraryRepository(zoomSample, line6Sample);
+    }
 
     // 3. Initialize Controllers
     _connectionController = widget.connectionController ??
@@ -158,6 +115,153 @@ class _SignalChainAppState extends State<SignalChainApp> {
     // Initial async setup
     _connectionController.refreshPorts();
     _libraryController.refresh();
+
+    // Seed filesystem repository if empty (at runtime outside widget tests)
+    if (!_isRunningInWidgetTest && widget.libraryRepository == null) {
+      _seedStorageIfEmpty(zoomSample, line6Sample);
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.transport == null) {
+      _transport.dispose();
+    }
+    if (widget.connectionController == null) {
+      _connectionController.dispose();
+    }
+    if (widget.editorController == null) {
+      _editorController.dispose();
+    }
+    if (widget.libraryController == null) {
+      _libraryController.dispose();
+    }
+    super.dispose();
+  }
+
+  static bool get _isRunningInWidgetTest =>
+      Platform.environment.containsKey('FLUTTER_TEST');
+
+  static MockMidiTransport _createMockTransportWithResponders(
+    Patch zoomSample,
+    Patch line6Sample,
+  ) {
+    final mock = MockMidiTransport(
+      initialPorts: const [
+        MidiPortDescriptor(
+          id: 'sim_zoom',
+          name: 'Zoom MS-60B+ (Simulated)',
+          manufacturer: 'Zoom Corporation',
+          isInput: true,
+          isOutput: true,
+        ),
+        MidiPortDescriptor(
+          id: 'sim_line6',
+          name: 'Line 6 Bass Pod Pro (Simulated)',
+          manufacturer: 'Line 6',
+          isInput: true,
+          isOutput: true,
+        ),
+      ],
+    );
+
+    // Auto-responder for Universal Identity Requests
+    mock.registerResponder(
+      (req) =>
+          req.isSysEx &&
+          req.data.length >= 5 &&
+          req.data[1] == 0x7E &&
+          req.data[3] == 0x06 &&
+          req.data[4] == 0x01,
+      (req) {
+        if (mock.connectedPort?.id == 'sim_line6') {
+          return MidiMessage.sysEx([
+            0x7E, 0x00, 0x06, 0x02, 0x00, 0x01, 0x0C, 0x01, 0x00, 0x03, 0x00,
+          ]);
+        }
+        // Default: Zoom MS-60B+
+        return MidiMessage.sysEx([
+          0x7E, 0x00, 0x06, 0x02, 0x52, 0x6E, 0x00, 0x27, 0x00, 0x31, 0x2E, 0x30, 0x30,
+        ]);
+      },
+    );
+
+    // Auto-responder for Zoom Current Patch Request (64 13)
+    mock.registerResponder(
+      (req) =>
+          req.isSysEx &&
+          req.data.length >= 7 &&
+          req.data[1] == 0x52 &&
+          req.data[4] == 0x64 &&
+          req.data[5] == 0x13,
+      (req) => const ZoomMsPlusProtocol().encodePatch(zoomSample),
+    );
+
+    // Auto-responder for Line 6 Edit Buffer Dump Request (F0 00 01 0C 01 00 F7)
+    mock.registerResponder(
+      (req) =>
+          req.isSysEx &&
+          req.data.length >= 6 &&
+          req.data[1] == 0x00 &&
+          req.data[2] == 0x01 &&
+          req.data[3] == 0x0C &&
+          req.data[5] == 0x00,
+      (req) => const Line6BassPodProProtocol().encodePatch(line6Sample),
+    );
+
+    return mock;
+  }
+
+  static Directory _resolvePresetsDirectory() {
+    if (Platform.isLinux) {
+      final xdgData = Platform.environment['XDG_DATA_HOME'];
+      if (xdgData != null && xdgData.isNotEmpty) {
+        return Directory('$xdgData/signal_chain_flutter/presets');
+      }
+      final home = Platform.environment['HOME'] ?? '';
+      return Directory('$home/.local/share/signal_chain_flutter/presets');
+    } else if (Platform.isWindows) {
+      final appData = Platform.environment['APPDATA'] ??
+          Platform.environment['USERPROFILE'] ??
+          '';
+      return Directory('$appData/signal_chain_flutter/presets');
+    } else if (Platform.isMacOS) {
+      final home = Platform.environment['HOME'] ?? '';
+      return Directory('$home/Library/Application Support/signal_chain_flutter/presets');
+    } else {
+      return Directory('${Directory.systemTemp.path}/signal_chain_flutter/presets');
+    }
+  }
+
+  static PatchLibraryRepository _createDefaultLibraryRepository(
+    Patch zoomSample,
+    Patch line6Sample,
+  ) {
+    try {
+      final dir = _resolvePresetsDirectory();
+      if (!dir.existsSync()) {
+        dir.createSync(recursive: true);
+      }
+      return FileSystemPatchLibraryRepository(storageDir: dir);
+    } catch (_) {
+      // Graceful fallback to InMemory repository if filesystem is restricted
+      return InMemoryPatchLibraryRepository(
+        initialPatches: [zoomSample, line6Sample],
+      );
+    }
+  }
+
+  Future<void> _seedStorageIfEmpty(Patch zoomSample, Patch line6Sample) async {
+    try {
+      final existing = await _libraryRepo.getAllPatches();
+      if (existing.isEmpty) {
+        await _libraryRepo.savePatch(zoomSample);
+        await _libraryRepo.savePatch(line6Sample);
+        await _libraryController.refresh();
+      }
+    } catch (_) {
+      // Ignore seeding errors in sandboxed contexts
+    }
   }
 
   @override

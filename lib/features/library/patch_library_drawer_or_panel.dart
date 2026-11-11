@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/device_family.dart';
 import '../../models/patch.dart';
+import '../../protocols/device_protocol.dart';
+import '../../protocols/line6_bass_pod_pro_protocol.dart';
+import '../../protocols/zoom_ms_plus_protocol.dart';
 import '../editor/patch_editor_controller.dart';
 import '../theme/studio_theme.dart';
 import 'patch_library_controller.dart';
@@ -43,21 +47,36 @@ class PatchLibraryDrawerOrPanel extends StatelessWidget {
             children: [
               // Header
               Padding(
-                padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 8),
+                padding: const EdgeInsets.only(left: 14, right: 14, top: 16, bottom: 8),
                 child: Row(
                   children: [
-                    const Icon(Icons.library_music, size: 20, color: StudioTheme.colorModulation),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'PRESET LIBRARY',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.0,
-                        color: Colors.white,
+                    const Icon(Icons.library_music, size: 18, color: StudioTheme.colorModulation),
+                    const SizedBox(width: 6),
+                    const Expanded(
+                      child: Text(
+                        'PRESET LIBRARY',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                          color: Colors.white,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const Spacer(),
+                    IconButton(
+                      key: const Key('import_preset_button'),
+                      icon: const Icon(
+                        Icons.file_download_outlined,
+                        size: 20,
+                        color: StudioTheme.colorModulation,
+                      ),
+                      tooltip: 'Import JSON / SysEx',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => _showImportDialog(context),
+                    ),
+                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
@@ -244,11 +263,11 @@ class PatchLibraryDrawerOrPanel extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              // Export JSON
+              // Export JSON / SysEx
               IconButton(
                 key: Key('export_patch_${patch.id}_button'),
                 icon: const Icon(Icons.share, size: 16, color: Colors.grey),
-                tooltip: 'Export JSON',
+                tooltip: 'Export JSON / SysEx',
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
                 onPressed: () => _exportPatch(context, patch),
@@ -295,31 +314,281 @@ class PatchLibraryDrawerOrPanel extends StatelessWidget {
     );
   }
 
-  Future<void> _exportPatch(BuildContext context, Patch patch) async {
-    final jsonStr = await libraryController.exportPatchToJson(patch);
-    if (!context.mounted) return;
+  Future<void> _showImportDialog(BuildContext context) async {
+    final textController = TextEditingController();
 
-    showDialog(
+    await showDialog(
       context: context,
       builder: (ctx) {
         return AlertDialog(
           backgroundColor: StudioTheme.surfaceElevated,
-          title: Text('Export JSON: ${patch.name}'),
+          title: const Row(
+            children: [
+              Icon(Icons.file_download_outlined, color: StudioTheme.colorModulation),
+              SizedBox(width: 8),
+              Text('Import Preset (JSON / SysEx)', style: TextStyle(fontSize: 16)),
+            ],
+          ),
           content: SizedBox(
             width: 500,
-            child: SingleChildScrollView(
-              child: SelectableText(
-                jsonStr,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Paste either a JSON preset definition or raw SysEx hex bytes (e.g., "F0 52 ... F7" or "F0 00 01 0C ... F7"):',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  key: const Key('import_text_field'),
+                  controller: textController,
+                  maxLines: 7,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  decoration: const InputDecoration(
+                    hintText: '{\n  "name": "My Patch", ...\n}\n\nOR:\nF0 52 00 6E ... F7',
+                    border: OutlineInputBorder(),
+                    fillColor: StudioTheme.surface,
+                    filled: true,
+                  ),
+                ),
+              ],
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Close'),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              key: const Key('confirm_import_button'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: StudioTheme.colorModulation,
+                foregroundColor: Colors.black,
+              ),
+              onPressed: () async {
+                final text = textController.text.trim();
+                if (text.isEmpty) return;
+
+                try {
+                  if (text.startsWith('{')) {
+                    final patch = await libraryController.importPatchFromJson(text);
+                    if (context.mounted) {
+                      Navigator.of(ctx).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Successfully imported "${patch.name}"')),
+                      );
+                    }
+                  } else {
+                    // Attempt hex parsing
+                    final cleanHex = text.replaceAll(RegExp(r'[^0-9a-fA-F]'), ' ');
+                    final tokens = cleanHex.split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
+                    final bytes = Uint8List.fromList(
+                      tokens.map((t) => int.parse(t, radix: 16)).toList(),
+                    );
+
+                    if (bytes.isEmpty || bytes.first != 0xF0 || bytes.last != 0xF7) {
+                      throw const FormatException('Invalid SysEx: Must start with F0 and end with F7');
+                    }
+
+                    DeviceProtocol protocol;
+                    if (bytes.length >= 2 && bytes[1] == 0x52) {
+                      protocol = const ZoomMsPlusProtocol();
+                    } else if (bytes.length >= 4 &&
+                        bytes[1] == 0x00 &&
+                        bytes[2] == 0x01 &&
+                        bytes[3] == 0x0C) {
+                      protocol = const Line6BassPodProProtocol();
+                    } else {
+                      protocol = libraryController.deviceFilter == DeviceFamily.line6BassPodPro
+                          ? const Line6BassPodProProtocol()
+                          : const ZoomMsPlusProtocol();
+                    }
+
+                    final patch = await libraryController.importPatchSysEx(bytes, protocol);
+                    if (context.mounted) {
+                      Navigator.of(ctx).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Successfully imported "${patch.name}" from SysEx')),
+                      );
+                    }
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Import failed: $e'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Import'),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  Future<void> _exportPatch(BuildContext context, Patch patch) async {
+    final jsonStr = await libraryController.exportPatchToJson(patch);
+
+    String sysexHex = '';
+    try {
+      final protocol = patch.deviceFamily.isZoomMsPlus
+          ? const ZoomMsPlusProtocol()
+          : const Line6BassPodProProtocol();
+      final bytes = libraryController.exportPatchSysEx(patch, protocol);
+      sysexHex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(' ');
+    } catch (e) {
+      sysexHex = 'SysEx encoding unavailable: $e';
+    }
+
+    if (!context.mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return DefaultTabController(
+          length: 2,
+          child: AlertDialog(
+            backgroundColor: StudioTheme.surfaceElevated,
+            title: Row(
+              children: [
+                const Icon(Icons.share, size: 18, color: StudioTheme.colorModulation),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Export: ${patch.name}',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 560,
+              height: 380,
+              child: Column(
+                children: [
+                  const TabBar(
+                    indicatorColor: StudioTheme.colorModulation,
+                    labelColor: StudioTheme.colorModulation,
+                    unselectedLabelColor: Colors.grey,
+                    tabs: [
+                      Tab(text: 'JSON Format'),
+                      Tab(text: 'SysEx Hex Dump'),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        // JSON Tab
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: StudioTheme.surface,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: StudioTheme.surfaceBorder),
+                                ),
+                                child: SingleChildScrollView(
+                                  child: SelectableText(
+                                    jsonStr,
+                                    key: const Key('export_json_text'),
+                                    style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: ElevatedButton.icon(
+                                key: const Key('copy_json_button'),
+                                icon: const Icon(Icons.copy, size: 14),
+                                label: const Text('Copy JSON'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: StudioTheme.colorModulation.withValues(alpha: 0.2),
+                                  foregroundColor: StudioTheme.colorModulation,
+                                ),
+                                onPressed: () {
+                                  Clipboard.setData(ClipboardData(text: jsonStr));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('JSON copied to clipboard'),
+                                      duration: Duration(seconds: 1),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        // SysEx Tab
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: StudioTheme.surface,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: StudioTheme.surfaceBorder),
+                                ),
+                                child: SingleChildScrollView(
+                                  child: SelectableText(
+                                    sysexHex,
+                                    key: const Key('export_sysex_text'),
+                                    style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: ElevatedButton.icon(
+                                key: const Key('copy_sysex_button'),
+                                icon: const Icon(Icons.copy, size: 14),
+                                label: const Text('Copy SysEx'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: StudioTheme.colorModulation.withValues(alpha: 0.2),
+                                  foregroundColor: StudioTheme.colorModulation,
+                                ),
+                                onPressed: () {
+                                  Clipboard.setData(ClipboardData(text: sysexHex));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('SysEx hex copied to clipboard'),
+                                      duration: Duration(seconds: 1),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -353,4 +622,3 @@ class PatchLibraryDrawerOrPanel extends StatelessWidget {
     }
   }
 }
-

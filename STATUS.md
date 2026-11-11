@@ -1,7 +1,7 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 4 Complete (Application State Controllers & Cross-Platform Signal Chain UI)  
-**Active Milestone:** Milestone 5 (Native Platform MIDI Adapter & Desktop/Mobile Packaging)  
+**Current Status:** Milestone 5 Complete (Native Platform MIDI Transport, Composite Hardware/Simulation Bridge & Persistent Storage Wiring)  
+**Active Milestone:** Milestone 6 (Platform Packaging & Release Distribution)  
 **Last Updated:** 2026-11-10
 
 ---
@@ -112,17 +112,37 @@
 
 ---
 
-### 🟡 Milestone 5: Native Platform MIDI Adapter & Desktop/Mobile Packaging
+### 🟢 Milestone 5: Native Platform MIDI Transport, Composite Hardware/Simulation Bridge & Persistent Storage Wiring
+*Status:* **Completed**
+- [x] **Zero-Dependency Linux ALSA RawMIDI Transport (`lib/core/midi/linux_alsa_midi_transport.dart`):**
+  * Hardware port discovery parsing `amidi -l` with device name, port ID (`hw:X,Y,Z`), and direction (`I`/`O`/`IO`) extraction.
+  * Robust fallback discovery scanning `/proc/asound/cards` and `/dev/snd/midiC*D*`.
+  * Background process listener (`amidi -p <port> -d`) with hex stream state machine for assembling fragmented SysEx (`F0 ... F7`), Continuous Controller (`B0 cc vv`), and Program Change (`C0 pp`) messages without data loss.
+  * Outbound transmission formatting uppercase hex arrays for `amidi -p <port> -S "<hex>"`.
+  * Injectable `ProcessRunner` and `ProcessStarter` for deterministic, sandboxed unit testing without native OS dependencies.
+- [x] **Composite MIDI Transport Architecture (`lib/core/midi/composite_midi_transport.dart`):**
+  * Unified aggregation over arbitrary child transports (e.g. `LinuxAlsaMidiTransport` + `MockMidiTransport`).
+  * Aggregated port discovery with automatic routing of `connect()`, `send()`, `onMessageReceived`, and `disconnect()` to the active transport.
+- [x] **Persistent Storage Wiring & Starter Seed (`lib/main.dart`):**
+  * Platform-appropriate preset storage directory resolution (`$XDG_DATA_HOME/signal_chain_flutter/presets`, `%APPDATA%/signal_chain_flutter/presets`, etc.) with graceful fallback to `InMemoryPatchLibraryRepository`.
+  * Safe starter preset seeding on first launch when repository is empty.
+  * Seamless test/runtime bifurcation preserving offline deterministic widget test execution.
+- [x] **Preset Import/Export Dialogs (`lib/features/library/patch_library_drawer_or_panel.dart`):**
+  * Multi-format "Import JSON / SysEx" dialog supporting raw JSON presets or hex SysEx dumps with auto-detection of device protocol.
+  * Tabbed "Export JSON / SysEx" dialog displaying pretty-printed JSON and raw hex dumps with copy-to-clipboard buttons (`Clipboard.setData`).
+- [x] **Comprehensive Test Suites (100% passing, 124 total tests):**
+  * `test/core/midi/linux_alsa_midi_transport_test.dart` (10 tests).
+  * `test/core/midi/composite_midi_transport_test.dart` (8 tests).
+  * `test/widget_test.dart` (+1 test for import/export modal workflows, 3 total widget tests).
+- [x] Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+
+---
+
+### 🟡 Milestone 6: Platform Packaging & Release Distribution
 *Status:* **Ready / Next**
-- [ ] Platform MIDI Adapters (`lib/core/midi/platform/`):
-  * Platform interface bridging `MidiTransport` to native OS MIDI subsystems (`flutter_midi_command` or pure platform channels).
-  * Linux ALSA Sequencer / RawMIDI adapter.
-  * Android USB Host OTG / `android.media.midi` adapter.
-  * Windows WinMM / WinRT MIDI adapter.
-- [ ] Desktop & Mobile Packaging:
-  * Linux AppImage / Debian packaging and desktop launcher entries.
-  * Android release APK / AAB signing configuration with USB Host permissions in `AndroidManifest.xml`.
-  * Windows MSIX / portable zip packaging.
+- [ ] Linux AppImage / Debian packaging and desktop launcher entries (`.desktop`, icons).
+- [ ] Android USB Host OTG permissions in `AndroidManifest.xml` and release APK / AAB setup.
+- [ ] Windows MSIX / portable zip packaging.
 
 ---
 
@@ -133,12 +153,13 @@
 | **Workspace Repository** | Clean Flutter Project | Flutter 3.47.9 / Dart 3.13.7 baseline |
 | **Legacy Source Code** | Audited | Sibling archive audited at `~/.cache/.fr-CFTZU3/` |
 | **Directory Scaffolding** | Complete | Clean architecture layers maintained |
-| **Core MIDI Transport** | Complete | `MidiTransport`, `MidiMessage`, `MockMidiTransport` |
+| **Core MIDI Transport** | Complete | `MidiTransport`, `MidiMessage`, `MockMidiTransport`, `LinuxAlsaMidiTransport`, `CompositeMidiTransport` |
 | **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch` |
 | **SysEx & Protocol Engine** | Complete | `SysexCodec`, `ZoomMsPlusProtocol`, `Line6BassPodProProtocol` |
 | **Effect Catalogs** | Complete | `EffectDefinition`, `EffectCatalogRegistry`, `ZoomMsPlusCatalog`, `Line6BassPodProCatalog` |
 | **Persistence Repositories** | Complete | `PatchLibraryRepository`, `InMemoryPatchLibraryRepository`, `FileSystemPatchLibraryRepository` |
 | **State Controllers** | Complete | `DeviceConnectionController`, `PatchEditorController`, `PatchLibraryController` |
-| **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget`, `SlotInspectorWidget`, `PatchLibraryDrawerOrPanel` |
+| **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget`, `SlotInspectorWidget`, `PatchLibraryDrawerOrPanel` (Import/Export dialogs) |
 | **Static Analysis** | Passing (0 issues) | Verified via `flutter analyze --no-pub` |
-| **Unit & Widget Tests** | 100% Passing | 105 tests passing across all test suites |
+| **Unit & Widget Tests** | 100% Passing | 124 tests passing across all test suites |
+
