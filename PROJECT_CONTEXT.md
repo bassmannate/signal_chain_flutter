@@ -8,6 +8,12 @@
 
 The goal of this Flutter rewrite is to replace the heavier Electron desktop footprint with a high-performance, single-codebase application capable of running smoothly across desktop and mobile devices.
 
+### Milestone Status
+- **Milestone 1:** Project Scaffolding, Domain Models & Core MIDI Abstraction — **Completed**
+- **Milestone 2:** Pure Dart Protocol & SysEx Engine (`SysexCodec`, `ZoomMsPlusProtocol`, `Line6BassPodProProtocol`) — **Completed**
+- **Milestone 3:** Patch Library & Local Persistence Layer — **Ready / Next**
+- **Milestone 4:** Cross-Platform UI & Real-Time Parameter Control — **Planned**
+
 ---
 
 ## 2. Target Platforms

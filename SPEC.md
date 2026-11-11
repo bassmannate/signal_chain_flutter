@@ -88,57 +88,98 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
 
 ---
 
-### 3.2 Zoom MS Plus Series Protocol (`lib/protocols/zoom/`)
+### 3.2 Zoom MS Plus Series Protocol (`lib/protocols/zoom_ms_plus_protocol.dart`)
 
 #### Supported Devices
-- Zoom MS-50G+
-- Zoom MS-60B+
-- Zoom MS-70CDR+
-- Zoom MS-200+
+- Zoom MS-50G+ (Model code `0x23`)
+- Zoom MS-60B+ (Model code `0x27`)
+- Zoom MS-70CDR+ (Model code `0x26`)
+- Zoom MS-200D+ (Model code `0x25`)
 
 #### Protocol Specifications
 1. **Device Inquiry / Handshake:**
-   - Universal Non-Real-Time SysEx Identity Request: `F0 7E 00 06 01 F7`
-   - Identity Reply format: `F0 7E 00 06 02 52 <family_code> <model_number> ... F7` (Zoom Manufacturer ID: `0x52`).
-2. **Editor Mode Activation & Keep-Alive:**
-   - Host sends pedal-specific editor mode trigger (`F0 52 00 <device_id> 50 ... F7`) to enable real-time bi-directional control and disable sleep.
-3. **Patch Data Structure:**
-   - Zoom patch files / dumps contain:
-     * Header & Patch Name (ASCII character buffer).
-     * Effect Slot count (up to 6 concurrent effect blocks).
-     * Effect ID (32-bit DSP algorithm identifier).
-     * Parameter Blocks (packed bitfields representing rotary knob values, toggle states, expression pedal mappings).
-4. **Real-time Parameter Modulation:**
-   - Instant parameter changes sent as concise SysEx messages (`F0 52 00 <device_id> 31 <slot_idx> <param_idx> <val_lsb> <val_msb> F7`).
-   - Dynamic update feedback loop to update the UI when the pedal's physical knobs are rotated.
+   - Universal Non-Real-Time SysEx Identity Request: `F0 7E 7F 06 01 F7`
+   - Identity Reply format: `F0 7E <channel> 06 02 52 6E 00 <model_lsb> <model_msb> <version...> F7`
+     * Manufacturer ID: `0x52` (Zoom)
+     * Family Code: `0x6E 0x00` (MS Plus series)
+     * Model LSB: `0x23` (MS-50G+), `0x25` (MS-200D+), `0x26` (MS-70CDR+), `0x27` (MS-60B+)
+2. **Editor & PC Mode Activation:**
+   - Parameter Edit Enable: `F0 52 00 6E 50 F7` (Disable: `F0 52 00 6E 51 F7`)
+   - PC Mode Enable: `F0 52 00 6E 52 F7` (Disable: `F0 52 00 6E 53 F7`)
+3. **Patch Data Requests & SysEx Framing:**
+   - Request Current Patch V2: `F0 52 00 6E 64 13 F7`
+   - Current Patch Dump V2: `F0 52 00 6E 64 12 01 <len_lsb> <len_msb> <7-bit packed data...> <5 CRC bytes> 00 F7`
+   - Request Memory Slot V2: `F0 52 00 6E 46 00 00 <bank_lsb> <bank_msb> <prog_lsb> <prog_msb> F7`
+   - Memory Slot Dump V2: `F0 52 00 6E 45 00 00 <bank_lsb> <bank_msb> <prog_lsb> <prog_msb> <len_lsb> <len_msb> <7-bit packed data...> <5 CRC bytes> 00 F7`
+4. **PTCF Binary Patch Format:**
+   - Unpacked 8-bit binary structure:
+     * Magic header: `PTCF` (4 bytes ASCII)
+     * Total length: 4 bytes uint32 LE
+     * Version: 4 bytes uint32 LE
+     * Number of effects: 4 bytes uint32 LE (typically 6)
+     * Target pedal mask: 4 bytes uint32 LE (`0x00080000` for MS-60B+, `0x00040000` for MS-50G+)
+     * Unknown header bytes: 6 bytes
+     * Short name: 10 bytes ASCII string (padded with spaces)
+     * DSP Effect IDs array: `numEffects * 4` bytes uint32 LE
+   - Embedded subchunks:
+     * `NAME`: 32 bytes (28 ASCII characters padded with spaces + 4 null bytes)
+     * `EDTB`: Effect Parameter Edit blocks (`numEffects * 24` bytes). Each 24-byte block is bit-manipulated in reverse byte order (bits 191 down to 0):
+       - Bit 191: Effect enabled toggle (1 bit)
+       - Bits 162..190: DSP Algorithm ID (29 bits)
+       - Parameters 0..4: 5 continuous/discrete parameters of 12 bits each
+       - Parameters 5..7: 3 parameters of 8 bits each
+       - Parameters 8..11: 4 parameters of 12 bits each
+     * `PRM2`: Tempo (bits split across last 2 bytes), active editing slot (byte 10 bits 5..7), volume, routing.
+     * `TXE1`: English patch description.
+   - CRC Validation:
+     * 32-bit CRC (IEEE 802.3 `0xEDB88320` polynomial) inverted with `0xFFFFFFFF`, split into 5 7-bit words (LSB first).
+5. **Real-time Parameter Modulation:**
+   - Outgoing parameter change: `F0 52 00 6E 64 20 00 <slot_idx> <param_idx> <val_lsb> <val_word1> <val_word2> <val_word3> <val_word4> F7`
+   - Hardware feedback reception: `F0 52 00 6E 64 20 01 <slot_idx> <param_idx> <val_lsb> <val_msb> ... F7`
 
 ---
 
-### 3.3 Line 6 Bass Pod Pro Protocol (`lib/protocols/line6/`)
+### 3.3 Line 6 Bass Pod Pro Protocol (`lib/protocols/line6_bass_pod_pro_protocol.dart`)
 
 #### Supported Device
 - Line 6 Bass Pod Pro (Rackmount Multi-FX Processor)
 
 #### Protocol Specifications
 1. **Manufacturer ID & Header:**
-   - Line 6 SysEx Header: `F0 00 01 0C` (Manufacturer `0x00 0x01 0x0C`).
-   - Device Type identifier for Bass Pod Pro.
+   - Line 6 3-byte SysEx Header: `F0 00 01 0C` (Manufacturer `0x00 0x01 0x0C`).
+   - Family / Device Type byte: `0x01` (Bass Pod Pro).
 2. **Preset Recall & Control Changes:**
-   - Standard MIDI Program Change (PC `0`–`63`) for switching channel memories (A1 to D9 / User Banks).
-   - Standard Continuous Controller (CC) parameters:
-     * CC #4: Drive
-     * CC #14: Bass
-     * CC #15: Mid
-     * CC #16: Treble
-     * CC #17: Channel Volume
-     * CC #12: Amp Model Select
-     * CC #13: Cabinet Model Select
-     * CC #19: Effect Tweak / Effect Value
-     * CC #7: Master Volume
-3. **Edit Buffer & Sysex Dumps:**
-   - Request Edit Buffer Dump: `F0 00 01 0C 01 00 ... F7`
-   - Edit Buffer Dump parsing: 72-byte packed parameter payload containing full amp model settings, cab simulations, compression thresholds, and FX routing.
-   - Program Dump & Bank Dump commands for batch preset extraction.
+   - Standard MIDI Program Change (PC `0`–`127`) for switching preset channel memories.
+   - Real-time Continuous Controller (CC) parameters:
+     * CC #4: Drive (0–127)
+     * CC #14: Bass (0–127)
+     * CC #15: Mid (0–127)
+     * CC #16: Treble (0–127)
+     * CC #17: Channel Volume (0–127)
+     * CC #12: Amp Model Select (0–15)
+     * CC #13: Cabinet Model Select (0–7)
+     * CC #19: Effect Tweak / Value (0–127)
+     * CC #7: Master Volume (0–127)
+     * CC #64: Compressor Ratio / Threshold (0–127)
+     * CC #11: Effect Select / Type (0–7)
+3. **Edit Buffer & SysEx Dumps:**
+   - Request Edit Buffer Dump: `F0 00 01 0C 01 00 F7`
+   - Request Program Slot Dump: `F0 00 01 0C 01 01 <program_number> F7`
+   - Edit Buffer Dump response: `F0 00 01 0C 01 00 <payload...> F7`
+     * 72-byte parameter payload encoded as 144 4-bit nibbles (low nibble first) or 72 raw bytes.
+     * Byte 0: Amp Model (0–15)
+     * Byte 1: Cabinet Model (0–7)
+     * Byte 2: Drive (0–127)
+     * Byte 3: Bass (0–127)
+     * Byte 4: Mid (0–127)
+     * Byte 5: Treble (0–127)
+     * Byte 6: Channel Volume (0–127)
+     * Byte 7: Compressor Ratio / Threshold (0–127)
+     * Byte 8: Effect Type (0–7)
+     * Byte 9: Effect Tweak (0–127)
+     * Byte 10: Master Volume (0–127)
+     * Byte 11: Compressor Enable toggle (0 / 1)
+     * Bytes 56..71: Preset Name (16 ASCII characters, space-padded)
 
 ---
 

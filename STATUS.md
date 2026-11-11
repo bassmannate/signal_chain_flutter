@@ -1,7 +1,7 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 1 Complete (Scaffolding, Core Models & MIDI Abstraction)  
-**Active Milestone:** Milestone 2 (Ready / Next)  
+**Current Status:** Milestone 2 Complete (Pure Dart Protocol & SysEx Engine)  
+**Active Milestone:** Milestone 3 (Ready / Next)  
 **Last Updated:** 2026-11-10
 
 ---
@@ -36,28 +36,39 @@
 
 ---
 
-### 🟡 Milestone 2: Pure Dart Protocol & SysEx Engine
-*Status:* **Ready / Next**
-- [ ] **Core MIDI Utilities (`lib/protocols/midi_utils/`):**
-  * Byte packing/unpacking: 7-bit to 8-bit (`pack7to8`, `unpack8to7`).
-  * SysEx framing utilities (delimiter extraction, packet slicing, checksum validation).
-- [ ] **Zoom MS Plus Series Protocol (`lib/protocols/zoom/`):**
-  * Identity request & reply parsing (handshake `0x52`).
-  * Editor mode activation & keep-alive ping framing.
-  * Patch memory dump parser & serializer (6-slot effect blocks, 32-bit DSP IDs).
-  * Real-time parameter change encoder and parser.
-  * Unit test suite against captured SysEx byte fixtures (`test/protocols/zoom/`).
-- [ ] **Line 6 Bass Pod Pro Protocol (`lib/protocols/line6/`):**
-  * Line 6 SysEx header framing (`0xF0 0x00 0x01 0x0C ... 0xF7`).
-  * Program Change (PC) mapping and Continuous Controller (CC) mapping table.
-  * Edit buffer request & parser.
-  * Parameter range scalers (amp models, cab models, drive, tone controls).
-  * Unit test suite against captured SysEx fixtures (`test/protocols/line6/`).
+### 🟢 Milestone 2: Pure Dart Protocol & SysEx Engine
+*Status:* **Completed**
+- [x] **Core SysEx Utilities (`lib/protocols/sysex_codec.dart`):**
+  * Byte packing/unpacking: 7-bit to 8-bit (`pack8BitTo7Bit`, `unpack7BitTo8Bit`) with MSB-header grouping.
+  * 4-bit nibble packing/unpacking (`packNibbles`, `unpackNibbles`).
+  * Big-endian bitfield extraction and insertion (`getBits`, `setBits`).
+  * IEEE 802.3 CRC32 calculation and Zoom 5-byte 7-bit CRC generator (`calculateZoom7BitCrc`).
+  * Framing helpers (`isSysEx`, `isIdentityReply`).
+- [x] **Device Protocol Abstract Contract (`lib/protocols/device_protocol.dart`):**
+  * Abstract interface defining identity matching, initialization sequences, current patch and memory slot requests, bidirectional patch encoding/decoding, and real-time parameter change handling.
+- [x] **Zoom MS Plus Series Protocol (`lib/protocols/zoom_ms_plus_protocol.dart`):**
+  * Support for Zoom MS-50G+, MS-60B+, MS-70CDR+, MS-200D+ (`0x52` manufacturer, `0x6E 0x00` family).
+  * Parameter edit mode enable (`0x50`) / disable (`0x51`) and PC mode enable (`0x52`) framing.
+  * Current patch (`64 13` request / `64 12 01` dump) and memory slot (`46 00 00` request / `45 00 00` dump) handling.
+  * PTCF 8-bit chunk parser and serializer (`PTCF`, `NAME`, `EDTB`, `PRM2`, `TXE1`).
+  * 24-byte EDTB reversed bitfield mapping (1-bit enabled, 29-bit DSP algorithm ID, 12-bit and 8-bit parameter values).
+  * Real-time parameter edit SysEx generator (`64 20 00`) and hardware feedback parser (`64 20 01`).
+- [x] **Line 6 Bass Pod Pro Protocol (`lib/protocols/line6_bass_pod_pro_protocol.dart`):**
+  * Line 6 3-byte SysEx header framing (`F0 00 01 0C 01 ... F7`).
+  * Edit buffer dump request (`F0 00 01 0C 01 00 F7`) and program dump request (`F0 00 01 0C 01 01 <prog> F7`).
+  * 72-byte edit buffer parser & serializer (Amp, Cabinet, Compressor, Modulation/FX slots, 16-char ASCII patch name).
+  * Real-time Continuous Controller (CC) modulation mapping (Drive CC#4, Bass CC#14, Mid CC#15, Treble CC#16, Chan Vol CC#17, Amp CC#12, Cab CC#13, Comp CC#64, FX CC#11/19).
+  * Program Change (PC 0–127) memory recall mapping.
+- [x] **Comprehensive Protocol Unit Test Suites (100% passing):**
+  * `test/protocols/sysex_codec_test.dart` (16 tests).
+  * `test/protocols/zoom_ms_plus_protocol_test.dart` (13 tests).
+  * `test/protocols/line6_bass_pod_pro_protocol_test.dart` (10 tests).
+- [x] Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
 
 ---
 
-### ⚪ Milestone 3: Patch Library & Local Persistence Layer
-*Status:* **Planned**
+### 🟡 Milestone 3: Patch Library & Local Persistence Layer
+*Status:* **Ready / Next**
 - [ ] File serialization engine:
   * Raw SysEx (`.syx`) import/export.
   * Structured JSON patch and bank definitions.
@@ -90,9 +101,10 @@
 | Item | Status | Notes |
 | :--- | :--- | :--- |
 | **Workspace Repository** | Clean Flutter Project | Flutter 3.47.9 / Dart 3.13.7 baseline |
-| **Legacy Source Code** | Not Present | Standalone clean repo |
-| **Directory Scaffolding** | Complete | `lib/core/midi/`, `lib/protocols/`, `lib/models/`, `lib/features/` created |
-| **Core MIDI Transport** | Complete | Fully tested with `MockMidiTransport` |
-| **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch` tested |
+| **Legacy Source Code** | Audited | Sibling archive audited at `~/.cache/.fr-CFTZU3/` |
+| **Directory Scaffolding** | Complete | Clean architecture layers maintained |
+| **Core MIDI Transport** | Complete | `MidiTransport`, `MidiMessage`, `MockMidiTransport` |
+| **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch` |
+| **SysEx & Protocol Engine** | Complete | `SysexCodec`, `ZoomMsPlusProtocol`, `Line6BassPodProProtocol` |
 | **Static Analysis** | Passing (0 issues) | Verified via `flutter analyze --no-pub` |
-| **Unit Tests** | 100% Passing | 18 unit tests across MIDI and models passing |
+| **Unit Tests** | 100% Passing | 58 unit tests passing across core, models, and protocols |
