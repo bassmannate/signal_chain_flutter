@@ -6,6 +6,7 @@ import '../models/device_family.dart';
 import '../models/effect_slot.dart';
 import '../models/parameter_descriptor.dart';
 import '../models/patch.dart';
+import 'catalogs/effect_catalog.dart';
 import 'device_protocol.dart';
 import 'sysex_codec.dart';
 
@@ -241,10 +242,15 @@ class Line6BassPodProProtocol extends DeviceProtocol {
     final treble = buffer[5].toDouble();
     final chanVol = buffer[6].toDouble();
 
+    final ampDef = EffectCatalogRegistry.getDefinition(
+      DeviceFamily.line6BassPodPro,
+      'line6_amp_$ampModelIdx',
+    );
+
     final ampSlot = EffectSlot(
       slotIndex: 0,
       effectId: 'line6_amp_$ampModelIdx',
-      effectName: ampModels[ampModelIdx],
+      effectName: ampDef.name,
       isEnabled: true,
       parameters: [
         ParameterValue(
@@ -313,10 +319,14 @@ class Line6BassPodProProtocol extends DeviceProtocol {
 
     // Slot 1: Cabinet Block
     final cabModelIdx = buffer[1].clamp(0, cabModels.length - 1);
+    final cabDef = EffectCatalogRegistry.getDefinition(
+      DeviceFamily.line6BassPodPro,
+      'line6_cab_$cabModelIdx',
+    );
     final cabSlot = EffectSlot(
       slotIndex: 1,
       effectId: 'line6_cab_$cabModelIdx',
-      effectName: cabModels[cabModelIdx],
+      effectName: cabDef.name,
       isEnabled: true,
       parameters: [
         ParameterValue(
@@ -336,10 +346,14 @@ class Line6BassPodProProtocol extends DeviceProtocol {
     // Slot 2: Compressor Block
     final compLevel = buffer[7].toDouble();
     final compEnabled = buffer.length > 11 ? buffer[11] != 0 : compLevel > 0;
+    final compDef = EffectCatalogRegistry.getDefinition(
+      DeviceFamily.line6BassPodPro,
+      'line6_comp',
+    );
     final compSlot = EffectSlot(
       slotIndex: 2,
       effectId: 'line6_comp',
-      effectName: 'Compressor',
+      effectName: compDef.name,
       isEnabled: compEnabled,
       parameters: [
         ParameterValue(
@@ -358,10 +372,14 @@ class Line6BassPodProProtocol extends DeviceProtocol {
     // Slot 3: Modulation / FX Block
     final fxTypeIdx = buffer[8].clamp(0, effectTypes.length - 1);
     final fxTweak = buffer[9].toDouble();
+    final fxDef = EffectCatalogRegistry.getDefinition(
+      DeviceFamily.line6BassPodPro,
+      'line6_fx_$fxTypeIdx',
+    );
     final fxSlot = EffectSlot(
       slotIndex: 3,
       effectId: 'line6_fx_$fxTypeIdx',
-      effectName: effectTypes[fxTypeIdx],
+      effectName: fxDef.name,
       isEnabled: fxTypeIdx != 0,
       parameters: [
         ParameterValue(

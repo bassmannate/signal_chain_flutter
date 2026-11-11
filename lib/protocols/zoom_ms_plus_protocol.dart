@@ -6,6 +6,7 @@ import '../models/device_family.dart';
 import '../models/effect_slot.dart';
 import '../models/parameter_descriptor.dart';
 import '../models/patch.dart';
+import 'catalogs/effect_catalog.dart';
 import 'device_protocol.dart';
 import 'sysex_codec.dart';
 
@@ -317,61 +318,63 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
             final dspId = SysexCodec.getBits(reversed, bitpos - 28, bitpos);
             bitpos -= 29;
 
-            final parameters = <ParameterValue>[];
+            final rawValues = <double>[];
 
             // 5 parameters of 12 bits
             for (int p = 0; p < 5 && bitpos - 11 >= 0; p++) {
               final val = SysexCodec.getBits(reversed, bitpos - 11, bitpos);
               bitpos -= 12;
-              parameters.add(ParameterValue(
-                descriptor: ParameterDescriptor(
-                  id: 'param_$p',
-                  name: 'Param ${p + 1}',
-                  min: 0,
-                  max: 4095,
-                  defaultValue: 0,
-                ),
-                currentValue: val.toDouble(),
-              ));
+              rawValues.add(val.toDouble());
             }
 
             // 3 parameters of 8 bits
             for (int p = 5; p < 8 && bitpos - 7 >= 0; p++) {
               final val = SysexCodec.getBits(reversed, bitpos - 7, bitpos);
               bitpos -= 8;
-              parameters.add(ParameterValue(
-                descriptor: ParameterDescriptor(
-                  id: 'param_$p',
-                  name: 'Param ${p + 1}',
-                  min: 0,
-                  max: 255,
-                  defaultValue: 0,
-                ),
-                currentValue: val.toDouble(),
-              ));
+              rawValues.add(val.toDouble());
             }
 
             // 4 parameters of 12 bits
             for (int p = 8; p < 12 && bitpos - 11 >= 0; p++) {
               final val = SysexCodec.getBits(reversed, bitpos - 11, bitpos);
               bitpos -= 12;
-              parameters.add(ParameterValue(
-                descriptor: ParameterDescriptor(
-                  id: 'param_$p',
-                  name: 'Param ${p + 1}',
-                  min: 0,
-                  max: 4095,
-                  defaultValue: 0,
-                ),
-                currentValue: val.toDouble(),
-              ));
+              rawValues.add(val.toDouble());
             }
 
             final hexId = '0x${dspId.toRadixString(16).padLeft(8, '0').toUpperCase()}';
+            final family = _resolveFamilyFromTarget(target);
+            final effectDef = EffectCatalogRegistry.getDefinition(family, hexId);
+
+            final parameters = <ParameterValue>[];
+            for (int p = 0; p < rawValues.length; p++) {
+              final val = rawValues[p];
+              final ParameterDescriptor desc;
+              if (p < effectDef.parameters.length) {
+                desc = effectDef.parameters[p];
+              } else {
+                final is12Bit = p < 5 || p >= 8;
+                desc = ParameterDescriptor(
+                  id: 'param_$p',
+                  name: 'Param ${p + 1}',
+                  min: 0,
+                  max: is12Bit ? 4095 : 255,
+                  defaultValue: 0,
+                );
+              }
+              parameters.add(ParameterValue(
+                descriptor: desc,
+                currentValue: val,
+              ));
+            }
+
+            final effectName = (dspId != 0 && !effectDef.name.startsWith('Unknown'))
+                ? effectDef.name
+                : _lookupEffectName(dspId);
+
             slots.add(EffectSlot(
               slotIndex: slotIdx,
               effectId: hexId,
-              effectName: _lookupEffectName(dspId),
+              effectName: effectName,
               isEnabled: isEnabled,
               parameters: parameters,
             ));
@@ -553,6 +556,11 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
 
   String _lookupEffectName(int dspId) {
     if (dspId == 0) return 'Bypass';
+    final hexId = '0x${dspId.toRadixString(16).padLeft(8, '0').toUpperCase()}';
+    final def = EffectCatalogRegistry.getDefinition(defaultFamily, hexId);
+    if (!def.name.startsWith('Unknown')) {
+      return def.name;
+    }
     switch (dspId) {
       case 0x01000010:
         return 'DYN Comp';

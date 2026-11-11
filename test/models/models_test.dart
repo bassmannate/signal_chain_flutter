@@ -156,6 +156,142 @@ void main() {
       expect(renamed.name, equals('Smooth Slap'));
       expect(patch1, isNot(equals(renamed)));
     });
+
+    test('supports optional searchable metadata fields and copyWith', () {
+      final now = DateTime.utc(2026, 11, 10, 12, 0, 0);
+      final patch = Patch(
+        id: 'p_meta',
+        name: 'Slap & Pop',
+        deviceFamily: DeviceFamily.zoomMs60bPlus,
+        tags: const ['bass', 'funk', 'slap'],
+        author: 'Marcus',
+        notes: 'Great with active J-Bass',
+        updatedAt: now,
+      );
+
+      expect(patch.tags, equals(['bass', 'funk', 'slap']));
+      expect(patch.author, equals('Marcus'));
+      expect(patch.notes, equals('Great with active J-Bass'));
+      expect(patch.updatedAt, equals(now));
+
+      final updated = patch.copyWith(
+        author: 'Flea',
+        tags: ['bass', 'rock'],
+      );
+
+      expect(updated.author, equals('Flea'));
+      expect(updated.tags, equals(['bass', 'rock']));
+      expect(updated.notes, equals('Great with active J-Bass'));
+    });
+  });
+
+  group('JSON Serialization Round-Trip', () {
+    test('DeviceFamily serializes to string key and deserializes with unknown fallback', () {
+      expect(DeviceFamily.zoomMs60bPlus.toJson(), equals('zoomMs60bPlus'));
+      expect(DeviceFamily.line6BassPodPro.toJson(), equals('line6BassPodPro'));
+
+      expect(DeviceFamily.fromJson('zoomMs60bPlus'), equals(DeviceFamily.zoomMs60bPlus));
+      expect(DeviceFamily.fromJson('line6BassPodPro'), equals(DeviceFamily.line6BassPodPro));
+      expect(DeviceFamily.fromJson('nonExistentFamily'), equals(DeviceFamily.unknown));
+      expect(DeviceFamily.fromJson(null), equals(DeviceFamily.unknown));
+      expect(DeviceFamily.fromJson(123), equals(DeviceFamily.unknown));
+    });
+
+    test('ParameterDescriptor and ParameterValue round-trip through JSON cleanly', () {
+      const desc = ParameterDescriptor(
+        id: 'ratio',
+        name: 'Ratio',
+        min: 1.0,
+        max: 20.0,
+        defaultValue: 4.0,
+        step: 0.5,
+        unit: ':1',
+        labels: ['2:1', '4:1', '8:1', '20:1'],
+      );
+
+      final descJson = desc.toJson();
+      final restoredDesc = ParameterDescriptor.fromJson(descJson);
+      expect(restoredDesc, equals(desc));
+
+      const paramVal = ParameterValue(descriptor: desc, currentValue: 8.0);
+      final paramValJson = paramVal.toJson();
+      final restoredParamVal = ParameterValue.fromJson(paramValJson);
+      expect(restoredParamVal, equals(paramVal));
+      expect(restoredParamVal.currentValue, equals(8.0));
+    });
+
+    test('EffectSlot round-trips through JSON cleanly', () {
+      const slot = EffectSlot(
+        slotIndex: 2,
+        effectId: '0x01000010',
+        effectName: 'DYN Comp',
+        isEnabled: true,
+        parameters: [
+          ParameterValue(
+            descriptor: ParameterDescriptor(
+              id: 'sense',
+              name: 'Sense',
+              min: 0,
+              max: 10,
+              defaultValue: 6,
+            ),
+            currentValue: 7,
+          ),
+        ],
+      );
+
+      final json = slot.toJson();
+      final restored = EffectSlot.fromJson(json);
+      expect(restored, equals(slot));
+      expect(restored.parameters.length, equals(1));
+      expect(restored.parameters.first.currentValue, equals(7.0));
+    });
+
+    test('Patch round-trips through JSON including rich metadata, tags, and timestamps', () {
+      final now = DateTime.utc(2026, 11, 10, 18, 30, 0);
+      final patch = Patch(
+        id: 'patch_vintage_svt',
+        name: 'Vintage SVT Rig',
+        deviceFamily: DeviceFamily.line6BassPodPro,
+        programNumber: 12,
+        tags: const ['vintage', 'rock', 'ampeg'],
+        author: 'John Paul Jones',
+        notes: 'Classic warm tube growl for fingerstyle',
+        updatedAt: now,
+        metadata: const {'tempo': 118, 'rating': 5},
+        slots: const [
+          EffectSlot(
+            slotIndex: 0,
+            effectId: 'line6_amp_1',
+            effectName: 'Classic (SVT)',
+            isEnabled: true,
+            parameters: [
+              ParameterValue(
+                descriptor: ParameterDescriptor(
+                  id: 'drive',
+                  name: 'Drive',
+                  min: 0,
+                  max: 127,
+                  defaultValue: 64,
+                ),
+                currentValue: 80,
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final json = patch.toJson();
+      final restored = Patch.fromJson(json);
+
+      expect(restored, equals(patch));
+      expect(restored.tags, equals(['vintage', 'rock', 'ampeg']));
+      expect(restored.author, equals('John Paul Jones'));
+      expect(restored.notes, equals('Classic warm tube growl for fingerstyle'));
+      expect(restored.updatedAt, equals(now));
+      expect(restored.metadata['tempo'], equals(118));
+      expect(restored.slots.first.effectName, equals('Classic (SVT)'));
+    });
   });
 }
 

@@ -26,6 +26,32 @@ class ParameterDescriptor {
   /// True if this parameter selects between discrete named states or models.
   bool get isDiscrete => labels != null && labels!.isNotEmpty;
 
+  /// Serializes this descriptor into a JSON map.
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'min': min,
+        'max': max,
+        'defaultValue': defaultValue,
+        'step': step,
+        if (unit != null) 'unit': unit,
+        if (labels != null) 'labels': labels,
+      };
+
+  /// Deserializes a [ParameterDescriptor] from a JSON map.
+  factory ParameterDescriptor.fromJson(Map<String, dynamic> json) {
+    return ParameterDescriptor(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      min: (json['min'] as num?)?.toDouble() ?? 0.0,
+      max: (json['max'] as num?)?.toDouble() ?? 100.0,
+      defaultValue: (json['defaultValue'] as num?)?.toDouble() ?? 0.0,
+      step: (json['step'] as num?)?.toDouble() ?? 1.0,
+      unit: json['unit'] as String?,
+      labels: (json['labels'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -37,10 +63,20 @@ class ParameterDescriptor {
           max == other.max &&
           defaultValue == other.defaultValue &&
           step == other.step &&
-          unit == other.unit;
+          unit == other.unit &&
+          listEquals(labels, other.labels);
 
   @override
-  int get hashCode => Object.hash(id, name, min, max, defaultValue, step, unit);
+  int get hashCode => Object.hash(
+        id,
+        name,
+        min,
+        max,
+        defaultValue,
+        step,
+        unit,
+        labels == null ? null : Object.hashAll(labels!),
+      );
 
   @override
   String toString() =>
@@ -81,6 +117,22 @@ class ParameterValue {
     return ParameterValue(
       descriptor: descriptor,
       currentValue: currentValue ?? this.currentValue,
+    );
+  }
+
+  /// Serializes this parameter value into a JSON map.
+  Map<String, dynamic> toJson() => {
+        'descriptor': descriptor.toJson(),
+        'currentValue': currentValue,
+      };
+
+  /// Deserializes a [ParameterValue] from a JSON map.
+  factory ParameterValue.fromJson(Map<String, dynamic> json) {
+    return ParameterValue(
+      descriptor: ParameterDescriptor.fromJson(
+        json['descriptor'] as Map<String, dynamic>? ?? {},
+      ),
+      currentValue: (json['currentValue'] as num?)?.toDouble() ?? 0.0,
     );
   }
 

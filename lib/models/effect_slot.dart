@@ -34,6 +34,29 @@ class EffectSlot {
     );
   }
 
+  /// Serializes this effect slot into a JSON map.
+  Map<String, dynamic> toJson() => {
+        'slotIndex': slotIndex,
+        'effectId': effectId,
+        'effectName': effectName,
+        'isEnabled': isEnabled,
+        'parameters': parameters.map((p) => p.toJson()).toList(),
+      };
+
+  /// Deserializes an [EffectSlot] from a JSON map.
+  factory EffectSlot.fromJson(Map<String, dynamic> json) {
+    return EffectSlot(
+      slotIndex: json['slotIndex'] as int? ?? 0,
+      effectId: json['effectId'] as String? ?? '',
+      effectName: json['effectName'] as String? ?? '',
+      isEnabled: json['isEnabled'] as bool? ?? true,
+      parameters: (json['parameters'] as List<dynamic>?)
+              ?.map((e) => ParameterValue.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||

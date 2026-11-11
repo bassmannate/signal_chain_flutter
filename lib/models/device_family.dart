@@ -50,5 +50,17 @@ enum DeviceFamily {
 
   /// Returns true if this device is a Line 6 Bass Pod Pro.
   bool get isLine6BassPodPro => this == line6BassPodPro;
+
+  /// Serializes the enum instance to a stable string identifier.
+  String toJson() => name;
+
+  /// Deserializes a string identifier into a [DeviceFamily], falling back to [DeviceFamily.unknown].
+  static DeviceFamily fromJson(dynamic json) {
+    if (json is! String) return DeviceFamily.unknown;
+    return DeviceFamily.values.firstWhere(
+      (e) => e.name == json,
+      orElse: () => DeviceFamily.unknown,
+    );
+  }
 }
 

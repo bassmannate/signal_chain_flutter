@@ -183,22 +183,34 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
 
 ---
 
+### 3.4 Effect & Parameter Metadata Catalogs (`lib/protocols/catalogs/`)
+
+- `EffectDefinition`: Immutable specification of an effect type (`effectId`, `name`, `category`, `deviceFamily`, `List<ParameterDescriptor> parameters`).
+- `EffectCatalogRegistry`: Service resolving effect definitions by `DeviceFamily` and `effectId`, returning fallback definitions for unmapped DSP IDs and normalizing hex identifiers.
+- `ZoomMsPlusCatalog`: Core MS-60B+ and MS Plus effects across 11 categories (Dynamics, Filter/EQ, Drive, Preamp, Amp Model, Modulation, Pitch, Synth, SFX, Delay, Reverb) with complete parameter descriptors and discrete labels.
+- `Line6BassPodProCatalog`: 16 Amp models, 8 Cabinet models, Compressor block, and 8 Modulation/Delay effects with exact CC/edit buffer parameter mappings.
+
+---
+
 ## 4. Immutable Domain Models (`lib/models/`)
 
-### 4.1 Device Models (`lib/models/device/`)
-- `DeviceFamily`: Enum (`zoomMsPlus`, `line6BassPodPro`).
-- `DeviceModelDescriptor`: Model name, max effect slots, supported sample rates, capabilities (e.g. tuner, tap tempo, expression).
-- `ConnectedDevice`: Active connection state, firmware revision, input/output port assignments.
+### 4.1 Device Models (`lib/models/device_family.dart`)
+- `DeviceFamily`: Enum (`zoomMs50gPlus`, `zoomMs60bPlus`, `zoomMs70cdrPlus`, `zoomMs200dPlus`, `line6BassPodPro`, `unknown`).
+  * Stable string key serialization via `toJson()` and fallback-safe `fromJson()`.
 
-### 4.2 Patch & Chain Models (`lib/models/patch/`)
+### 4.2 Patch & Chain Models (`lib/models/patch.dart`, `lib/models/effect_slot.dart`)
 - `Patch`:
   ```dart
   class Patch {
     final String id;
     final String name;
-    final int? slotIndex;
-    final double tempoBpm;
-    final List<EffectSlot> effectSlots;
+    final DeviceFamily deviceFamily;
+    final int? programNumber;
+    final List<EffectSlot> slots;
+    final List<String> tags;
+    final String? author;
+    final String? notes;
+    final DateTime? updatedAt;
     final Map<String, dynamic> metadata;
   }
   ```
@@ -206,41 +218,47 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
   ```dart
   class EffectSlot {
     final int slotIndex;
-    final bool isEnabled;
     final String effectId;
     final String effectName;
+    final bool isEnabled;
     final List<ParameterValue> parameters;
   }
   ```
 
-### 4.3 Parameter Models (`lib/models/parameter/`)
+### 4.3 Parameter Models (`lib/models/parameter_descriptor.dart`)
 - `ParameterDescriptor`:
   ```dart
-  enum ParameterType { integer, float, enumeration, toggle }
-
   class ParameterDescriptor {
     final String id;
     final String name;
-    final ParameterType type;
-    final double minValue;
-    final double maxValue;
+    final double min;
+    final double max;
     final double defaultValue;
     final double step;
     final String? unit;
-    final List<String>? enumValues;
+    final List<String>? labels;
   }
   ```
 - `ParameterValue`:
   ```dart
   class ParameterValue {
-    final String parameterId;
-    final double value;
+    final ParameterDescriptor descriptor;
+    final double currentValue;
   }
   ```
 
 ---
 
-## 5. State Management & Feature Modules (`lib/features/`)
+## 5. Storage & Preset Library Layer (`lib/core/storage/`)
+
+### 5.1 Repository Contracts & Implementations
+- `PatchLibraryRepository`: Abstract contract defining search, filtering, CRUD, JSON import/export, and raw SysEx import/export.
+- `InMemoryPatchLibraryRepository`: Deterministic in-memory repository for unit tests and UI preview environments.
+- `FileSystemPatchLibraryRepository`: Pure `dart:io` repository providing atomic write-to-temp-then-rename persistence, searching, tag filtering, and file-level `.json` and `.syx` import/export.
+
+---
+
+## 6. State Management & Feature Modules (`lib/features/`)
 
 Built on `flutter_riverpod` (Notifier / AsyncNotifier pattern).
 

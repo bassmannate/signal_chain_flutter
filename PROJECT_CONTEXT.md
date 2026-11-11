@@ -11,8 +11,8 @@ The goal of this Flutter rewrite is to replace the heavier Electron desktop foot
 ### Milestone Status
 - **Milestone 1:** Project Scaffolding, Domain Models & Core MIDI Abstraction — **Completed**
 - **Milestone 2:** Pure Dart Protocol & SysEx Engine (`SysexCodec`, `ZoomMsPlusProtocol`, `Line6BassPodProProtocol`) — **Completed**
-- **Milestone 3:** Patch Library & Local Persistence Layer — **Ready / Next**
-- **Milestone 4:** Cross-Platform UI & Real-Time Parameter Control — **Planned**
+- **Milestone 3:** Effect Catalogs, Patch Serialization & Local Persistence Layer — **Completed**
+- **Milestone 4:** Cross-Platform UI & Real-Time Parameter Control (`flutter_riverpod`, Virtual Pedalboard, Parameter Editors) — **Ready / Next**
 
 ---
 

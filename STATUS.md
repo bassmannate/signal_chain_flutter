@@ -1,7 +1,7 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 2 Complete (Pure Dart Protocol & SysEx Engine)  
-**Active Milestone:** Milestone 3 (Ready / Next)  
+**Current Status:** Milestone 3 Complete (Effect Catalogs, Patch Serialization & Local Persistence Layer)  
+**Active Milestone:** Milestone 4 (Ready / Next)  
 **Last Updated:** 2026-11-10
 
 ---
@@ -67,23 +67,37 @@
 
 ---
 
-### 🟡 Milestone 3: Patch Library & Local Persistence Layer
-*Status:* **Ready / Next**
-- [ ] File serialization engine:
-  * Raw SysEx (`.syx`) import/export.
-  * Structured JSON patch and bank definitions.
-- [ ] Local storage repository interface & implementation for user preset libraries.
-- [ ] Unit tests for patch serialization and library persistence (`test/models/`, `test/features/library/`).
+### 🟢 Milestone 3: Effect Catalogs, Patch Serialization & Local Persistence Layer
+*Status:* **Completed**
+- [x] **Deterministic JSON Serialization for Domain Models (`lib/models/`):**
+  * `DeviceFamily`: Stable string serialization (`toJson()`) and fallback to `DeviceFamily.unknown` (`fromJson()`).
+  * `ParameterDescriptor` & `ParameterValue`: Symmetrical `toJson()` / `fromJson()` with range, step, unit, and discrete label list preservation.
+  * `EffectSlot`: Symmetrical `toJson()` / `fromJson()`.
+  * `Patch`: Rich metadata support with `tags` (`List<String>`), `author` (`String?`), `notes` (`String?`), and `updatedAt` (`DateTime?`), full `copyWith` support, and value equality.
+- [x] **Effect & Parameter Metadata Catalogs (`lib/protocols/catalogs/`):**
+  * `EffectDefinition` immutable model and `EffectCatalogRegistry` lookup service with hex normalization and clean fallback definitions.
+  * `ZoomMsPlusCatalog`: Core MS-60B+ and MS Plus effects extracted across 11 categories (Dynamics, Filter/EQ, Drive, Preamp, Amp Models, Modulation, Pitch, Synth, SFX, Delay, Reverb) with complete parameter definitions and discrete labels.
+  * `Line6BassPodProCatalog`: 16 Amp models, 8 Cabinet models, Compressor block, and 8 Modulation/Delay effects.
+  * Bidirectional catalog lookup integration in `ZoomMsPlusProtocol` and `Line6BassPodProProtocol`.
+- [x] **Local Storage Persistence Layer (`lib/core/storage/`):**
+  * `PatchLibraryRepository` abstract contract with search filtering, tag matching, CRUD operations, JSON import/export, and raw SysEx import/export.
+  * `InMemoryPatchLibraryRepository`: Deterministic in-memory repository for unit testing and preview states.
+  * `FileSystemPatchLibraryRepository`: Pure `dart:io` repository with atomic write-via-temp-file safety (`.tmp_<timestamp>` rename) and disk-level `.json` and `.syx` import/export.
+- [x] **Comprehensive Unit Test Suites (100% passing):**
+  * `test/models/models_test.dart` (11 tests, +5 tests for JSON round-trip and metadata).
+  * `test/protocols/catalogs/effect_catalog_test.dart` (12 tests).
+  * `test/core/storage/patch_library_repository_test.dart` (14 tests).
+- [x] Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
 
 ---
 
-### ⚪ Milestone 4: Cross-Platform UI & Real-Time Parameter Control
-*Status:* **Planned**
-- [ ] Add `flutter_riverpod` state layer.
-- [ ] Riverpod state providers:
-  * `deviceConnectionController` (auto-scan, connection lifecycle).
-  * `activePatchController` (live editing, undo/redo buffer).
-  * `libraryController` (preset management).
+### 🟡 Milestone 4: Cross-Platform UI & Real-Time Parameter Control
+*Status:* **Ready / Next**
+- [ ] Add `flutter_riverpod` state layer:
+  * `midiTransportProvider` (mocked in tests, native in production).
+  * `deviceDiscoveryController` (auto-scan, connection lifecycle).
+  * `activePatchController` (live editing, undo/redo buffer, debounced MIDI transmissions).
+  * `patchLibraryController` (local persistence, preset search, bank management).
 - [ ] Cross-platform UI components:
   * Device selector & status header.
   * Virtual pedalboard effect chain visualization (drag-to-reorder slots).
@@ -104,7 +118,9 @@
 | **Legacy Source Code** | Audited | Sibling archive audited at `~/.cache/.fr-CFTZU3/` |
 | **Directory Scaffolding** | Complete | Clean architecture layers maintained |
 | **Core MIDI Transport** | Complete | `MidiTransport`, `MidiMessage`, `MockMidiTransport` |
-| **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch` |
+| **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch` (with JSON round-trip & metadata) |
 | **SysEx & Protocol Engine** | Complete | `SysexCodec`, `ZoomMsPlusProtocol`, `Line6BassPodProProtocol` |
+| **Effect Catalogs** | Complete | `EffectDefinition`, `EffectCatalogRegistry`, `ZoomMsPlusCatalog`, `Line6BassPodProCatalog` |
+| **Persistence Repositories** | Complete | `PatchLibraryRepository`, `InMemoryPatchLibraryRepository`, `FileSystemPatchLibraryRepository` |
 | **Static Analysis** | Passing (0 issues) | Verified via `flutter analyze --no-pub` |
-| **Unit Tests** | 100% Passing | 58 unit tests passing across core, models, and protocols |
+| **Unit Tests** | 100% Passing | 89 unit tests passing across core, models, protocols, catalogs, and storage |
