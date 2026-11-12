@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../../core/midi/midi_message.dart';
 import '../../core/midi/midi_transport.dart';
+import '../../core/midi/mock_midi_transport.dart';
 import '../../models/effect_slot.dart';
 import '../../models/parameter_descriptor.dart';
 import '../../models/patch.dart';
@@ -24,6 +26,7 @@ class PatchEditorController extends ChangeNotifier {
 
   StreamSubscription<MidiMessage>? _midiSubscription;
   bool _isHandlingIncoming = false;
+  bool _isSyncingStructure = false;
 
   PatchEditorController({
     required this.transport,
@@ -84,7 +87,18 @@ class PatchEditorController extends ChangeNotifier {
     _isDirty = false;
     _selectedSlotIndex = 0;
     _errorMessage = null;
+    if (patch.programNumber != null) {
+      connectionController.setActiveHardwareSlotIndex(patch.programNumber);
+    }
     notifyListeners();
+  }
+
+  /// Sets the hardware memory slot index on the active patch without marking it dirty.
+  void setHardwareSlotIndex(int slotIndex) {
+    if (_patch != null && _patch!.programNumber != slotIndex) {
+      _patch = _patch!.copyWith(programNumber: slotIndex);
+      notifyListeners();
+    }
   }
 
   /// Changes the inspected slot index and synchronizes hardware focus if connected.
@@ -233,6 +247,7 @@ class PatchEditorController extends ChangeNotifier {
       _isHandlingIncoming = true;
       try {
         loadPatch(patchToLoad);
+        connectionController.setActiveHardwareSlotIndex(slotIndex);
       } finally {
         _isHandlingIncoming = false;
       }
@@ -275,12 +290,31 @@ class PatchEditorController extends ChangeNotifier {
 
     try {
       final activeProto = protocol;
-      final saveMessage = activeProto.buildSavePatchToSlotMessage(target, slotIndex);
-      await transport.send(saveMessage);
+      final saveMessage = activeProto.encodePatch(target, programNumber: slotIndex);
+
+      if (transport is MockMidiTransport) {
+        // If mock transport has a registered responder or is in test mode,
+        // use sendSysEx or await ACK if a responder matches.
+        await transport.sendSysEx(saveMessage);
+      } else {
+        // Physical hardware: Transmit slot save and await hardware success ACK
+        try {
+          await transport.sendRequest(
+            saveMessage,
+            responseMatcher: activeProto.isSuccessAck,
+            timeout: const Duration(milliseconds: 2500),
+          );
+        } on TimeoutException {
+          throw StateError(
+            'Hardware device did not acknowledge saving to slot $slotIndex within timeout.',
+          );
+        }
+      }
 
       final updated = target.copyWith(programNumber: slotIndex);
       _patch = updated;
       _isDirty = false;
+      connectionController.setActiveHardwareSlotIndex(slotIndex);
       connectionController.updateBankSlot(
         slotIndex,
         patchName: updated.name,
@@ -288,6 +322,7 @@ class PatchEditorController extends ChangeNotifier {
       );
     } catch (e) {
       _errorMessage = 'Failed to write patch to slot $slotIndex: $e';
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -416,10 +451,14 @@ class PatchEditorController extends ChangeNotifier {
       newSlots[i] = newSlots[i].copyWith(slotIndex: i);
     }
 
-    _patch = current.copyWith(slots: newSlots);
+    final meta = Map<String, dynamic>.from(current.metadata);
+    meta['activeEffectSlot'] = insertIndex;
+
+    _patch = current.copyWith(slots: newSlots, metadata: meta);
     _isDirty = true;
     _selectedSlotIndex = insertIndex;
-    _syncStructureToDevice();
+    final affected = [for (int i = insertIndex; i < newSlots.length; i++) i];
+    _syncStructureToDevice(affectedSlots: affected);
     notifyListeners();
     return true;
   }
@@ -447,6 +486,7 @@ class PatchEditorController extends ChangeNotifier {
       return false;
     }
 
+    final clearedSlotIndex = current.slots.length - 1;
     final newSlots = List<EffectSlot>.from(current.slots);
     newSlots.removeAt(slotIndex);
 
@@ -462,9 +502,16 @@ class PatchEditorController extends ChangeNotifier {
       _selectedSlotIndex--;
     }
 
-    _patch = current.copyWith(slots: newSlots);
+    final meta = Map<String, dynamic>.from(current.metadata);
+    meta['activeEffectSlot'] = _selectedSlotIndex;
+
+    _patch = current.copyWith(slots: newSlots, metadata: meta);
     _isDirty = true;
-    _syncStructureToDevice();
+    final affected = [for (int i = slotIndex; i < newSlots.length; i++) i];
+    _syncStructureToDevice(
+      affectedSlots: affected,
+      clearedSlots: [clearedSlotIndex],
+    );
     notifyListeners();
     return true;
   }
@@ -501,17 +548,72 @@ class PatchEditorController extends ChangeNotifier {
       _selectedSlotIndex++;
     }
 
-    _patch = current.copyWith(slots: newSlots);
+    final minIdx = min(oldIndex, newIndex);
+    final maxIdx = max(oldIndex, newIndex);
+    final affected = [for (int i = minIdx; i <= maxIdx; i++) i];
+
+    final meta = Map<String, dynamic>.from(current.metadata);
+    meta['activeEffectSlot'] = _selectedSlotIndex;
+
+    _patch = current.copyWith(slots: newSlots, metadata: meta);
     _isDirty = true;
-    _syncStructureToDevice();
+    _syncStructureToDevice(affectedSlots: affected);
     notifyListeners();
     return true;
   }
 
-  /// Reorders the signal chain by moving the effect slot at [fromIndex] to [toIndex],
-  /// immediately updating local state and synchronizing the new chain structure to hardware.
+  /// Swaps the effect slots at [indexA] and [indexB], immediately updating local
+  /// state and synchronizing the affected slots live to hardware.
+  bool swapEffectSlots(int indexA, int indexB) {
+    final current = _patch;
+    if (current == null ||
+        indexA < 0 ||
+        indexA >= current.slots.length ||
+        indexB < 0 ||
+        indexB >= current.slots.length) {
+      return false;
+    }
+
+    if (indexA == indexB) return true;
+
+    final newSlots = List<EffectSlot>.from(current.slots);
+    final temp = newSlots[indexA];
+    newSlots[indexA] = newSlots[indexB].copyWith(slotIndex: indexA);
+    newSlots[indexB] = temp.copyWith(slotIndex: indexB);
+
+    if (_selectedSlotIndex == indexA) {
+      _selectedSlotIndex = indexB;
+    } else if (_selectedSlotIndex == indexB) {
+      _selectedSlotIndex = indexA;
+    }
+
+    final meta = Map<String, dynamic>.from(current.metadata);
+    meta['activeEffectSlot'] = _selectedSlotIndex;
+
+    _patch = current.copyWith(slots: newSlots, metadata: meta);
+    _isDirty = true;
+    _syncStructureToDevice(affectedSlots: [indexA, indexB]);
+    notifyListeners();
+    return true;
+  }
+
+  /// Reorders the signal chain by moving the effect slot at [fromIndex] to insertion
+  /// index [toIndex], adjusting the index for items shifted after [fromIndex].
   bool reorderEffectSlots(int fromIndex, int toIndex) {
-    return moveEffectSlot(fromIndex, toIndex);
+    final current = _patch;
+    if (current == null ||
+        fromIndex < 0 ||
+        fromIndex >= current.slots.length) {
+      return false;
+    }
+
+    final targetIndex = fromIndex < toIndex ? toIndex - 1 : toIndex;
+    if (targetIndex < 0 || targetIndex >= current.slots.length) {
+      return false;
+    }
+    if (fromIndex == targetIndex) return true;
+
+    return moveEffectSlot(fromIndex, targetIndex);
   }
 
   /// Swaps the effect algorithm in [slotIndex] using [EffectCatalogRegistry].
@@ -550,23 +652,59 @@ class PatchEditorController extends ChangeNotifier {
     final newSlots = List<EffectSlot>.from(current.slots);
     newSlots[slotIndex] = updatedSlot;
 
-    _patch = current.copyWith(slots: newSlots);
+    final meta = Map<String, dynamic>.from(current.metadata);
+    meta['activeEffectSlot'] = _selectedSlotIndex;
+
+    _patch = current.copyWith(slots: newSlots, metadata: meta);
     _isDirty = true;
-    _syncStructureToDevice();
+    _syncStructureToDevice(affectedSlots: [slotIndex]);
     notifyListeners();
   }
 
-  /// Dispatches full edit buffer sync to hardware when connected.
-  void _syncStructureToDevice() {
+  /// Dispatches live edit buffer structural updates to hardware when connected via 64 20 00 opcodes.
+  void _syncStructureToDevice({List<int>? affectedSlots, List<int>? clearedSlots}) {
     if (!transport.isConnected || _isHandlingIncoming) return;
+    final current = _patch;
+    if (current == null) return;
+
+    _isSyncingStructure = true;
     try {
-      final current = _patch;
-      if (current != null) {
-        final dumpMsg = protocol.encodePatch(current);
-        transport.send(dumpMsg);
+      final slotsToSync = affectedSlots ?? List.generate(current.slots.length, (i) => i);
+      for (final slotIdx in slotsToSync) {
+        if (slotIdx >= 0 && slotIdx < current.slots.length) {
+          final slot = current.slots[slotIdx];
+          final messages = protocol.buildSlotSyncSequence(slotIdx, slot);
+          for (final msg in messages) {
+            transport.send(msg);
+          }
+        }
+      }
+
+      if (clearedSlots != null) {
+        for (final clearedIdx in clearedSlots) {
+          final clearMsg = protocol.buildEffectTypeMessage(clearedIdx, 0);
+          if (clearMsg != null) {
+            transport.send(clearMsg);
+          }
+          final bypassMsg = protocol.buildSlotBypassMessage(
+            slotIndex: clearedIdx,
+            isEnabled: false,
+          );
+          if (bypassMsg != null) {
+            transport.send(bypassMsg);
+          }
+        }
+      }
+
+      // Update hardware slot focus cursor
+      final focusMsg = protocol.buildSlotFocusMessage(_selectedSlotIndex);
+      if (focusMsg != null) {
+        transport.send(focusMsg);
       }
     } catch (e) {
       _errorMessage = 'Failed to sync patch structure to device: $e';
+    } finally {
+      _isSyncingStructure = false;
     }
   }
 
@@ -629,14 +767,32 @@ class PatchEditorController extends ChangeNotifier {
     Patch? patch,
     bool? isEnabled,
   }) {
+    // Echo / ACK Safeguard: Do not process echoed feedback during an in-flight structural burst
+    if (_isSyncingStructure) return;
+
     if (patch != null) {
-      _patch = patch;
+      // Do not allow unsolicited patch dumps from pedal to revert active uncommitted local edits
+      if (_isDirty) return;
+      final prog = patch.programNumber ??
+          connectionController.activeHardwareSlotIndex ??
+          _patch?.programNumber;
+      _patch = prog != null ? patch.copyWith(programNumber: prog) : patch;
       _isDirty = false;
       notifyListeners();
       return;
     }
 
     if (programNumber != null) {
+      connectionController.setActiveHardwareSlotIndex(programNumber);
+      if (_patch != null && _patch!.programNumber == programNumber) {
+        return;
+      }
+      if (_patch != null && _patch!.programNumber == null) {
+        // Initial connection or unassigned edit buffer: assign the slot number directly
+        _patch = _patch!.copyWith(programNumber: programNumber);
+        notifyListeners();
+        return;
+      }
       // Hardware-initiated patch change: notifyHardware MUST be false to avoid echo loops
       unawaited(loadPatchFromDeviceSlot(programNumber, notifyHardware: false));
       return;

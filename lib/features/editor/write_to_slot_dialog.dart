@@ -28,8 +28,10 @@ class _WriteToSlotDialogState extends State<WriteToSlotDialog> {
   @override
   void initState() {
     super.initState();
-    final currentProg = widget.editorController.patch?.programNumber;
-    _selectedSlot = currentProg != null && currentProg >= 0 && currentProg < 100
+    final totalSlots = widget.connectionController.activeFamily.totalMemorySlots;
+    final currentProg = widget.editorController.patch?.programNumber ??
+        widget.connectionController.activeHardwareSlotIndex;
+    _selectedSlot = currentProg != null && currentProg >= 0 && currentProg < totalSlots
         ? currentProg
         : 0;
   }
@@ -195,6 +197,13 @@ class _WriteToSlotDialogState extends State<WriteToSlotDialog> {
     try {
       await widget.editorController.savePatchToDeviceSlot(_selectedSlot);
       if (mounted) {
+        if (widget.editorController.errorMessage != null) {
+          setState(() {
+            _isSaving = false;
+            _statusMessage = widget.editorController.errorMessage;
+          });
+          return;
+        }
         Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

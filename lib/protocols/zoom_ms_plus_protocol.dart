@@ -37,6 +37,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   static const int cmdParameterEdit = 0x20; // with prefix 0x64 0x20 0x00
   static const int cmdParameterAccepted = 0x01; // with prefix 0x64 0x20 0x01
   static const int cmdBankAndProgramV2 = 0x26; // with prefix 0x64 0x26 0x00 0x00
+  static const int cmdRequestBankAndProgram = 0x33; // Zoom request current bank and program opcode
   static const int cmdCurrentPatchDumpV1 = 0x28; // legacy Zoom current patch dump
   static const int cmdParameterEditV1 = 0x31; // legacy Zoom real-time parameter edit
 
@@ -49,6 +50,9 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
 
   /// Fixed name field length in NAME chunk for MS Plus (28 ASCII chars + 4 nulls = 32 bytes).
   static const int msPlusNameLength = 32;
+
+  /// Fixed buffer length of unpacked PTCF slot payload reported by Zoom MS Plus hardware.
+  static const int msPlusPtcfSlotLength = 848;
 
   /// Default maximum number of effect blocks supported on MS Plus series.
   static const int defaultMaxSlots = 6;
@@ -96,7 +100,15 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
       MidiMessage.sysEx([manufacturerId, 0x00, familyIdByte, cmdPcModeDisable]),
       // 2. Send Parameter Edit Enable (0x50) to allow normal playable screen and live SysEx notifications
       MidiMessage.sysEx([manufacturerId, 0x00, familyIdByte, cmdParameterEditEnable]),
+      // 3. Request current bank & program number (0x33)
+      MidiMessage.sysEx([manufacturerId, 0x00, familyIdByte, cmdRequestBankAndProgram]),
     ];
+  }
+
+  @override
+  MidiMessage buildCurrentSlotRequest() {
+    // F0 52 00 6E 33 F7
+    return MidiMessage.sysEx([manufacturerId, 0x00, familyIdByte, cmdRequestBankAndProgram]);
   }
 
   @override
@@ -152,6 +164,77 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
       0x00,
       0x00,
     ]);
+  }
+
+  @override
+  MidiMessage buildEffectTypeMessage(int slotIndex, int effectId) {
+    // Zoom MS Plus: paramNumber 1 = Effect DSP ID
+    // 32-bit effectId packed into 5 bytes of 7-bit MIDI data (LSB first)
+    // F0 52 00 6E 64 20 00 <slot> 01 <v0> <v1> <v2> <v3> <v4> F7
+    return MidiMessage.sysEx([
+      manufacturerId,
+      0x00,
+      familyIdByte,
+      0x64,
+      cmdParameterEdit,
+      0x00,
+      slotIndex & 0x7F,
+      0x01, // paramNumber = 1 (Effect ID)
+      effectId & 0x7F,
+      (effectId >> 7) & 0x7F,
+      (effectId >> 14) & 0x7F,
+      (effectId >> 21) & 0x7F,
+      (effectId >> 28) & 0x7F,
+    ]);
+  }
+
+  /// Alias for [buildEffectTypeMessage] accepting dynamic or integer effectId.
+  MidiMessage buildSlotEffectChangeMessage({
+    required int slotIndex,
+    required dynamic effectId,
+  }) {
+    final int dspId = effectId is int
+        ? effectId
+        : _parseEffectId(effectId.toString());
+    return buildEffectTypeMessage(slotIndex, dspId);
+  }
+
+  @override
+  List<MidiMessage> buildSlotSyncSequence(int slotIndex, EffectSlot slot) {
+    final messages = <MidiMessage>[];
+    final dspId = _parseEffectId(slot.effectId);
+
+    // 1. Effect Algorithm ID (paramNumber = 1)
+    messages.add(buildEffectTypeMessage(slotIndex, dspId));
+
+    // 2. Bypass State (paramNumber = 0)
+    messages.add(buildSlotBypassMessage(
+      slotIndex: slotIndex,
+      isEnabled: slot.isEnabled,
+    ));
+
+    // 3. Exposed parameter knob values (paramNumber = p + 2)
+    for (int p = 0; p < slot.parameters.length; p++) {
+      messages.add(buildParameterEditMessage(
+        slotIndex: slotIndex,
+        paramIndex: p,
+        value: slot.parameters[p].currentValue.round(),
+      ));
+    }
+
+    // 4. Raw trailing / hidden DSP parameters
+    if (slot.rawTrailingValues != null) {
+      for (int t = 0; t < slot.rawTrailingValues!.length; t++) {
+        final p = slot.parameters.length + t;
+        messages.add(buildParameterEditMessage(
+          slotIndex: slotIndex,
+          paramIndex: p,
+          value: slot.rawTrailingValues![t].round(),
+        ));
+      }
+    }
+
+    return messages;
   }
 
   @override
@@ -416,6 +499,21 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     }
 
     return null;
+  }
+
+  @override
+  bool isSuccessAck(MidiMessage message) {
+    final data = message.data;
+    if (!message.isSysEx || data.length < 7) return false;
+    if (data[1] != manufacturerId || data[2] != 0x00) return false;
+    final isZoomFamily = data[3] == familyIdByte ||
+        data[3] == 0x58 ||
+        data[3] == 0x59 ||
+        data[3] == 0x61;
+    if (!isZoomFamily) return false;
+
+    // Zoom success response: F0 52 00 <familyIdByte> 00 00 F7
+    return data[4] == 0x00 && data[5] == 0x00 && data[6] == 0xF7;
   }
 
   @override
@@ -694,17 +792,20 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     int patchesPerBank = 10,
   }) {
     final ptcfData = encodePtcf(patch);
-    final packed7Bit = SysexCodec.pack8BitTo7Bit(ptcfData);
-    final crc = SysexCodec.calculateZoom7BitCrc(ptcfData);
+    // Zoom MS Plus hardware requires fixed 848-byte unpacked PTCF buffer
+    final paddedPtcf = Uint8List(msPlusPtcfSlotLength);
+    paddedPtcf.setRange(0, ptcfData.length, ptcfData);
 
-    final patchLength = ptcfData.length;
-    final lenLsb = patchLength & 0x7F;
-    final lenMsb = (patchLength >> 7) & 0x7F;
+    final packed7Bit = SysexCodec.pack8BitTo7Bit(paddedPtcf);
+    final crc = SysexCodec.calculateZoom7BitCrc(paddedPtcf);
+
+    final lenLsb = msPlusPtcfSlotLength & 0x7F;
+    final lenMsb = (msPlusPtcfSlotLength >> 7) & 0x7F;
 
     final bank = (programNumber ~/ patchesPerBank).clamp(0, 127);
     final prog = (programNumber % patchesPerBank).clamp(0, 127);
 
-    // F0 52 00 6E 45 00 00 <bank_lsb> <bank_msb> <prog_lsb> <prog_msb> <len_lsb> <len_msb> <data...> <CRC> 00 F7
+    // F0 52 00 6E 45 00 00 <bank_lsb> <bank_msb> <prog_lsb> <prog_msb> <len_lsb> <len_msb> <data...> <CRC> F7
     final List<int> payload = [
       manufacturerId,
       0x00,
@@ -720,7 +821,6 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
       lenMsb,
       ...packed7Bit,
       ...crc,
-      0x00, // zero padding
     ];
 
     return MidiMessage.sysEx(payload);
@@ -732,13 +832,17 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
       return buildSavePatchToSlotMessage(patch, programNumber);
     }
     final ptcfData = encodePtcf(patch);
-    final packed7Bit = SysexCodec.pack8BitTo7Bit(ptcfData);
-    final crc = SysexCodec.calculateZoom7BitCrc(ptcfData);
+    // Zoom MS Plus hardware requires fixed 848-byte unpacked PTCF buffer for current patch dump V2
+    final paddedPtcf = Uint8List(msPlusPtcfSlotLength);
+    paddedPtcf.setRange(0, ptcfData.length, ptcfData);
 
-    final patchLength = ptcfData.length;
-    final lenLsb = patchLength & 0x7F;
-    final lenMsb = (patchLength >> 7) & 0x7F;
+    final packed7Bit = SysexCodec.pack8BitTo7Bit(paddedPtcf);
+    final crc = SysexCodec.calculateZoom7BitCrc(paddedPtcf);
 
+    final lenLsb = msPlusPtcfSlotLength & 0x7F;
+    final lenMsb = (msPlusPtcfSlotLength >> 7) & 0x7F;
+
+    // F0 52 00 6E 64 12 01 <len_lsb> <len_msb> <data...> <CRC> F7
     final List<int> payload = [
       manufacturerId,
       0x00,
@@ -750,7 +854,6 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
       lenMsb,
       ...packed7Bit,
       ...crc,
-      0x00, // zero padding
     ];
 
     return MidiMessage.sysEx(payload);
@@ -824,8 +927,59 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     final tempo = ((patch.metadata['tempo'] as num?)?.round()) ?? 120;
     prm2Bytes[prm2Bytes.length - 2] = (tempo & 0x0F) << 4;
     prm2Bytes[prm2Bytes.length - 1] = (tempo >> 4) & 0x0F;
-    final activeSlot = (patch.metadata['activeEffectSlot'] as int?) ?? 0;
-    prm2Bytes[10] = (activeSlot & 0x07) << 5;
+    final activeSlot = (patch.metadata['activeEffectSlot'] as int?) ??
+        (patch.metadata['selectedSlotIndex'] as int?) ??
+        0;
+    // Zoom MS Plus PRM2:
+    // Volume defaults to 100 on hardware (ZoomPatch.prm2PatchVolume = 100)
+    // prm2Buffer[9] lower 3 bits of volume shifted by 5: ((volume & 0x07) << 5)
+    // prm2Buffer[10] upper 4 bits of volume shifted by 3 + activeEffectSlot << 5
+    const patchVolume = 100;
+    prm2Bytes[9] = (patchVolume & 0x07) << 5;
+    prm2Bytes[10] = (((patchVolume & 0x78) >> 3) & 0x0F) | ((activeSlot & 0x07) << 5);
+
+    // Bytes 11-12: edit effect slot bits via Zoom PRM2 pattern
+    // pattern = 0b101010000110010000100000
+    // masked = pattern & (0xFFFFFF >> (4 * (6 - numEffects)))
+    // bits = (masked >> ((activeSlot + 1) * 4)) & 0xFFFF
+    const prm2BitPattern = 0x00A86420; // 0b101010000110010000100000
+    final shiftCount = (4 * (6 - numEffects.clamp(1, 6))).clamp(0, 24);
+    final maskedPattern = prm2BitPattern & (0xFFFFFF >> shiftCount);
+    final slotBits = (maskedPattern >> ((activeSlot + 1) * 4)) & 0xFFFF;
+    prm2Bytes[11] = slotBits & 0xFF;
+    prm2Bytes[12] = (slotBits >> 8) & 0xFF;
+
+    // Dynamically compute and populate PRM2 effect category bitmasks based on reordered chain
+    int prm2PreampBits = 0;
+    int prm2BpmBits = 0;
+    int prm2LineSelBits = 0;
+    for (int i = 0; i < numEffects; i++) {
+      final slot = i < patch.slots.length ? patch.slots[i] : null;
+      if (slot != null) {
+        final dspId = _parseEffectId(slot.effectId);
+        final group = (dspId >> 24) & 0xFF;
+        // Group 4 (or preamp naming) is Preamp on Zoom MS Plus
+        if (group == 4 || slot.effectName.toLowerCase().contains('preamp')) {
+          prm2PreampBits |= (1 << i);
+        }
+        if (dspId == 0x07000ff0) {
+          prm2BpmBits |= (1 << i);
+        }
+        if (dspId == 0x07000f00 || dspId == 0x09000f00) {
+          prm2LineSelBits |= (1 << i);
+        }
+      }
+    }
+
+    // Byte 20: Preamp slot bitmask shifted left by 1 (bits 1..6)
+    prm2Bytes[20] = ((prm2PreampBits & 0x3F) << 1);
+
+    // Bytes 21-22: BPM slot bitmask (bits 0..5)
+    prm2Bytes[21] = ((prm2BpmBits & 0x0F) << 4);
+    prm2Bytes[22] = (((prm2BpmBits & 0x30) >> 4) | ((prm2LineSelBits & 0x01) << 7));
+
+    // Byte 23: Line Selector slot bitmask (bits 1..5 shifted right by 1)
+    prm2Bytes[23] = ((prm2LineSelBits & 0x3E) >> 1);
 
     // Build NAME chunk (32 bytes: 28 ascii + 4 nulls)
     final nameBytes = Uint8List(msPlusNameLength);

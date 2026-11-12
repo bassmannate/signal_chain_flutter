@@ -71,7 +71,8 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
               slot.bankAndProgramNumber.contains(q);
         }).toList();
 
-        final activeProg = widget.editorController.patch?.programNumber;
+        final activeProg = widget.editorController.patch?.programNumber ??
+            widget.connectionController.activeHardwareSlotIndex;
 
         return Container(
           width: widget.isPanel ? 340 : double.infinity,

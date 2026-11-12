@@ -21,6 +21,11 @@ The goal of this Flutter rewrite is to replace the heavier Electron desktop foot
 - **Milestone 8.5:** Zoom MS-60B+ Hardware Patch Switch Feedback Loop Elimination & Bidirectional Knob/Bypass Sync — **Completed**
 - **Milestone 8.6:** Physical Footswitch Bypass Real-Time Fix & Bidirectional Effect Slot Focus Synchronization — **Completed**
 - **Milestone 8.7:** Right-to-Left Pedalboard Signal Chain, Rotary Knob Inspector & Parameter Accuracy — **Completed**
+- **Milestone 8.8:** Zoom MS Plus Hardware Slot Write Protocol Alignment & ACK Verification — **Completed**
+- **Milestone 8.9:** Zoom MS Plus Live Structural Chain Sync (Reorder, Swap, Add, Remove & Dynamic PRM2 Bitmasks) — **Completed**
+- **Milestone 8.10:** Zoom MS Plus Initial Active Slot Identification (Opcode 0x33 & Deterministic Bank Signature Fallback) — **Completed**
+- **Milestone 8.11:** Linux ALSA Warm-Restart Reliability & Handshake Pacing (`amidi` Cleanup, Port Drain, Init Pacing & Retry Guards) — **Completed**
+- **Milestone 9:** Platform Packaging & Release Distribution (Linux .deb/AppImage/.desktop, Android USB Host OTG, Windows Portable ZIP, AppImageHub / AppStream compliance) — **Completed**
 
 ---
 
@@ -89,6 +94,9 @@ The project adheres strictly to Clean Architecture separation of concerns:
   - Bidirectional memory slot commands for Zoom MS Plus (`46 00 00` read request, `45 00 00` slot dump/write).
   - Program dump request and write for Line 6 Bass Pod Pro (`0x01`).
   - `BankSlotDescriptor` model representing remote hardware patch indices, synchronization state, and bank/slot formatting (`#42 (5-3)`).
+  - Hardware Memory Slot Saving (`savePatchToDeviceSlot`): Encodes active or target preset via `protocol.encodePatch(target, programNumber: slotIndex)` and transmits binary memory slot dump SysEx over `MidiTransport.sendSysEx(...)` / `send(...)`. Updates `programNumber`, resets dirty flag, and updates local `bankSlots` cache.
+  - Added `MidiTransport.sendSysEx(MidiMessage message)` convenience contract across all transport implementations.
+  - Enhanced `WriteToSlotDialog` with error state handling and snackbar confirmation.
 - **Asynchronous Bank Synchronization:**
   - `DeviceConnectionController.syncDeviceBank`: Non-blocking, incremental fetch of all 100 slots with live progress tracking and error tolerance.
 - **Real-Time Patch Metadata Controls:**
@@ -138,7 +146,82 @@ The project adheres strictly to Clean Architecture separation of concerns:
 
 ---
 
-## 9. Terminal Sandbox Execution Guidelines
+## 9. Hardware Memory Slot Write Protocol Alignment (Milestone 8.8)
+
+- **Zoom MS Plus Hardware Buffer Alignment:**
+  - Standardized unpacked PTCF slot buffer length to fixed 848 bytes (`0x0350`, LSB `0x50`, MSB `0x06`) matching pedal expectations.
+  - Zero-padded PTCF binary payloads up to 848 bytes prior to 7-bit packing and CRC calculation.
+  - Fixed 7-bit MIDI packing to encode all 848 bytes into 970 SysEx data bytes.
+  - Calculated inverted CRC32 ($\sim\text{CRC32}$) across the complete 848-byte padded buffer.
+  - Removed erroneous trailing `0x00` padding byte before `0xF7` (SysEx frame length: exactly 989 bytes).
+  - Applied the same 848-byte length, PRM2 volume ($100$), active slot bit pattern, and CRC framing to edit buffer updates (`0x64 0x12 0x01`).
+- **Hardware ACK Verification & Dialog Guardrails:**
+  - Added `DeviceProtocol.isSuccessAck` matching Zoom ACK: `F0 52 00 <familyIdByte> 00 00 F7`.
+  - Updated `PatchEditorController.savePatchToDeviceSlot` to await hardware ACK response via `transport.sendRequest` with 2500ms timeout on physical devices.
+  - Guarded `WriteToSlotDialog` so write failures/timeouts retain the dialog and display actionable error text rather than prematurely closing with a false success notification.
+
+---
+
+## 10. Live Structural Chain Sync & Reordering Architecture (Milestone 8.9)
+
+- **Root Cause Analysis (Live Reordering & Intermittent Save Revert):**
+  - **`64 12 01` is strictly Device-to-Host:** Sending `64 12 01` (PTCF edit buffer dump) from host to pedal in live edit mode is ignored by the physical DSP and LCD. Worse, it triggers the pedal to echo back its existing edit buffer dump (`64 12 01`), which previously overwrote local state and reverted the user's edits in the app.
+  - **Live Structural Updates via Parameter Opcodes (`64 20 00`):**
+    The MS Plus (`0x6E`) pedal modifies its live edit buffer exclusively via `64 20 00`:
+    * `paramNumber = 1`: Sets the DSP algorithm ID in the slot. The 32-bit ID is packed as 5 bytes of 7-bit MIDI data (`buildEffectTypeMessage`). Passing `effectId = 0` empties/clears the slot.
+    * `paramNumber = 0`: Sets the bypass state (`00` bypassed, `01` active).
+    * `paramNumber = paramIndex + 2`: Sets individual knob parameter values.
+    * Changing effect ID resets DSP parameters to defaults on the pedal; host immediately follows up with all parameter values (`buildSlotSyncSequence`), including preserved `rawTrailingValues`.
+    * `64 20 00 64 01 <slotIndex>`: Focuses the LCD screen cursor on the active slot.
+- **Dynamic PRM2 Bitmasks (`encodePtcf`):**
+  - Reordering slots shifts the physical positions of Preamp, BPM, and Line Selector effects.
+  - In `ZoomMsPlusProtocol.encodePtcf`, PRM2 bitmasks are now dynamically computed from the active chain:
+    * Byte 20 (`prm2PreampSlot`): `(preampBits & 0x3F) << 1` (bitmask of slots containing Preamp models).
+    * Bytes 21–22 (`prm2BPMSlot`): Bitmask of slots with tempo sync.
+    * Bytes 22–23 (`prm2LineSelSlot`): Bitmask of Line Selector slots.
+    * Byte 10 & 11–12: Active cursor slot index bits.
+- **Drag-and-Drop & Nudge Indexing (`SignalChainStripWidget` & `PatchEditorController`):**
+  - **Card-on-card drops & nudge buttons (`<` / `>`):** Route directly to `swapEffectSlots(indexA, indexB)` for an exact slot swap.
+  - **Inter-slot insertion zones (`insertion_zone_$insertIndex`):** Route to `reorderEffectSlots(fromIndex, insertIndex)`, adjusting `insertIndex` (`fromIndex < toIndex ? toIndex - 1 : toIndex`) to account for element removal before insertion.
+  - **Echo & ACK Protection:** In-flight synchronization flag `_isSyncingStructure` and dirty-state guards in `applyExternalHardwareUpdate` prevent incoming ACKs or unsolicited patch dumps from reverting local edits during multi-message structural slot bursts.
+
+---
+
+## 11. Initial Active Memory Slot Identification & Write Dialog Pre-Selection (Milestone 8.10)
+
+- **Root Cause Analysis (Missing Active Slot on Connect):**
+  - **Edit Buffer Dump (`64 12 01`) contains no slot index:** The Zoom MS Plus edit buffer dump contains only length and PTCF binary payload. Consequently, `Patch.programNumber` initialized to `null`.
+  - **Symptoms:** The Hardware Bank sidebar had no slot marked as `ACTIVE IN EDITOR` on initial connection, and opening the "Write to Slot..." dialog defaulted to slot `001` (index 0) rather than the physical pedal's active preset.
+- **Opcode `0x33` Hardware Slot Query:**
+  - Added `DeviceProtocol.buildCurrentSlotRequest()` implemented in `ZoomMsPlusProtocol` as opcode `0x33` (`F0 52 00 6E 33 F7`).
+  - Appended to `ZoomMsPlusProtocol.buildInitSequence()` (`0x53` -> `0x50` -> `0x33`) to request the current bank and program number immediately upon connection.
+  - Automatically captures incoming `64 26 00 00` SysEx or Bank Select CC (`B0 00` / `B0 20`) + Program Change (`C0`) to populate `activeHardwareSlotIndex`.
+- **Deterministic Bank Signature Fallback:**
+  - If the pedal does not explicitly report slot index via opcode `0x33`, `Patch.isSignatureMatch` performs two-pass heuristic matching between the active edit buffer and incoming `0x45` bank slots as they stream in during `syncDeviceBank`:
+    * **Pass 1:** Exact signature match (case-insensitive trimmed name, slot count, effect IDs, bypass states, and parameter values within delta tolerance).
+    * **Pass 2:** Structural signature match (name, slot count, effect IDs, and bypass states, handling unmapped dummy parameters).
+  - As soon as the matching slot is encountered, `DeviceConnectionController.setActiveHardwareSlotIndex` locks onto that slot index without waiting for user patch switches.
+- **Controller & UI Layer Synchronization:**
+  - `DeviceConnectionController.activeHardwareSlotIndex` synchronizes with `PatchEditorController.patch.programNumber`.
+  - In `PatchEditorController.applyExternalHardwareUpdate`, incoming `64 12 01` dumps preserve the known active slot number rather than resetting it to `null`.
+  - `HardwareBankBrowserWidget` inspects `patch.programNumber ?? activeHardwareSlotIndex` to highlight the slot card with `ACTIVE IN EDITOR` and teal border styling immediately after connect/sync.
+  - `WriteToSlotDialog` pre-selects `activeHardwareSlotIndex` in its slot dropdown by default.
+
+---
+
+## 12. Platform Packaging & AppImageHub Metadata Compliance (Milestone 9)
+
+- **Release Packaging Outputs & `.gitignore`:**
+  - Configured root `.gitignore` to exclude all Linux and Windows release staging directories and artifacts (`dist/`, `AppDir/`, `*.AppImage`, `*.deb`, `*.zip`, `*.tar.gz`, `*.tar.xz`, and downloaded `tool/appimagetool`).
+- **Linux Desktop & AppStream Metadata Compliance (`appimage.github.io` / AppImageHub):**
+  - **Desktop Entry (`linux/packaging/signal-chain.desktop`):** Fully compliant with Freedesktop.org specifications with standard categories `Categories=AudioVideo;Audio;Midi;`, proper `Name=Signal Chain`, `Exec=signal-chain %u`, `Icon=signal-chain`, `Type=Application`, and `Comment`. Validated clean via `desktop-file-validate`.
+  - **AppStream MetaInfo (`linux/packaging/io.github.bassmannate.signal_chain.appdata.xml`):** Validated XML matching desktop ID `signal-chain.desktop`, containing component `<id>`, `<metadata_license>FSFAP</metadata_license>`, `<project_license>MIT</project_license>`, `<name>`, `<summary>`, `<description>`, `<developer>`, `<url type="homepage">`, `<url type="bugtracker">`, `<url type="vcs-browser">`, `<provides>`, `<content_rating>`, and release metadata. Validated clean with `appstreamcli validate --strict --no-net`.
+  - **AppImage Build Pipeline Integration (`tool/package_linux_appimage.sh`):** Creates `${APPDIR}/usr/share/metainfo/` and copies `io.github.bassmannate.signal_chain.appdata.xml` into the AppDir alongside desktop entries and icons prior to executing `appimagetool`.
+  - **Packaging Regression Suite:** Verified by `test/packaging_config_test.dart` asserting desktop configuration, icon assets, AppStream XML fields, packaging scripts, and Android/Windows manifest entries.
+
+---
+
+## 13. Terminal Sandbox Execution Guidelines
 
 When running `flutter` or `dart` commands in sandboxed environments:
 1. **Binary Location:** Flutter is installed at `/home/nreynolds/.local/share/flutter/bin/flutter` and Dart at `/home/nreynolds/.local/share/flutter/bin/dart`. Ensure the path is prefixed or exported:

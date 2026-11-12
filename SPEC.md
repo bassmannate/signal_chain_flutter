@@ -122,14 +122,21 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
      * Manufacturer ID: `0x52` (Zoom)
      * Family Code: `0x6E 0x00` (MS Plus series)
      * Model LSB: `0x23` (MS-50G+), `0x25` (MS-200D+), `0x26` (MS-70CDR+), `0x27` (MS-60B+)
-2. **Editor & PC Mode Activation:**
+2. **Editor & PC Mode Activation & Warm Handshake Pacing:**
    - Parameter Edit Enable: `F0 52 00 6E 50 F7` (Disable: `F0 52 00 6E 51 F7`)
    - PC Mode Enable: `F0 52 00 6E 52 F7` (Disable: `F0 52 00 6E 53 F7`)
+   - Initialization Sequence: `0x53` (PC Mode Disable) -> `0x50` (Parameter Edit Enable) -> `0x33` (Request Bank & Program) -> `64 13` (Request Current Patch).
+   - Warm-Restart Pacing: To prevent MIDI FIFO buffer drops on pedal restart or app re-launch, an inter-command pacing delay of 25ms is enforced between init commands and before `64 13`.
+   - Current Patch Request Retry: Host awaits `64 12 01` response with an 800ms timeout (50ms in automated tests); retries once on timeout before launching background bank scans.
+   - Slot Request Retry: During `syncDeviceBank` (`0x46`), individual slot requests that encounter timeouts are retried once before falling back to empty slot descriptors.
+   - ALSA RawMIDI Process Cleanup & Drain: Before binding `amidi -p <port> -d`, stale background `amidi` listeners are terminated (`pkill -9 -f amidi.*$portId`), and the ALSA input stream is drained for 50ms (0ms in tests) to clear leftover partial bytes. On disconnect, `amidi` is killed with `SIGTERM` and escalated to `SIGKILL` after 150ms.
 3. **Patch Data Requests & SysEx Framing:**
    - Request Current Patch V2: `F0 52 00 6E 64 13 F7`
-   - Current Patch Dump V2: `F0 52 00 6E 64 12 01 <len_lsb> <len_msb> <7-bit packed data...> <5 CRC bytes> 00 F7`
+   - Request Active Bank & Program: `F0 52 00 6E 33 F7`
+   - Current Patch Dump V2: `F0 52 00 6E 64 12 01 <len_lsb> <len_msb> <7-bit packed data...> <5 CRC bytes> F7` (fixed unpacked length 848 bytes: `len_lsb = 0x50`, `len_msb = 0x06`)
    - Request Memory Slot V2: `F0 52 00 6E 46 00 00 <bank_lsb> <bank_msb> <prog_lsb> <prog_msb> F7`
-   - Memory Slot Dump V2: `F0 52 00 6E 45 00 00 <bank_lsb> <bank_msb> <prog_lsb> <prog_msb> <len_lsb> <len_msb> <7-bit packed data...> <5 CRC bytes> 00 F7`
+   - Memory Slot Dump V2: `F0 52 00 6E 45 00 00 <bank_lsb> <bank_msb> <prog_lsb> <prog_msb> <len_lsb> <len_msb> <7-bit packed data...> <5 CRC bytes> F7` (fixed unpacked length 848 bytes: `len_lsb = 0x50`, `len_msb = 0x06`, total frame length: 989 bytes)
+   - Success Acknowledgment: `F0 52 00 6E 00 00 F7`
 4. **PTCF Binary Patch Format:**
    - Unpacked 8-bit binary structure:
      * Magic header: `PTCF` (4 bytes ASCII)
@@ -149,11 +156,20 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
        - Parameters 5..7: 3 parameters of 8 bits each
        - Parameters 8..11: 4 parameters of 12 bits each
      * `PRM2`: Tempo (bits split across last 2 bytes), active editing slot (byte 10 bits 5..7), volume, routing.
+       - Byte 20 (`prm2PreampSlot`): `(preampBits & 0x3F) << 1` (bitmask of slots containing Preamp models).
+       - Bytes 21–22 (`prm2BPMSlot`): Bitmask of slots with tempo sync.
+       - Bytes 22–23 (`prm2LineSelSlot`): Bitmask of Line Selector slots.
+       - Byte 10 & Bytes 11–12: Active editing cursor slot index bitfields.
      * `TXE1`: English patch description.
    - CRC Validation:
      * 32-bit CRC (IEEE 802.3 `0xEDB88320` polynomial) inverted with `0xFFFFFFFF`, split into 5 7-bit words (LSB first).
-5. **Real-time Parameter Modulation:**
+5. **Real-time Parameter Modulation & Live Structural Chain Sync:**
    - Outgoing parameter change: `F0 52 00 6E 64 20 00 <slot_idx> <param_idx> <val_lsb> <val_word1> <val_word2> <val_word3> <val_word4> F7`
+     * `param_idx = 0`: Effect Bypass state (`00` bypassed, `01` active).
+     * `param_idx = 1`: Effect DSP Algorithm ID (`buildEffectTypeMessage`), with 32-bit `effectId` packed as 5 7-bit bytes (supports `effectId = 0` to empty/clear a slot).
+     * `param_idx >= 2`: Knob parameter value (`paramNumber = paramIndex + 2`).
+     * `slot_idx = 0x64`, `param_idx = 0x01`: Active cursor focus slot navigation (`buildSlotFocusMessage`).
+   - Structural sync sequence (`buildSlotSyncSequence`): Dispatches Effect ID (`paramNumber = 1`), followed by Bypass (`paramNumber = 0`), followed by all mapped and trailing hidden parameters (`paramNumber >= 2`).
    - Hardware feedback reception: `F0 52 00 6E 64 20 01 <slot_idx> <param_idx> <val_lsb> <val_msb> ... F7`
 
 ---
@@ -314,7 +330,7 @@ Implemented using Flutter's built-in `ChangeNotifier` and clean constructor depe
   * `updatePatchName(String newName)`: Enforces hardware-specific character limits (10 chars for Zoom MS Plus, 16 for Line 6), converts unprintable and invalid ASCII characters to spaces, marks patch dirty, and synchronizes live to connected hardware.
   * `updatePatchTempo(int bpm)`: Clamps BPM to 40–250 range, updates patch PRM2 metadata, marks patch dirty, and syncs live to connected hardware.
   * `loadPatchFromDeviceSlot(int slotIndex)`: Single-click responsive slot loading into editor buffer: immediately loads cached patch if already available in `bankSlots` without redundant round-trips, switches pedal memory slot via `buildSlotSelectMessages` (CC0/CC32/PC), and never issues slot-write commands (`0x45`).
-  * `savePatchToDeviceSlot(int slotIndex, [Patch? patchToSave])`: Encodes and transmits memory slot dump SysEx to persist patch in hardware slot (0–99).
+  * `savePatchToDeviceSlot(int slotIndex, [Patch? patchToSave])`: Encodes active (or supplied) preset via `protocol.encodePatch(target, programNumber: slotIndex)` (or `buildSavePatchToSlotMessage`) and transmits memory slot dump SysEx (`0x45 0x00 0x00` on Zoom MS Plus) over `transport.sendSysEx(...)` / `send(...)` to persist patch in hardware slot (0–99). Resets `isDirty` flag, sets `programNumber`, and updates `connectionController.bankSlots[slotIndex]`.
 - Bi-directional hardware sync: Listens to incoming MIDI messages; hardware parameter changes (`protocol.isParameterEdit`), active edit buffer dumps (`protocol.isCurrentPatchDump`), and program changes (`isProgramChange`) update local state via `applyExternalHardwareUpdate(...)` without echoing outbound messages back to hardware. Incoming memory slot dumps (`protocol.isSlotPatchDump`) are ignored by the editor buffer to prevent background sync cycling.
 - Signal chain slot operations:
   * `addEffectSlot({int? index, required dynamic effectId})`: Inserts new effect slot respecting device max slot limits (e.g. 6 slots on Zoom MS Plus) and initializes default parameters from `EffectCatalogRegistry`.
@@ -385,7 +401,28 @@ Implemented using Flutter's built-in `ChangeNotifier` and clean constructor depe
 
 ---
 
-## 8. Implementation Conventions & Coding Standards
+## 9. Platform Packaging & Distribution
+
+### 9.1 Linux Packaging
+- **Desktop Entry (`linux/packaging/signal-chain.desktop`):** Standard XDG application launcher with `Categories=AudioVideo;Audio;Midi;` matching Freedesktop.org specifications and passing `desktop-file-validate`.
+- **AppStream MetaInfo (`linux/packaging/io.github.bassmannate.signal_chain.appdata.xml`):** Compliant AppStream XML metadata for AppImageHub (`appimage.github.io`) submission with `<id>`, `<metadata_license>FSFAP</metadata_license>`, `<project_license>MIT</project_license>`, `<name>`, `<summary>`, `<description>`, `<developer>`, `<url type="homepage">`, `<launchable type="desktop-id">signal-chain.desktop</launchable>`, `<provides>`, `<content_rating>`, and release tags; verified with `appstreamcli validate --strict`.
+- **Icon Assets:** Scalable SVG (`linux/packaging/signal-chain.svg`) and 256x256 PNG (`linux/packaging/signal-chain.png`) featuring studio pedalboard nodes, glowing stomp switches, RTL audio flow arrows, and a 5-pin MIDI socket badge.
+- **Debian Package Generator (`tool/package_linux_deb.sh`):** Automates `.deb` package creation with `dpkg-deb`, declaring `Depends: alsa-utils, libgtk-3-0` so `amidi` is guaranteed on target distributions.
+- **AppImage Generator (`tool/package_linux_appimage.sh`):** Assembles AppDir structure and `AppRun` launcher, copies AppStream MetaInfo to `usr/share/metainfo/`, and bundles desktop entries/icons before invoking `appimagetool`.
+- **Local User Install Helper (`tool/install_linux_desktop.sh`):** Non-root user installer copying release artifacts to `~/.local/lib/signal-chain`, `~/.local/bin/signal-chain`, and `~/.local/share/applications/signal-chain.desktop`.
+- **Build Artifact Hygiene:** Root `.gitignore` excludes `dist/`, `AppDir/`, `*.AppImage`, `*.deb`, `*.zip`, `*.tar.gz`, `*.tar.xz`, and downloaded `tool/appimagetool`.
+
+### 9.2 Android USB Host & MIDI Capabilities
+- **Permissions & Features:** Declares `android.hardware.usb.host` and `android.software.midi` in `AndroidManifest.xml`.
+- **USB Device Filters (`android/app/src/main/res/xml/device_filter.xml`):** Matches Zoom Corporation (`vendor-id="5766"` / `0x1686`) and Line 6 (`vendor-id="3649"` / `0x0E41`) for automatic device attachment triggering.
+
+### 9.3 Windows Distribution
+- **Metadata:** Clean application metadata in `windows/runner/Runner.rc` ("Signal Chain", "Signal Chain Contributors").
+- **Packaging:** PowerShell script `tool/package_windows_zip.ps1` bundling release executable, assets, and DLLs into a clean portable release ZIP.
+
+---
+
+## 10. Implementation Conventions & Coding Standards
 
 1. **Safety & Lints:** Enforce strict type safety with `flutter_lints` and avoid `dynamic` where typed models are possible.
 2. **Byte Buffer Hygiene:** Always use `Uint8List.fromList()` or subview slices rather than mutating shared memory across async boundaries.

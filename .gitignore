@@ -58,6 +58,14 @@ linux/flutter/ephemeral/
 *.AppImage
 *.deb
 
+# Release packaging and distribution outputs
+dist/
+AppDir/
+*.zip
+*.tar.gz
+*.tar.xz
+tool/appimagetool
+
 # Android specific build artifacts
 android/.gradle/
 android/app/build/

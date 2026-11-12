@@ -49,6 +49,23 @@ class _FakeProcess implements Process {
   }
 }
 
+class _StubbornProcess extends _FakeProcess {
+  final List<ProcessSignal> signalsReceived = [];
+
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    wasKilled = true;
+    signalsReceived.add(signal);
+    if (signal == ProcessSignal.sigkill) {
+      if (!_exitCodeCompleter.isCompleted) {
+        _exitCodeCompleter.complete(-9);
+      }
+    }
+    // Intentionally ignore SIGTERM to test escalation to SIGKILL
+    return true;
+  }
+}
+
 void main() {
   group('LinuxAlsaMidiTransport Unit Tests', () {
     test('parseAmidiListOutput correctly parses standard amidi -l tables', () {
@@ -342,6 +359,103 @@ O   hw:3,0,1  Line 6 Bass Pod Pro Out
       );
 
       await fakeProcess.close();
+      await transport.dispose();
+    });
+
+    test('connect cleans up orphaned amidi processes via pkill when not in test mode', () async {
+      final executedCalls = <List<String>>[];
+      final fakeProcess = _FakeProcess();
+
+      final transport = LinuxAlsaMidiTransport(
+        isLinux: true,
+        isTest: false,
+        drainDurationOverride: Duration.zero,
+        processRunner: (exe, args, {environment, runInShell = false}) async {
+          executedCalls.add([exe, ...args]);
+          if (exe == 'pkill') {
+            return ProcessResult(1, 0, '', '');
+          }
+          return ProcessResult(2, 0, 'Dir Device Name\nIO hw:1,0,0 MS-60B+\n', '');
+        },
+        processStarter: (exe, args, {environment, runInShell = false, mode = ProcessStartMode.normal}) async {
+          return fakeProcess;
+        },
+      );
+
+      await transport.connect('hw:1,0,0');
+      expect(transport.isConnected, isTrue);
+
+      final pkillCall = executedCalls.firstWhere((call) => call[0] == 'pkill');
+      expect(pkillCall, ['pkill', '-9', '-f', 'amidi.*hw:1,0,0']);
+
+      await fakeProcess.close();
+      await transport.dispose();
+    });
+
+    test('connect drains and discards stale bytes arriving during drain duration', () async {
+      final fakeProcess = _FakeProcess();
+      final transport = LinuxAlsaMidiTransport(
+        isLinux: true,
+        isTest: true,
+        drainDurationOverride: const Duration(milliseconds: 30),
+        processRunner: (exe, args, {environment, runInShell = false}) async {
+          return ProcessResult(1, 0, 'Dir Device Name\nIO hw:1,0,0 MS-60B+\n', '');
+        },
+        processStarter: (exe, args, {environment, runInShell = false, mode = ProcessStartMode.normal}) async {
+          // Immediately emit stale partial bytes
+          fakeProcess.emitStdout('F0 52 00 6E 64 12 01 F7\n');
+          return fakeProcess;
+        },
+      );
+
+      final received = <MidiMessage>[];
+      final sub = transport.onMessageReceived.listen(received.add);
+
+      await transport.connect('hw:1,0,0');
+      expect(transport.isConnected, isTrue);
+      // Stale bytes emitted during the drain window should have been discarded
+      expect(received, isEmpty);
+
+      // Subsequent valid message arrives after drain period
+      fakeProcess.emitStdout('F0 7E 7F 06 01 F7\n');
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(received.length, 1);
+      expect(
+        received.first.data,
+        Uint8List.fromList([0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]),
+      );
+
+      await sub.cancel();
+      await fakeProcess.close();
+      await transport.dispose();
+    });
+
+    test('disconnect escalates to sigkill if process does not exit promptly', () async {
+      final stubbornProcess = _StubbornProcess();
+
+      final transport = LinuxAlsaMidiTransport(
+        isLinux: true,
+        isTest: false, // Enables timeout escalation to sigkill
+        drainDurationOverride: Duration.zero,
+        processRunner: (exe, args, {environment, runInShell = false}) async {
+          return ProcessResult(1, 0, 'Dir Device Name\nIO hw:1,0,0 MS-60B+\n', '');
+        },
+        processStarter: (exe, args, {environment, runInShell = false, mode = ProcessStartMode.normal}) async {
+          return stubbornProcess;
+        },
+      );
+
+      await transport.connect('hw:1,0,0');
+      expect(transport.isConnected, isTrue);
+
+      await transport.disconnect();
+      expect(transport.isConnected, isFalse);
+      expect(stubbornProcess.wasKilled, isTrue);
+      expect(stubbornProcess.signalsReceived, contains(ProcessSignal.sigterm));
+      expect(stubbornProcess.signalsReceived, contains(ProcessSignal.sigkill));
+
+      await stubbornProcess.close();
       await transport.dispose();
     });
   });

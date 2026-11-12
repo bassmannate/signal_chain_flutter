@@ -357,15 +357,45 @@ void main() {
       expect(find.byKey(const Key('slot_drag_target_1')), findsOneWidget);
       expect(find.byKey(const Key('slot_drag_target_2')), findsOneWidget);
 
-      // Perform reorder: move slot 0 to index 2
-      final reordered = editor.reorderEffectSlots(0, 2);
-      expect(reordered, isTrue);
+      // Perform swap: swap slot 0 and slot 2
+      final swapped = editor.swapEffectSlots(0, 2);
+      expect(swapped, isTrue);
 
-      expect(editor.patch?.slots[0].effectName, equals('Bass Preamp'));
-      expect(editor.patch?.slots[1].effectName, equals('Delay'));
+      expect(editor.patch?.slots[0].effectName, equals('Delay'));
+      expect(editor.patch?.slots[1].effectName, equals('Bass Preamp'));
       expect(editor.patch?.slots[2].effectName, equals('DYN Comp'));
 
-      // Check that patch was synchronized to hardware
+      // Check that patch was synchronized to hardware using 64 20 00 opcodes
+      expect(transport.sentMessages.isNotEmpty, isTrue);
+      // Ensure no 64 12 current patch dump is sent during live structural sync
+      expect(
+        transport.sentMessages.any((m) =>
+            m.isSysEx &&
+            m.data.length >= 6 &&
+            m.data[4] == 0x64 &&
+            m.data[5] == 0x12),
+        isFalse,
+      );
+      // Verify 64 20 00 opcode is sent for slot 0 and slot 2
+      expect(
+        transport.sentMessages.any((m) =>
+            m.isSysEx &&
+            m.data.length >= 9 &&
+            m.data[4] == 0x64 &&
+            m.data[5] == 0x20 &&
+            m.data[7] == 0 &&
+            m.data[8] == 1),
+        isTrue,
+      );
+
+      // Also test reorderEffectSlots inserting between slots
+      transport.clearSentMessages();
+      // Move slot 2 (DYN Comp) to insertion zone 1 (between slot 0 and slot 1)
+      final reordered = editor.reorderEffectSlots(2, 1);
+      expect(reordered, isTrue);
+      expect(editor.patch?.slots[0].effectName, equals('Delay'));
+      expect(editor.patch?.slots[1].effectName, equals('DYN Comp'));
+      expect(editor.patch?.slots[2].effectName, equals('Bass Preamp'));
       expect(transport.sentMessages.isNotEmpty, isTrue);
 
       editor.dispose();

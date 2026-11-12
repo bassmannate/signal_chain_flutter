@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.bassmannate.signal_chain</id>
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Signal Chain</name>
+  <summary>Real-time patch editor and preset library manager for guitar and bass multi-effects</summary>
+  <description>
+    <p>
+      Signal Chain is a cross-platform patch editor and preset manager designed for guitar and bass multi-effects processors, including Zoom MS Plus pedals (MS-50G+, MS-60B+, MS-70CDR+, MS-200+) and Line 6 Bass Pod Pro rack units.
+    </p>
+    <p>
+      Features include:
+    </p>
+    <ul>
+      <li>Real-time bidirectional parameter editing and hardware footswitch synchronization.</li>
+      <li>Intuitive drag-and-drop pedalboard signal chain reordering, effect insertion, and removal.</li>
+      <li>Comprehensive patch library management with local preset storage, import, and export.</li>
+      <li>Hardware patch memory bank browsing and one-click slot management.</li>
+      <li>Direct low-latency ALSA MIDI transport support on Linux.</li>
+    </ul>
+  </description>
+  <developer id="io.github.bassmannate">
+    <name>Nate</name>
+  </developer>
+  <url type="homepage">https://github.com/bassmannate/signal_chain_flutter</url>
+  <url type="bugtracker">https://github.com/bassmannate/signal_chain_flutter/issues</url>
+  <url type="vcs-browser">https://github.com/bassmannate/signal_chain_flutter</url>
+  <launchable type="desktop-id">signal-chain.desktop</launchable>
+  <provides>
+    <binary>signal-chain</binary>
+    <binary>signal_chain_flutter</binary>
+  </provides>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="1.0.0" date="2026-11-12">
+      <description>
+        <p>Initial release of Signal Chain Flutter edition for Linux.</p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:signal_chain_flutter/core/midi/midi_message.dart';
 import 'package:signal_chain_flutter/core/midi/midi_port_descriptor.dart';
 import 'package:signal_chain_flutter/core/midi/mock_midi_transport.dart';
 import 'package:signal_chain_flutter/core/storage/in_memory_patch_library_repository.dart';
@@ -352,6 +353,130 @@ void main() {
 
       expect(editorController.patch?.programNumber, equals(0));
       expect(editorController.patch?.name, equals('Preset 0'));
+    });
+
+    test('savePatchToDeviceSlot dispatches slot save SysEx message through the transport', () async {
+      editorController.updatePatchName('Preset 15');
+      expect(editorController.isDirty, isTrue);
+
+      transport.clearSentMessages();
+      await editorController.savePatchToDeviceSlot(15);
+
+      expect(transport.sentMessages.length, equals(1));
+      final sent = transport.sentMessages.first;
+      expect(sent.isSysEx, isTrue);
+      expect(const ZoomMsPlusProtocol().isSlotPatchDump(sent), isTrue);
+      expect(const ZoomMsPlusProtocol().extractSlotIndex(sent), equals(15));
+      expect(editorController.patch?.programNumber, equals(15));
+      expect(editorController.patch?.name, equals('Preset 15'));
+      expect(editorController.isDirty, isFalse);
+      expect(connectionController.bankSlots[15].name, equals('Preset 15'));
+    });
+
+    testWidgets('identifies active slot from hardware notification, highlights in sidebar, and pre-selects in WriteToSlotDialog', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: StudioTheme.darkTheme,
+          home: Scaffold(
+            body: SizedBox(
+              width: 350,
+              height: 700,
+              child: HardwareBankBrowserWidget(
+                connectionController: connectionController,
+                editorController: editorController,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Verify no slot active yet
+      expect(find.text('ACTIVE IN EDITOR'), findsNothing);
+
+      // Hardware reports slot 5 (Bank 0, Prog 5):
+      // F0 52 00 6E 64 26 00 00 00 00 05 00 F7
+      final slotMsg = MidiMessage.sysEx([
+        ZoomMsPlusProtocol.manufacturerId,
+        0x00,
+        ZoomMsPlusProtocol.familyIdByte,
+        0x64,
+        ZoomMsPlusProtocol.cmdBankAndProgramV2,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x05,
+        0x00,
+      ]);
+
+      transport.simulateIncomingMessage(slotMsg);
+      await tester.pumpAndSettle();
+
+      expect(connectionController.activeHardwareSlotIndex, equals(5));
+      expect(editorController.patch?.programNumber, equals(5));
+      expect(find.text('ACTIVE IN EDITOR'), findsOneWidget);
+
+      // Open Write to Slot dialog
+      await tester.tap(find.byKey(const Key('write_active_to_hardware_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(WriteToSlotDialog), findsOneWidget);
+      // Dialog dropdown text should display slot Slot 05 (1-6) corresponding to index 5
+      expect(find.textContaining('Slot 05 (1-6)'), findsOneWidget);
+    });
+
+    testWidgets('deterministic fallback matches active edit buffer against streaming bank slots', (tester) async {
+      const matchPatch = Patch(
+        id: 'zoom_active_patch',
+        name: 'Slap Match',
+        deviceFamily: DeviceFamily.zoomMs60bPlus,
+        slots: [
+          EffectSlot(slotIndex: 0, effectId: '0x01000010', effectName: 'DYN Comp', isEnabled: true, parameters: []),
+        ],
+      );
+
+      editorController.loadPatch(matchPatch); // programNumber is null
+      expect(editorController.patch?.programNumber, isNull);
+      expect(connectionController.activeHardwareSlotIndex, isNull);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: StudioTheme.darkTheme,
+          home: Scaffold(
+            body: SizedBox(
+              width: 350,
+              height: 700,
+              child: HardwareBankBrowserWidget(
+                connectionController: connectionController,
+                editorController: editorController,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('ACTIVE IN EDITOR'), findsNothing);
+
+      // Incoming 0x45 memory slot dump for slot 2 matching matchPatch
+      const zoomProto = ZoomMsPlusProtocol();
+      final slot2Dump = zoomProto.buildSavePatchToSlotMessage(
+        matchPatch.copyWith(programNumber: 2),
+        2,
+      );
+
+      transport.simulateIncomingMessage(slot2Dump);
+      await tester.pumpAndSettle();
+
+      expect(connectionController.activeHardwareSlotIndex, equals(2));
+      expect(editorController.patch?.programNumber, equals(2));
+      expect(find.text('ACTIVE IN EDITOR'), findsOneWidget);
+
+      // Verify Write to Slot pre-selects slot 2
+      await tester.tap(find.byKey(const Key('write_active_to_hardware_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(WriteToSlotDialog), findsOneWidget);
+      expect(find.textContaining('Slot 02 (1-3)'), findsOneWidget);
     });
   });
 

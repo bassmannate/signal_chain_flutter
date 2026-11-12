@@ -235,7 +235,10 @@ class SignalChainStripWidget extends StatelessWidget {
         final data = details.data;
         if (data is SlotReorderPayload) {
           if (!controller.canReorderSlots) return false;
-          return data.fromIndex != insertIndex && data.fromIndex != insertIndex - 1;
+          // In RTL layout, a slot dragged from fromIndex to insertion point insertIndex
+          // shifts items so target position is fromIndex < insertIndex ? insertIndex - 1 : insertIndex.
+          final targetIndex = data.fromIndex < insertIndex ? insertIndex - 1 : insertIndex;
+          return targetIndex != data.fromIndex;
         }
         if (data is EffectDragPayload || data is EffectCatalogEntry) {
           return controller.canAddEffectSlot;
@@ -249,8 +252,7 @@ class SignalChainStripWidget extends StatelessWidget {
         } else if (data is EffectCatalogEntry) {
           controller.insertEffectSlotAt(insertIndex, data);
         } else if (data is SlotReorderPayload) {
-          final targetIndex = data.fromIndex < insertIndex ? insertIndex - 1 : insertIndex;
-          controller.reorderEffectSlots(data.fromIndex, targetIndex);
+          controller.reorderEffectSlots(data.fromIndex, insertIndex);
         }
       },
       builder: (context, candidateData, rejectedData) {
@@ -320,7 +322,7 @@ class SignalChainStripWidget extends StatelessWidget {
       onAcceptWithDetails: (details) {
         final data = details.data;
         if (data is SlotReorderPayload) {
-          controller.reorderEffectSlots(data.fromIndex, index);
+          controller.swapEffectSlots(data.fromIndex, index);
         } else if (data is EffectDragPayload) {
           controller.changeSlotEffect(index, data.entry.effectId);
         } else if (data is EffectCatalogEntry) {
@@ -505,7 +507,7 @@ class SignalChainStripWidget extends StatelessWidget {
                     key: Key('move_slot_left_$index'),
                     borderRadius: BorderRadius.circular(3),
                     onTap: index < totalSlots - 1 && controller.canReorderSlots
-                        ? () => controller.moveEffectSlot(index, index + 1)
+                        ? () => controller.swapEffectSlots(index, index + 1)
                         : null,
                     child: Padding(
                       padding: const EdgeInsets.all(3),
@@ -565,7 +567,7 @@ class SignalChainStripWidget extends StatelessWidget {
                     key: Key('move_slot_right_$index'),
                     borderRadius: BorderRadius.circular(3),
                     onTap: index > 0 && controller.canReorderSlots
-                        ? () => controller.moveEffectSlot(index, index - 1)
+                        ? () => controller.swapEffectSlots(index, index - 1)
                         : null,
                     child: Padding(
                       padding: const EdgeInsets.all(3),

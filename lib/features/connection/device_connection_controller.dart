@@ -44,9 +44,12 @@ class DeviceConnectionController extends ChangeNotifier {
   bool _isDisposed = false;
 
   HardwareUpdateHandler? _hardwareUpdateHandler;
+  dynamic _editor;
   StreamSubscription<MidiMessage>? _transportSubscription;
   Timer? _hotPlugTimer;
   bool _isHotPlugChecking = false;
+
+  int? _activeHardwareSlotIndex;
 
   // Track incoming Bank Select (CC 0 MSB and CC 32 LSB) from hardware
   int _incomingBankMsb = 0;
@@ -54,6 +57,10 @@ class DeviceConnectionController extends ChangeNotifier {
 
   /// Current incoming bank index tracked from CC 0 and CC 32 messages.
   int get currentIncomingBank => (_incomingBankMsb << 7) | _incomingBankLsb;
+
+  final Duration? pacingDelayOverride;
+  final Duration? currentPatchTimeoutOverride;
+  final bool _isTest;
 
   /// Known hardware identification patterns for auto-discovery.
   static const List<String> knownHardwarePatterns = [
@@ -71,15 +78,28 @@ class DeviceConnectionController extends ChangeNotifier {
     required this.transport,
     DeviceFamily defaultFamily = DeviceFamily.zoomMs60bPlus,
     bool enableHotPlugPolling = true,
-  })  : _activeFamily = defaultFamily,
+    this.pacingDelayOverride,
+    this.currentPatchTimeoutOverride,
+    bool? isTest,
+  })  : _isTest = isTest ??
+            (const bool.fromEnvironment('FLUTTER_TEST') ||
+                (Platform.environment['FLUTTER_TEST'] == 'true')),
+        _activeFamily = defaultFamily,
         _activeProtocol = _resolveProtocolForFamily(defaultFamily) {
     _transportSubscription = transport.onMessageReceived.listen(_handleIncomingHardwareEvent);
-    final isTest = const bool.fromEnvironment('FLUTTER_TEST') ||
-        (Platform.environment['FLUTTER_TEST'] == 'true');
-    if (enableHotPlugPolling && !isTest) {
+    if (enableHotPlugPolling && !_isTest) {
       _startHotPlugPolling();
     }
   }
+
+  /// Pacing delay between sequential initialization commands and requests.
+  Duration get pacingDelay =>
+      pacingDelayOverride ?? (_isTest ? Duration.zero : const Duration(milliseconds: 25));
+
+  /// Timeout for current patch request.
+  Duration get currentPatchTimeout =>
+      currentPatchTimeoutOverride ??
+      (_isTest ? const Duration(milliseconds: 50) : const Duration(milliseconds: 800));
 
   void _startHotPlugPolling() {
     _hotPlugTimer?.cancel();
@@ -112,6 +132,52 @@ class DeviceConnectionController extends ChangeNotifier {
     }
   }
 
+  /// Currently active hardware memory slot index (0 to 99), or null if not yet determined.
+  int? get activeHardwareSlotIndex => _activeHardwareSlotIndex;
+
+  /// Explicitly sets the active hardware slot index, notifies the bound editor controller,
+  /// and updates listeners.
+  void setActiveHardwareSlotIndex(int? slotIndex) {
+    if (_activeHardwareSlotIndex != slotIndex) {
+      _activeHardwareSlotIndex = slotIndex;
+      if (slotIndex != null && _editor != null) {
+        try {
+          _editor.setHardwareSlotIndex(slotIndex);
+        } catch (_) {}
+      }
+      notifyListeners();
+    }
+  }
+
+  /// Searches loaded bank slots for one matching [currentPatch]'s effect signature.
+  int? findMatchingBankSlot(Patch currentPatch) {
+    if (currentPatch.slots.isEmpty && currentPatch.name.trim().isEmpty) {
+      return null;
+    }
+
+    // Pass 1: Exact signature match (name + effect IDs + bypass + parameter values)
+    for (final slot in _bankSlots) {
+      if (slot.isLoaded && !slot.isEmpty && slot.patch != null) {
+        if (Patch.isSignatureMatch(currentPatch, slot.patch!, matchParameters: true)) {
+          return slot.index;
+        }
+      }
+    }
+
+    // Pass 2: Signature match without parameter values (name + effect IDs + bypass)
+    if (currentPatch.name.trim().isNotEmpty && currentPatch.slots.isNotEmpty) {
+      for (final slot in _bankSlots) {
+        if (slot.isLoaded && !slot.isEmpty && slot.patch != null) {
+          if (Patch.isSignatureMatch(currentPatch, slot.patch!, matchParameters: false)) {
+            return slot.index;
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
   /// Sets the external update handler (e.g. from PatchEditorController).
   void setHardwareUpdateHandler(HardwareUpdateHandler? handler) {
     _hardwareUpdateHandler = handler;
@@ -119,6 +185,7 @@ class DeviceConnectionController extends ChangeNotifier {
 
   /// Binds a controller implementing [applyExternalHardwareUpdate].
   void setEditorController(dynamic editor) {
+    _editor = editor;
     if (editor == null) {
       _hardwareUpdateHandler = null;
     } else {
@@ -215,16 +282,12 @@ class DeviceConnectionController extends ChangeNotifier {
 
         if (match != null) {
           final matchedFamily = identifyFamilyFromPortName(match.name);
-          await connect(match, explicitFamily: matchedFamily);
-
-          // Request active patch from hardware
-          try {
-            final request = _activeProtocol.buildRequestCurrentPatchMessage();
-            await transport.send(request);
-          } catch (_) {}
-
-          // Trigger background bank sync
-          unawaited(syncDeviceBank());
+          await connect(
+            match,
+            explicitFamily: matchedFamily,
+            autoSyncBank: true,
+            fetchCurrentPatch: true,
+          );
         }
       }
     } catch (e) {
@@ -250,9 +313,12 @@ class DeviceConnectionController extends ChangeNotifier {
   Future<void> connect(
     MidiPortDescriptor port, {
     DeviceFamily? explicitFamily,
+    bool autoSyncBank = false,
+    bool fetchCurrentPatch = true,
   }) async {
     _isConnecting = true;
     _errorMessage = null;
+    _activeHardwareSlotIndex = null;
     notifyListeners();
 
     try {
@@ -266,12 +332,58 @@ class DeviceConnectionController extends ChangeNotifier {
         await _performIdentityHandshake(port);
       }
 
-      // Execute hardware initialization sequence
+      // Execute hardware initialization sequence with inter-command pacing
       final initSequence = _activeProtocol.buildInitSequence();
       for (final msg in initSequence) {
         await transport.send(msg);
+        if (pacingDelay > Duration.zero) {
+          await Future<void>.delayed(pacingDelay);
+        }
       }
       _ensureBankSlotsInitialized();
+
+      if (fetchCurrentPatch) {
+        if (pacingDelay > Duration.zero) {
+          await Future<void>.delayed(pacingDelay);
+        }
+        try {
+          final request = _activeProtocol.buildRequestCurrentPatchMessage();
+          bool received = false;
+          try {
+            await transport.sendSysExAndWait(
+              request,
+              responseMatcher: (m) => _activeProtocol.isCurrentPatchDump(m),
+              timeout: currentPatchTimeout,
+            );
+            received = true;
+          } catch (_) {
+            // First attempt timed out; retry once if still connected
+          }
+
+          if (!received && transport.isConnected) {
+            if (pacingDelay > Duration.zero) {
+              await Future<void>.delayed(pacingDelay);
+            }
+            try {
+              await transport.sendSysExAndWait(
+                request,
+                responseMatcher: (m) => _activeProtocol.isCurrentPatchDump(m),
+                timeout: currentPatchTimeout,
+              );
+              received = true;
+            } catch (_) {
+              // Current patch request did not return a dump; proceed gracefully
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (autoSyncBank && !_isSyncingBank) {
+        if (pacingDelay > Duration.zero) {
+          await Future<void>.delayed(pacingDelay);
+        }
+        unawaited(syncDeviceBank());
+      }
     } catch (e) {
       _errorMessage = 'Connection failed: $e';
       try {
@@ -287,6 +399,7 @@ class DeviceConnectionController extends ChangeNotifier {
   /// Disconnects from the currently connected MIDI device.
   Future<void> disconnect() async {
     cancelBankSync();
+    _activeHardwareSlotIndex = null;
     _errorMessage = null;
     try {
       if (transport.isConnected) {
@@ -373,27 +486,54 @@ class DeviceConnectionController extends ChangeNotifier {
 
         try {
           final request = activeProto.buildPatchSlotRequest(i);
-          final response = await transport.sendSysExAndWait(
-            request,
-            responseMatcher: (m) =>
-                activeProto.isSlotPatchDump(m) &&
-                activeProto.extractSlotIndex(m) == i,
-            timeout: perSlotTimeout,
-          );
+          MidiMessage? response;
+          try {
+            response = await transport.sendSysExAndWait(
+              request,
+              responseMatcher: (m) =>
+                  activeProto.isSlotPatchDump(m) &&
+                  activeProto.extractSlotIndex(m) == i,
+              timeout: perSlotTimeout,
+            );
+          } catch (_) {
+            // First attempt timed out; retry once if still connected and not cancelled
+            if (!_cancelBankSync && transport.isConnected) {
+              if (pacingDelay > Duration.zero) {
+                await Future<void>.delayed(pacingDelay);
+              }
+              response = await transport.sendSysExAndWait(
+                request,
+                responseMatcher: (m) =>
+                    activeProto.isSlotPatchDump(m) &&
+                    activeProto.extractSlotIndex(m) == i,
+                timeout: perSlotTimeout,
+              );
+            }
+          }
 
-          final decoded = activeProto.decodePatch(response);
-          _bankSlots[i] = BankSlotDescriptor(
-            index: i,
-            name: decoded.name.trim().isNotEmpty
-                ? decoded.name.trim()
-                : 'Slot ${i.toString().padLeft(2, '0')}',
-            deviceFamily: _activeFamily,
-            isLoaded: true,
-            isEmpty: decoded.slots.isEmpty,
-            patch: decoded,
-          );
+          if (response != null) {
+            final decoded = activeProto.decodePatch(response);
+            _bankSlots[i] = BankSlotDescriptor(
+              index: i,
+              name: decoded.name.trim().isNotEmpty
+                  ? decoded.name.trim()
+                  : 'Slot ${i.toString().padLeft(2, '0')}',
+              deviceFamily: _activeFamily,
+              isLoaded: true,
+              isEmpty: decoded.slots.isEmpty,
+              patch: decoded,
+            );
+            if (_activeHardwareSlotIndex == null && _editor != null) {
+              final activePatch = _editor.patch as Patch?;
+              if (activePatch != null &&
+                  (Patch.isSignatureMatch(activePatch, decoded, matchParameters: true) ||
+                   Patch.isSignatureMatch(activePatch, decoded, matchParameters: false))) {
+                setActiveHardwareSlotIndex(i);
+              }
+            }
+          }
         } catch (_) {
-          // If a slot read times out or is uninitialized, record slot as loaded but empty
+          // If a slot read times out even after retry, record slot as loaded but empty
           if (!_bankSlots[i].isLoaded) {
             _bankSlots[i] = BankSlotDescriptor(
               index: i,
@@ -405,9 +545,13 @@ class DeviceConnectionController extends ChangeNotifier {
           }
         }
 
-        // Incremental notification and micro-yield to keep UI responsive
+        // Incremental notification and pacing delay
         notifyListeners();
-        await Future<void>.value();
+        if (pacingDelay > Duration.zero) {
+          await Future<void>.delayed(pacingDelay);
+        } else {
+          await Future<void>.value();
+        }
       }
 
       _bankSyncProgress = 1.0;
@@ -526,6 +670,14 @@ class DeviceConnectionController extends ChangeNotifier {
                 : 'Slot ${slotIndex.toString().padLeft(2, '0')}',
             patch: decoded,
           );
+          if (_activeHardwareSlotIndex == null && _editor != null) {
+            final activePatch = _editor.patch as Patch?;
+            if (activePatch != null &&
+                (Patch.isSignatureMatch(activePatch, decoded, matchParameters: true) ||
+                 Patch.isSignatureMatch(activePatch, decoded, matchParameters: false))) {
+              setActiveHardwareSlotIndex(slotIndex);
+            }
+          }
         } catch (_) {}
       }
       return;
@@ -549,6 +701,7 @@ class DeviceConnectionController extends ChangeNotifier {
       if (slotIndex != null) {
         _incomingBankMsb = 0;
         _incomingBankLsb = slotIndex ~/ 10;
+        setActiveHardwareSlotIndex(slotIndex);
         _hardwareUpdateHandler?.call(programNumber: slotIndex);
       }
       return;
@@ -558,6 +711,7 @@ class DeviceConnectionController extends ChangeNotifier {
     if (message.isProgramChange) {
       final prog = message.data.length > 1 ? (message.data[1] & 0x7F) : 0;
       final slotIndex = (currentIncomingBank * 10) + prog;
+      setActiveHardwareSlotIndex(slotIndex);
       _hardwareUpdateHandler?.call(programNumber: slotIndex);
       return;
     }
@@ -600,7 +754,17 @@ class DeviceConnectionController extends ChangeNotifier {
     if (_activeProtocol.isCurrentPatchDump(message)) {
       try {
         final decoded = _activeProtocol.decodePatch(message);
-        _hardwareUpdateHandler?.call(patch: decoded);
+        if (_activeHardwareSlotIndex == null) {
+          final matched = findMatchingBankSlot(decoded);
+          if (matched != null) {
+            setActiveHardwareSlotIndex(matched);
+          }
+        }
+        _hardwareUpdateHandler?.call(
+          patch: _activeHardwareSlotIndex != null
+              ? decoded.copyWith(programNumber: _activeHardwareSlotIndex)
+              : decoded,
+        );
       } catch (_) {}
       return;
     }

@@ -200,6 +200,19 @@ class _SignalChainAppState extends State<SignalChainApp> {
       (req) => const ZoomMsPlusProtocol().encodePatch(zoomSample),
     );
 
+    // Auto-responder for Zoom Request Current Bank & Program (33)
+    mock.registerResponder(
+      (req) =>
+          req.isSysEx &&
+          req.data.length >= 5 &&
+          req.data[1] == 0x52 &&
+          req.data[3] == 0x6E &&
+          req.data[4] == 0x33,
+      (req) => MidiMessage.sysEx([
+        0x52, 0x00, 0x6E, 0x64, 0x26, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      ]),
+    );
+
     // Auto-responder for Zoom Memory Slot Request (46 00 00)
     mock.registerResponder(
       (req) =>

@@ -32,6 +32,71 @@ class Patch {
   /// Active patch tempo in BPM (typically 40–250 BPM, default 120).
   int get tempo => ((metadata['tempo'] as num?)?.round()) ?? 120;
 
+  /// Checks whether [candidate] matches the effect chain signature of [target],
+  /// ignoring volatile fields like [id], [programNumber], and timestamps.
+  ///
+  /// If [matchParameters] is true, parameter values and trailing raw values
+  /// are compared for equality (within 0.05 tolerance).
+  static bool isSignatureMatch(
+    Patch target,
+    Patch candidate, {
+    bool matchParameters = true,
+  }) {
+    // 1. Name comparison (trimmed, case-insensitive if non-empty)
+    final targetName = target.name.trim();
+    final candidateName = candidate.name.trim();
+    if (targetName.isNotEmpty && candidateName.isNotEmpty) {
+      if (targetName.toLowerCase() != candidateName.toLowerCase()) {
+        return false;
+      }
+    } else if (targetName != candidateName) {
+      return false;
+    }
+
+    // 2. Slot count
+    if (target.slots.length != candidate.slots.length) {
+      return false;
+    }
+
+    // 3. Effect slots comparison
+    for (int i = 0; i < target.slots.length; i++) {
+      final slotA = target.slots[i];
+      final slotB = candidate.slots[i];
+
+      if (slotA.effectId != slotB.effectId) {
+        return false;
+      }
+      if (slotA.isEnabled != slotB.isEnabled) {
+        return false;
+      }
+
+      if (matchParameters) {
+        if (slotA.parameters.length != slotB.parameters.length) {
+          return false;
+        }
+        for (int p = 0; p < slotA.parameters.length; p++) {
+          final valA = slotA.parameters[p].currentValue;
+          final valB = slotB.parameters[p].currentValue;
+          if ((valA - valB).abs() > 0.05) {
+            return false;
+          }
+        }
+
+        // Compare raw trailing values if present
+        final trailA = slotA.rawTrailingValues;
+        final trailB = slotB.rawTrailingValues;
+        if (trailA != null && trailB != null) {
+          if (trailA.length != trailB.length) return false;
+          for (int t = 0; t < trailA.length; t++) {
+            if ((trailA[t] - trailB[t]).abs() > 0.05) return false;
+          }
+        }
+      }
+    }
+
+    return true;
+  }
+
   Patch copyWith({
     String? id,
     String? name,

@@ -1,5 +1,6 @@
 import '../core/midi/midi_message.dart';
 import '../models/device_family.dart';
+import '../models/effect_slot.dart';
 import '../models/patch.dart';
 
 /// Abstract contract for a device-specific MIDI SysEx protocol engine.
@@ -34,6 +35,10 @@ abstract class DeviceProtocol {
 
   /// Alias for [buildCurrentPatchRequest] ensuring semantic clarity across controllers.
   MidiMessage buildRequestCurrentPatchMessage() => buildCurrentPatchRequest();
+
+  /// Builds a SysEx or MIDI message requesting the currently active memory slot/program number,
+  /// or null if the device family does not support an explicit slot query opcode.
+  MidiMessage? buildCurrentSlotRequest() => null;
 
   /// Builds a request to recall or fetch the preset stored at memory slot [programNumber].
   MidiMessage buildPatchSlotRequest(int programNumber);
@@ -82,6 +87,13 @@ abstract class DeviceProtocol {
     required bool isEnabled,
   }) => null;
 
+  /// Builds a real-time message to set/change the effect algorithm in an effect slot.
+  MidiMessage? buildEffectTypeMessage(int slotIndex, int effectId) => null;
+
+  /// Builds a batch of real-time messages to synchronize the full state of [slot]
+  /// at [slotIndex] (Effect ID, bypass state, and all exposed + trailing parameter knobs).
+  List<MidiMessage> buildSlotSyncSequence(int slotIndex, EffectSlot slot) => const [];
+
   /// Builds a real-time message to set the active/focused effect slot on the hardware display.
   MidiMessage? buildSlotFocusMessage(int slotIndex) => null;
 
@@ -108,4 +120,7 @@ abstract class DeviceProtocol {
 
   /// Parses real-time parameter change bytes from hardware feedback, or null if unparseable.
   ({int slotIndex, int paramIndex, int value})? parseParameterEdit(MidiMessage message);
+
+  /// Returns true if [message] is a hardware success acknowledgment (e.g. Zoom 00 00).
+  bool isSuccessAck(MidiMessage message) => false;
 }

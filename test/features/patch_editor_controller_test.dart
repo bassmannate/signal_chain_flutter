@@ -328,5 +328,66 @@ void main() {
       expect(const ZoomMsPlusProtocol().isPatchDump(sent), isTrue);
       expect(editorController.isDirty, isFalse);
     });
+
+    test('savePatchToDeviceSlot transmits encoded slot dump SysEx and updates local bank', () async {
+      transport.clearSentMessages();
+
+      await editorController.savePatchToDeviceSlot(42);
+
+      expect(transport.sentMessages.length, equals(1));
+      final sent = transport.sentMessages.first;
+      expect(sent.isSysEx, isTrue);
+      expect(const ZoomMsPlusProtocol().isSlotPatchDump(sent), isTrue);
+      expect(const ZoomMsPlusProtocol().extractSlotIndex(sent), equals(42));
+      expect(editorController.patch?.programNumber, equals(42));
+      expect(editorController.isDirty, isFalse);
+      expect(connectionController.bankSlots[42].name, equals('Funk Master'));
+    });
+
+    test('savePatchToDeviceSlot fails gracefully when transport is disconnected', () async {
+      await transport.disconnect();
+      transport.clearSentMessages();
+
+      await editorController.savePatchToDeviceSlot(10);
+
+      expect(transport.sentMessages.isEmpty, isTrue);
+      expect(editorController.errorMessage, contains('Cannot save to hardware'));
+    });
+
+    test('setHardwareSlotIndex updates patch programNumber and synchronizes without marking dirty', () {
+      expect(editorController.patch?.programNumber, isNull);
+      expect(editorController.isDirty, isFalse);
+
+      editorController.setHardwareSlotIndex(15);
+
+      expect(editorController.patch?.programNumber, equals(15));
+      expect(editorController.isDirty, isFalse);
+    });
+
+    test('applyExternalHardwareUpdate with programNumber assigns slot to unassigned initial patch without reload', () async {
+      transport.clearSentMessages();
+      expect(editorController.patch?.programNumber, isNull);
+
+      editorController.applyExternalHardwareUpdate(programNumber: 7);
+
+      expect(editorController.patch?.programNumber, equals(7));
+      expect(connectionController.activeHardwareSlotIndex, equals(7));
+      expect(editorController.isDirty, isFalse);
+      // No outbound requests triggered because initial patch was assigned in-place
+      expect(transport.sentMessages.isEmpty, isTrue);
+    });
+
+    test('applyExternalHardwareUpdate with patch preserves known activeHardwareSlotIndex', () {
+      connectionController.setActiveHardwareSlotIndex(5);
+      editorController.setHardwareSlotIndex(5);
+
+      // Incoming patch dump with null programNumber (e.g. from 64 12 01)
+      final incomingDumpPatch = sampleZoomPatch.copyWith(name: 'Updated Edit Buffer', programNumber: null);
+      editorController.applyExternalHardwareUpdate(patch: incomingDumpPatch);
+
+      expect(editorController.patch?.name, equals('Updated Edit Buffer'));
+      expect(editorController.patch?.programNumber, equals(5));
+      expect(connectionController.activeHardwareSlotIndex, equals(5));
+    });
   });
 }

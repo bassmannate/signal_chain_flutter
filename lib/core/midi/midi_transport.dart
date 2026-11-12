@@ -25,6 +25,25 @@ abstract class MidiTransport {
   /// Sends a [MidiMessage] to the connected device.
   Future<void> send(MidiMessage message);
 
+  /// Sends a SysEx [MidiMessage] to the connected device.
+  Future<void> sendSysEx(MidiMessage message) => send(message);
+
+  /// Helper to send a request (typically SysEx) and await a matching response.
+  ///
+  /// Subscribes to [onMessageReceived] prior to dispatching [request] to avoid
+  /// race conditions with synchronous or fast hardware responses.
+  Future<MidiMessage> sendRequest(
+    MidiMessage request, {
+    required bool Function(MidiMessage message) responseMatcher,
+    Duration timeout = const Duration(seconds: 2),
+  }) async {
+    return sendSysExAndWait(
+      request,
+      responseMatcher: responseMatcher,
+      timeout: timeout,
+    );
+  }
+
   /// Helper to send a request (typically SysEx) and await a matching response.
   ///
   /// Subscribes to [onMessageReceived] prior to dispatching [request] to avoid

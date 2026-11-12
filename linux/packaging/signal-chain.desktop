@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Signal Chain
+GenericName=Guitar & Bass Multi-FX Editor
+Comment=Real-time patch editor and preset library manager for Zoom MS Plus pedals and Line 6 Bass Pod Pro
+Exec=signal-chain %u
+Icon=signal-chain
+Terminal=false
+StartupNotify=true
+Categories=AudioVideo;Audio;Midi;
+Keywords=audio;midi;guitar;bass;pedalboard;zoom;line6;sysex;patch;fx;

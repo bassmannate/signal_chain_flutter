@@ -54,14 +54,21 @@ void main() {
   });
 
   group('ZoomMsPlusProtocol Command Framing', () {
-    test('buildInitSequence sends 0x53 (PC Mode Disable) and 0x50 (Parameter Edit Enable)', () {
+    test('buildInitSequence sends 0x53 (PC Mode Disable), 0x50 (Parameter Edit Enable), and 0x33 (Request Bank & Program)', () {
       final seq = protocol.buildInitSequence();
-      expect(seq.length, equals(2));
+      expect(seq.length, equals(3));
 
       // PC Mode Disable: F0 52 00 6E 53 F7 (exits USB lock screen if stuck)
       expect(seq[0].data, equals([0xF0, 0x52, 0x00, 0x6E, 0x53, 0xF7]));
       // Parameter Edit Enable: F0 52 00 6E 50 F7 (enables live bidirectional editing)
       expect(seq[1].data, equals([0xF0, 0x52, 0x00, 0x6E, 0x50, 0xF7]));
+      // Request Bank & Program: F0 52 00 6E 33 F7
+      expect(seq[2].data, equals([0xF0, 0x52, 0x00, 0x6E, 0x33, 0xF7]));
+    });
+
+    test('buildCurrentSlotRequest formats 33 SysEx', () {
+      final msg = protocol.buildCurrentSlotRequest();
+      expect(msg.data, equals([0xF0, 0x52, 0x00, 0x6E, 0x33, 0xF7]));
     });
 
     test('buildEditorModeMessage handles enable and disable', () {
@@ -95,6 +102,115 @@ void main() {
       expect(offMsg.data, equals([
         0xF0, 0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7,
       ]));
+    });
+
+    test('buildEffectTypeMessage encodes opcode 64 20 00, slotIndex, paramNumber 1, and 5-byte 7-bit effectId', () {
+      // Slot 1, effectId = 0x04000010 (Bass DRV Preamp)
+      // 0x04000010 in 7-bit:
+      // byte 0 = 0x04000010 & 0x7F = 0x10
+      // byte 1 = (0x04000010 >> 7) & 0x7F = 0x00
+      // byte 2 = (0x04000010 >> 14) & 0x7F = 0x00
+      // byte 3 = (0x04000010 >> 21) & 0x7F = 0x20
+      // byte 4 = (0x04000010 >> 28) & 0x7F = 0x00
+      final msg = protocol.buildEffectTypeMessage(1, 0x04000010);
+      expect(msg.data, equals([
+        0xF0, 0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x01, 0x01, 0x10, 0x00, 0x00, 0x20, 0x00, 0xF7,
+      ]));
+
+      // Clearing/emptying slot with effectId = 0
+      final clearMsg = protocol.buildEffectTypeMessage(2, 0);
+      expect(clearMsg.data, equals([
+        0xF0, 0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7,
+      ]));
+    });
+
+    test('buildSlotSyncSequence generates batch with effect ID, bypass, and all parameters', () {
+      const slot = EffectSlot(
+        slotIndex: 0,
+        effectId: '0x01000010',
+        effectName: 'DYN Comp',
+        isEnabled: true,
+        parameters: [
+          ParameterValue(
+            descriptor: ParameterDescriptor(id: 'p0', name: 'Sense', min: 0, max: 10, defaultValue: 5),
+            currentValue: 7.0,
+          ),
+          ParameterValue(
+            descriptor: ParameterDescriptor(id: 'p1', name: 'Attack', min: 0, max: 10, defaultValue: 2),
+            currentValue: 3.0,
+          ),
+        ],
+        rawTrailingValues: [42.0],
+      );
+
+      final sequence = protocol.buildSlotSyncSequence(0, slot);
+      expect(sequence.length, equals(5)); // 1 effect ID + 1 bypass + 2 exposed params + 1 trailing param = 5
+
+      // 1. Effect ID (paramNumber = 1)
+      expect(sequence[0].data[7], equals(0)); // slot 0
+      expect(sequence[0].data[8], equals(1)); // paramNumber 1
+
+      // 2. Bypass state (paramNumber = 0)
+      expect(sequence[1].data[7], equals(0)); // slot 0
+      expect(sequence[1].data[8], equals(0)); // paramNumber 0
+      expect(sequence[1].data[9], equals(1)); // enabled
+
+      // 3. Param 0 (paramNumber = 2)
+      expect(sequence[2].data[7], equals(0));
+      expect(sequence[2].data[8], equals(2));
+      expect(sequence[2].data[9], equals(7));
+
+      // 4. Param 1 (paramNumber = 3)
+      expect(sequence[3].data[7], equals(0));
+      expect(sequence[3].data[8], equals(3));
+      expect(sequence[3].data[9], equals(3));
+    });
+
+    test('encodePtcf dynamically calculates PRM2 Preamp/BPM/LineSel bitmasks', () {
+      const patch = Patch(
+        id: 'test_prm2',
+        name: 'PreampTest',
+        deviceFamily: DeviceFamily.zoomMs60bPlus,
+        slots: [
+          EffectSlot(
+            slotIndex: 0,
+            effectId: '0x01000010', // Dynamics
+            effectName: 'Comp',
+            isEnabled: true,
+            parameters: [],
+          ),
+          EffectSlot(
+            slotIndex: 1,
+            effectId: '0x04000010', // Preamp in slot 1 (bit 1 << 1)
+            effectName: 'Bass DRV',
+            isEnabled: true,
+            parameters: [],
+          ),
+          EffectSlot(
+            slotIndex: 2,
+            effectId: '0x07000ff0', // BPM in slot 2 (bit 1 << 2)
+            effectName: 'BPM',
+            isEnabled: true,
+            parameters: [],
+          ),
+        ],
+      );
+
+      final ptcf = protocol.encodePtcf(patch);
+      // Locate PRM2 chunk in output
+      int prm2Offset = -1;
+      for (int i = 0; i < ptcf.length - 4; i++) {
+        if (ptcf[i] == 0x50 && ptcf[i + 1] == 0x52 && ptcf[i + 2] == 0x4D && ptcf[i + 3] == 0x32) {
+          prm2Offset = i + 8; // skip 'PRM2' + 4-byte length
+          break;
+        }
+      }
+      expect(prm2Offset, isNot(-1));
+
+      // Byte 20 contains preamp bitmask shifted left by 1: (1 << 1) << 1 = 0x04
+      expect(ptcf[prm2Offset + 20], equals(0x04));
+      // Byte 21 contains BPM bitmask shifted left by 4: (1 << 2) << 4 = 0x40
+      expect(ptcf[prm2Offset + 21], equals(0x40));
     });
 
     test('buildParameterEditMessage encodes slot, paramIndex + 2, and 7-bit words', () {
@@ -302,6 +418,54 @@ void main() {
       expect(decodedPatch.slots[2].isEnabled, isFalse);
       expect(decodedPatch.slots[2].parameters[0].currentValue, equals(80.0));
     });
+
+    test('buildSavePatchToSlotMessage formats exact 848-byte length, 970-byte 7-bit payload, and no stray 0x00 byte', () {
+      const testPatch = Patch(
+        id: 'zoom_test_slot_save',
+        name: 'FunkSlap',
+        deviceFamily: DeviceFamily.zoomMs60bPlus,
+        slots: [],
+      );
+
+      final saveMsg = protocol.buildSavePatchToSlotMessage(testPatch, 12);
+      expect(saveMsg.isSysEx, isTrue);
+      expect(saveMsg.data.first, equals(0xF0));
+      expect(saveMsg.data.last, equals(0xF7));
+
+      // Header: F0 52 00 6E 45 00 00 <bank_lsb> <bank_msb> <prog_lsb> <prog_msb> <len_lsb> <len_msb>
+      expect(saveMsg.data[1], equals(0x52));
+      expect(saveMsg.data[2], equals(0x00));
+      expect(saveMsg.data[3], equals(0x6E));
+      expect(saveMsg.data[4], equals(0x45));
+      expect(saveMsg.data[5], equals(0x00));
+      expect(saveMsg.data[6], equals(0x00));
+
+      // Slot 12: bank 1, prog 2
+      expect(saveMsg.data[7], equals(1));
+      expect(saveMsg.data[8], equals(0));
+      expect(saveMsg.data[9], equals(2));
+      expect(saveMsg.data[10], equals(0));
+
+      // Length is fixed at 848 (0x0350): LSB 0x50 (80), MSB 0x06 (6)
+      expect(saveMsg.data[11], equals(0x50));
+      expect(saveMsg.data[12], equals(0x06));
+
+      // 848 bytes packed to 7-bit MIDI = 970 bytes
+      // Total frame size: 1 (F0) + 12 (header) + 970 (packed data) + 5 (CRC) + 1 (F7) = 989 bytes
+      expect(saveMsg.data.length, equals(989));
+
+      // The byte immediately preceding 0xF7 is the 5th CRC byte, NOT a stray 0x00
+      expect(saveMsg.data[saveMsg.data.length - 2] & 0x80, equals(0));
+      expect(saveMsg.data[saveMsg.data.length - 1], equals(0xF7));
+    });
+
+    test('isSuccessAck correctly matches F0 52 00 6E 00 00 F7', () {
+      final ack = MidiMessage.sysEx([0x52, 0x00, 0x6E, 0x00, 0x00]);
+      expect(protocol.isSuccessAck(ack), isTrue);
+
+      final nonAck = MidiMessage.sysEx([0x52, 0x00, 0x6E, 0x64, 0x12]);
+      expect(protocol.isSuccessAck(nonAck), isFalse);
+    });
   });
 
   group('ZoomMsPlusProtocol Simulation over MockMidiTransport', () {
@@ -375,7 +539,7 @@ void main() {
       for (final initMsg in protocol.buildInitSequence()) {
         await mock.send(initMsg);
       }
-      expect(mock.sentMessages.length, equals(3)); // 1 id req + 2 init msgs
+      expect(mock.sentMessages.length, equals(4)); // 1 id req + 3 init msgs
 
       // Step 3: Request Current Patch
       final patchReq = protocol.buildCurrentPatchRequest();
@@ -392,6 +556,97 @@ void main() {
       expect(downloadedPatch.slots.first.effectName, equals('DYN Comp'));
       expect(downloadedPatch.slots.first.parameters.first.currentValue, equals(8.0));
       expect(downloadedPatch.metadata['tempo'], equals(115.0));
+    });
+  });
+
+  group('Patch.isSignatureMatch Tests', () {
+    const patchA = Patch(
+      id: 'zoom_active_patch',
+      name: 'Modern Bass',
+      deviceFamily: DeviceFamily.zoomMs60bPlus,
+      slots: [
+        EffectSlot(
+          slotIndex: 0,
+          effectId: '0x01000010',
+          effectName: 'DYN Comp',
+          isEnabled: true,
+          parameters: [
+            ParameterValue(
+              descriptor: ParameterDescriptor(id: 'p0', name: 'Sense', min: 0, max: 10, defaultValue: 5),
+              currentValue: 6.0,
+            ),
+          ],
+        ),
+      ],
+    );
+
+    const patchB = Patch(
+      id: 'zoom_slot_5',
+      name: 'Modern Bass',
+      programNumber: 5,
+      deviceFamily: DeviceFamily.zoomMs60bPlus,
+      slots: [
+        EffectSlot(
+          slotIndex: 0,
+          effectId: '0x01000010',
+          effectName: 'DYN Comp',
+          isEnabled: true,
+          parameters: [
+            ParameterValue(
+              descriptor: ParameterDescriptor(id: 'p0', name: 'Sense', min: 0, max: 10, defaultValue: 5),
+              currentValue: 6.0,
+            ),
+          ],
+        ),
+      ],
+    );
+
+    test('matches identical patch content ignoring id and programNumber', () {
+      expect(Patch.isSignatureMatch(patchA, patchB), isTrue);
+    });
+
+    test('matches case-insensitively with trimmed whitespace in patch name', () {
+      final patchWithSpace = patchB.copyWith(name: ' modern bass ');
+      expect(Patch.isSignatureMatch(patchA, patchWithSpace), isTrue);
+    });
+
+    test('rejects mismatching patch name', () {
+      final diffName = patchB.copyWith(name: 'Vintage Bass');
+      expect(Patch.isSignatureMatch(patchA, diffName), isFalse);
+    });
+
+    test('rejects mismatching slot count', () {
+      final extraSlot = patchB.copyWith(slots: [
+        ...patchB.slots,
+        const EffectSlot(slotIndex: 1, effectId: '0x02000010', effectName: 'Preamp', isEnabled: true, parameters: []),
+      ]);
+      expect(Patch.isSignatureMatch(patchA, extraSlot), isFalse);
+    });
+
+    test('rejects mismatching effectId', () {
+      final diffEffect = patchB.copyWith(slots: [
+        const EffectSlot(slotIndex: 0, effectId: '0x99999999', effectName: 'Other', isEnabled: true, parameters: []),
+      ]);
+      expect(Patch.isSignatureMatch(patchA, diffEffect), isFalse);
+    });
+
+    test('with matchParameters false, matches despite differing parameter values', () {
+      final tweakedParam = patchB.copyWith(slots: [
+        EffectSlot(
+          slotIndex: 0,
+          effectId: '0x01000010',
+          effectName: 'DYN Comp',
+          isEnabled: true,
+          parameters: [
+            ParameterValue(
+              descriptor: ParameterDescriptor(id: 'p0', name: 'Sense', min: 0, max: 10, defaultValue: 5),
+              currentValue: 9.0, // Tweaked from 6.0
+            ),
+          ],
+        ),
+      ]);
+      expect(Patch.isSignatureMatch(patchA, tweakedParam, matchParameters: true), isFalse);
+      expect(Patch.isSignatureMatch(patchA, tweakedParam, matchParameters: false), isTrue);
     });
   });
 }

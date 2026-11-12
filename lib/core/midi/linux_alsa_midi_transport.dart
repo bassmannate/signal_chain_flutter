@@ -33,6 +33,8 @@ class LinuxAlsaMidiTransport extends MidiTransport {
   final ProcessRunner _processRunner;
   final ProcessStarter _processStarter;
   final bool _isLinux;
+  final bool _isTest;
+  final Duration? drainDurationOverride;
   final File? asoundCardsOverride;
 
   final StreamController<MidiMessage> _incomingController =
@@ -42,6 +44,7 @@ class LinuxAlsaMidiTransport extends MidiTransport {
   MidiPortDescriptor? _connectedPort;
   Process? _listenerProcess;
   StreamSubscription<List<int>>? _stdoutSubscription;
+  bool _isDraining = false;
 
   // Stream reassembly buffers
   String _pendingText = '';
@@ -54,10 +57,18 @@ class LinuxAlsaMidiTransport extends MidiTransport {
     ProcessRunner? processRunner,
     ProcessStarter? processStarter,
     bool? isLinux,
+    bool? isTest,
+    this.drainDurationOverride,
     this.asoundCardsOverride,
   })  : _processRunner = processRunner ?? Process.run,
         _processStarter = processStarter ?? Process.start,
-        _isLinux = isLinux ?? Platform.isLinux;
+        _isLinux = isLinux ?? Platform.isLinux,
+        _isTest = isTest ??
+            (const bool.fromEnvironment('FLUTTER_TEST') ||
+                (Platform.environment['FLUTTER_TEST'] == 'true'));
+
+  Duration get drainDuration =>
+      drainDurationOverride ?? (_isTest ? Duration.zero : const Duration(milliseconds: 50));
 
   @override
   bool get isConnected => _isConnected;
@@ -190,6 +201,16 @@ class LinuxAlsaMidiTransport extends MidiTransport {
       await disconnect();
     }
 
+    // Clean up any orphaned amidi listener processes bound to this port
+    // from prior sessions or unexpected terminations.
+    if (_isLinux && !_isTest) {
+      try {
+        await _processRunner('pkill', ['-9', '-f', 'amidi.*$portId']);
+      } catch (_) {
+        // Ignore errors if pkill is unavailable or no processes were found
+      }
+    }
+
     final available = await getAvailablePorts();
     final matchingIndex = available.indexWhere((p) => p.id == portId);
     if (matchingIndex != -1) {
@@ -203,13 +224,14 @@ class LinuxAlsaMidiTransport extends MidiTransport {
       );
     }
 
-    _pendingText = '';
-    _inSysEx = false;
-    _sysexBuffer.clear();
-    _channelBuffer.clear();
-    _expectedChannelLength = 0;
+    _resetBuffers();
 
     try {
+      final effectiveDrain = drainDuration;
+      if (effectiveDrain > Duration.zero) {
+        _isDraining = true;
+      }
+
       _listenerProcess = await _processStarter('amidi', ['-p', portId, '-d']);
       _stdoutSubscription = _listenerProcess!.stdout.listen(
         _handleRawStdoutBytes,
@@ -220,15 +242,35 @@ class LinuxAlsaMidiTransport extends MidiTransport {
           // Listener terminated
         },
       );
+
+      if (effectiveDrain > Duration.zero) {
+        await Future<void>.delayed(effectiveDrain);
+        _isDraining = false;
+        _resetBuffers();
+      }
+
       _isConnected = true;
     } catch (e) {
+      _isDraining = false;
       _isConnected = false;
       _connectedPort = null;
       throw StateError('Failed to start amidi listener on port "$portId": $e');
     }
   }
 
+  void _resetBuffers() {
+    _pendingText = '';
+    _inSysEx = false;
+    _sysexBuffer.clear();
+    _channelBuffer.clear();
+    _expectedChannelLength = 0;
+  }
+
   void _handleRawStdoutBytes(List<int> bytes) {
+    if (_isDraining) {
+      // Discard stale/leftover bytes sitting in the ALSA buffer during the drain period
+      return;
+    }
     final textChunk = utf8.decode(bytes, allowMalformed: true);
     feedHexStream(textChunk);
   }
@@ -375,18 +417,31 @@ class LinuxAlsaMidiTransport extends MidiTransport {
   Future<void> disconnect() async {
     _isConnected = false;
     _connectedPort = null;
+    _isDraining = false;
     await _stdoutSubscription?.cancel();
     _stdoutSubscription = null;
 
     if (_listenerProcess != null) {
+      final proc = _listenerProcess!;
+      _listenerProcess = null;
       try {
-        _listenerProcess!.kill(ProcessSignal.sigterm);
+        proc.kill(ProcessSignal.sigterm);
+        if (!_isTest) {
+          await proc.exitCode.timeout(
+            const Duration(milliseconds: 150),
+            onTimeout: () {
+              try {
+                proc.kill(ProcessSignal.sigkill);
+              } catch (_) {}
+              return -1;
+            },
+          );
+        }
       } catch (_) {
         try {
-          _listenerProcess!.kill();
+          proc.kill(ProcessSignal.sigkill);
         } catch (_) {}
       }
-      _listenerProcess = null;
     }
   }
 

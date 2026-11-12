@@ -19,9 +19,9 @@ void main() {
   group('ZoomMsPlusProtocol - Memory Bank Slots (0–99)', () {
     const protocol = ZoomMsPlusProtocol();
 
-    test('buildInitSequence sends 0x53 (PC Mode Disable) and 0x50 (Parameter Edit Enable) and NEVER 0x52', () {
+    test('buildInitSequence sends 0x53 (PC Mode Disable), 0x50 (Parameter Edit Enable), and 0x33 (Request Bank/Prog) and NEVER 0x52', () {
       final seq = protocol.buildInitSequence();
-      expect(seq.length, equals(2));
+      expect(seq.length, equals(3));
 
       // 1. First message must be 0x53 (PC Mode Disable)
       expect(
@@ -35,7 +35,13 @@ void main() {
         equals([0xF0, 0x52, 0x00, 0x6E, 0x50, 0xF7]),
       );
 
-      // 3. Ensure 0x52 (PC Mode Enable which locks the screen) is never present
+      // 3. Third message must be 0x33 (Request Bank & Program)
+      expect(
+        seq[2].data,
+        equals([0xF0, 0x52, 0x00, 0x6E, 0x33, 0xF7]),
+      );
+
+      // 4. Ensure 0x52 (PC Mode Enable which locks the screen) is never present
       for (final msg in seq) {
         expect(msg.data.contains(0x52) && msg.data[4] == 0x52, isFalse,
             reason: 'Init sequence must not send 0x52 PC Mode Enable (USB lock icon)');

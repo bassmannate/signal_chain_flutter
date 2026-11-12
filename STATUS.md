@@ -1,12 +1,147 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 8.7 Complete (Right-to-Left Pedalboard Signal Chain, Rotary Knob Inspector & Parameter Accuracy)  
-**Active Milestone:** Milestone 9 (Platform Packaging & Release Distribution)  
-**Last Updated:** 2026-11-11
+**Current Status:** Milestone 9 Complete (Platform Packaging & Release Distribution)  
+**Active Milestone:** Milestone 9 Complete / Post-Release Enhancements  
+**Last Updated:** 2026-11-12
 
 ---
 
 ## 1. Milestone Roadmap
+
+### 🟢 Milestone 9: Platform Packaging & Release Distribution
+*Status:* **Completed**
+- [x] **Linux Packaging & Desktop Integration:**
+  * Created standard XDG desktop entry `linux/packaging/signal-chain.desktop` (`Categories=AudioVideo;Audio;Midi;`).
+  * Added AppImageHub (`appimage.github.io`) compliant AppStream MetaInfo XML `linux/packaging/io.github.bassmannate.signal_chain.appdata.xml` (`<id>`, `<metadata_license>FSFAP</metadata_license>`, `<project_license>MIT</project_license>`, `<name>`, `<summary>`, `<description>`, `<developer>`, `<url type="homepage">`, `<launchable type="desktop-id">signal-chain.desktop</launchable>`, `<provides>`, `<content_rating>`, and release tags).
+  * Designed scalable SVG app icon `linux/packaging/signal-chain.svg` and generated high-resolution 256x256 PNG asset `linux/packaging/signal-chain.png`.
+  * Created Debian package generator script `tool/package_linux_deb.sh` bundling the release binary, icons, desktop entry, and declaring `alsa-utils` (`amidi`) and `libgtk-3-0` in `Depends`.
+  * Created AppImage packaging script `tool/package_linux_appimage.sh` assembling AppDir layout, copying AppStream XML to `usr/share/metainfo/`, and setting up `AppRun` launcher.
+  * Created local user installation script `tool/install_linux_desktop.sh` installing directly into `~/.local/lib/signal-chain`, `~/.local/bin`, and `~/.local/share/applications` without requiring root permissions.
+  * Updated `.gitignore` to exclude all Linux/Windows release outputs and staging artifacts (`dist/`, `AppDir/`, `*.AppImage`, `*.deb`, `*.zip`, `*.tar.gz`, `*.tar.xz`, and `tool/appimagetool`).
+- [x] **Android USB Host & MIDI Configuration:**
+  * Added `android.hardware.usb.host` and `android.software.midi` feature flags in `android/app/src/main/AndroidManifest.xml`.
+  * Added `android.hardware.usb.action.USB_DEVICE_ATTACHED` intent filter and metadata.
+  * Created `android/app/src/main/res/xml/device_filter.xml` specifying Zoom Corporation (`vendor-id="5766"` / `0x1686`) and Line 6 (`vendor-id="3649"` / `0x0E41`).
+- [x] **Windows Packaging Configuration:**
+  * Updated `windows/runner/Runner.rc` with official application branding, company name ("Signal Chain Contributors"), and description.
+  * Created PowerShell distribution script `tool/package_windows_zip.ps1` for assembling clean portable release ZIP archives.
+- [x] **Targeted Unit Test Suites (100% passing):**
+  * `test/packaging_config_test.dart` (5 tests verifying desktop launcher, AppStream MetaInfo XML fields, executable script permissions, Android features, USB filter VIDs, and Windows PowerShell packaging script).
+  * Full project test suite: 219 tests passing across all suites (`flutter test --no-pub`).
+  * Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+
+---
+
+### 🟢 Milestone 8.11: Linux ALSA Warm-Restart Reliability & Handshake Pacing
+*Status:* **Completed**
+- [x] **Linux ALSA RawMIDI Orphaned Process Cleanup & Port Drain (`LinuxAlsaMidiTransport`):**
+  * Discovered that restarting the application while the Zoom MS-60B+ remains plugged in could leave orphaned `amidi -p <port> -d` processes holding the ALSA RawMIDI node, splitting or stealing incoming SysEx dumps across app runs.
+  * Added proactive process cleanup before binding: terminates any stale `amidi` listeners on the target port via `pkill -9 -f "amidi.*$portId"` when running in production Linux environments.
+  * Added port drain window: upon starting the listener process, discards and clears any stale or partial bytes queued in the ALSA kernel buffer for 50ms (0ms in automated tests) before returning to caller, ensuring the message reassembly buffers are 100% clean.
+  * Enhanced process termination in `disconnect()`: sends `SIGTERM`, waits up to 150ms, and escalates to `SIGKILL` if the process remains stubborn.
+- [x] **Warm Handshake Pacing & Sequenced Patch Pull (`DeviceConnectionController`):**
+  * Prevented packet flooding on pedal reconnect: added a 25ms inter-command pacing delay (0ms under `FLUTTER_TEST`) between initialization messages (`0x53` -> `0x50` -> `0x33`) and before `64 13`.
+  * Sequenced initial current patch request (`buildRequestCurrentPatchMessage`): awaits the incoming `64 12 01` patch dump via `sendSysExAndWait` with an 800ms timeout (50ms under `FLUTTER_TEST`).
+  * Added single retry: if the initial attempt times out, retries once before proceeding, preventing missed edit buffer loads during warm pedal reconnects.
+  * Eliminated collision with background bank sync: `syncDeviceBank()` is strictly deferred until the current patch request completes or finishes its retry.
+- [x] **Bank Slot Request Retry Guard (`syncDeviceBank`):**
+  * Wrapped individual memory slot requests (`0x46`) in a retry loop: if a slot read times out, retries once before marking the slot descriptor loaded but empty.
+  * Added inter-slot pacing delay in the sync loop to avoid overflowing the pedal's internal flash memory controller during bulk 100-slot scans.
+- [x] **Unit & Widget Test Suites (100% passing):**
+  * `test/core/midi/linux_alsa_midi_transport_test.dart` (13 tests, +3 tests for `pkill` cleanup, port drain discard, and `SIGKILL` escalation).
+  * `test/features/device_connection_controller_test.dart` (3 tests, newly created suite verifying pacing, `64 13` timeout retry, `0x46` timeout retry, and sequential ordering).
+  * `test/hardware_bank_widget_test.dart` (12 tests).
+  * Full project test suite: 214 tests passing across all suites (`flutter test --no-pub`).
+  * Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+
+---
+
+### 🟢 Milestone 8.10: Zoom MS Plus Initial Active Slot Identification (Opcode 0x33 & Deterministic Bank Signature Fallback)
+*Status:* **Completed**
+- [x] **Protocol Forensics & Root Cause Discovery:**
+  * Analyzed initial connection SysEx sequence vs `ZoomDevice.js`.
+  * Identified that `64 12 01` (PTCF edit buffer dump) contains no memory slot number in its header, causing `Patch.programNumber` to initialize as `null`.
+  * As a consequence, the Hardware Bank sidebar displayed no active slot highlight on connect, and "Write to Slot..." defaulted to slot `001` (index 0).
+- [x] **Opcode `0x33` Hardware Query (`ZoomMsPlusProtocol` & `DeviceProtocol`):**
+  * Added `buildCurrentSlotRequest()` returning `F0 52 00 6E 33 F7` (`cmdRequestBankAndProgram = 0x33`).
+  * Appended `0x33` to `ZoomMsPlusProtocol.buildInitSequence()` (`0x53` -> `0x50` -> `0x33`) to request the selected bank and slot immediately upon connection.
+  * Successfully routes both `64 26 00 00` SysEx and Bank Select CC (`B0 00` / `B0 20`) + Program Change (`C0`) to `setActiveHardwareSlotIndex`.
+- [x] **Deterministic Bank Signature Fallback Heuristic (`Patch.isSignatureMatch`):**
+  * Added `Patch.isSignatureMatch(target, candidate, {bool matchParameters = true})` to robustly match presets by name, slot count, effect IDs, bypass states, and parameter values.
+  * As `0x45` memory slots stream in during `syncDeviceBank`, if `activeHardwareSlotIndex` is not yet set, the engine evaluates incoming bank slots against the initial edit buffer and locks `activeHardwareSlotIndex` onto the matching slot.
+  * Symmetrically checks already-synced slots if the `64 12 01` dump arrives after bank sync has commenced.
+- [x] **Controller & UI Layer Pre-Selection:**
+  * Added `activeHardwareSlotIndex` getter and `setActiveHardwareSlotIndex(slotIndex)` in `DeviceConnectionController`.
+  * Added `setHardwareSlotIndex(slotIndex)` in `PatchEditorController` to associate the active preset with its hardware slot without marking it dirty.
+  * In `applyExternalHardwareUpdate`, preserved known slot index during unsolicited edit buffer dumps (`64 12 01`) so `programNumber` is never reset to `null`.
+  * `HardwareBankBrowserWidget` inspects `patch.programNumber ?? activeHardwareSlotIndex` and immediately highlights the slot as `ACTIVE IN EDITOR`.
+  * `WriteToSlotDialog` pre-selects `activeHardwareSlotIndex` by default in the slot dropdown.
+- [x] **Unit & Widget Test Suites (100% passing):**
+  * `test/protocols/zoom_ms_plus_protocol_test.dart` (31 tests, +7 tests for `buildCurrentSlotRequest` and `Patch.isSignatureMatch`).
+  * `test/features/patch_editor_controller_test.dart` (15 tests, +3 tests for `setHardwareSlotIndex`, unassigned slot assignment, and slot preservation).
+  * `test/hardware_bank_widget_test.dart` (12 tests, +2 tests for hardware slot notification and deterministic bank signature fallback pre-selection).
+  * Full project test suite: 208 tests passing across all suites (`flutter test --no-pub`).
+  * Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+
+---
+
+### 🟢 Milestone 8.9: Zoom MS Plus Live Structural Chain Sync (Reorder, Swap, Add, Remove & Dynamic PRM2 Bitmasks)
+*Status:* **Completed**
+- [x] **Protocol Forensics & Root Cause Discovery (`zoom-explorer`):**
+  * Discovered that opcode `64 12 01` (PTCF edit buffer dump) is strictly device-to-host; transmitting it to the pedal in live edit mode is ignored by DSP/display and triggers an echo loopback dump that reverts local app state.
+  * Identified that live structural edits on Zoom MS Plus (`0x6E`) operate exclusively via parameter opcodes (`64 20 00`):
+    - `paramNumber = 1`: Sets 32-bit DSP algorithm ID packed as 5 7-bit bytes (`buildEffectTypeMessage`), supporting `effectId = 0` to empty/clear slots.
+    - `paramNumber = 0`: Bypass state (`00` bypassed, `01` active).
+    - `paramNumber = paramIndex + 2`: Knob parameter values.
+    - `64 20 00 64 01 <slotIndex>`: Focuses physical LCD cursor on active slot.
+- [x] **Protocol Layer Implementation (`ZoomMsPlusProtocol` & `DeviceProtocol`):**
+  * Added `buildEffectTypeMessage(int slotIndex, int effectId)` implementing `64 20 00 <slotIndex> 01 <5 bytes 7-bit dspId>`.
+  * Added `buildSlotSyncSequence(int slotIndex, EffectSlot slot)` sequencing: Effect ID, Bypass, mapped parameters, and trailing hidden parameters (`rawTrailingValues`).
+  * In `encodePtcf`, added dynamic calculation for PRM2 bitmasks: Preamp (`byte 20`, `(preampBits & 0x3F) << 1`), BPM tempo-sync (`bytes 21-22`), Line Selector (`bytes 22-23`), and cursor slot (`byte 10`).
+- [x] **Controller Layer & State Protection (`PatchEditorController`):**
+  * Added `swapEffectSlots(int indexA, int indexB)` for card-on-card drops and nudge buttons.
+  * Corrected `reorderEffectSlots(int fromIndex, int toIndex)` index adjustment (`fromIndex < toIndex ? toIndex - 1 : toIndex`).
+  * Replaced `64 12 01` dump in `_syncStructureToDevice` with live `buildSlotSyncSequence` bursts and `buildSlotFocusMessage`.
+  * Added `_isSyncingStructure` lock and dirty-state guards in `applyExternalHardwareUpdate` to prevent incoming ACK echoes or unsolicited patch dumps from overwriting user edits during structural modifications.
+- [x] **UI Layer Alignment (`SignalChainStripWidget`):**
+  * Routed card-on-card drops and nudge buttons (`<` / `>`) to `swapEffectSlots`.
+  * Routed inter-slot insertion zones to `reorderEffectSlots`.
+  * Fixed `onWillAcceptWithDetails` boundary condition in `_buildInsertionZone` to permit adjacent moves across RTL boundaries.
+- [x] **Unit & Widget Test Suites (100% passing):**
+  * `test/protocols/zoom_ms_plus_protocol_test.dart` (24 tests, +3 tests for `buildEffectTypeMessage`, `buildSlotSyncSequence`, and dynamic `PRM2` bitmasks).
+  * `test/drag_drop_editor_test.dart` (10 tests, updated for `swapEffectSlots` and `reorderEffectSlots` live `64 20 00` dispatch).
+  * Full test suite: 196 tests passing across all suites (`flutter test --no-pub`).
+  * Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+
+---
+
+### 🟢 Milestone 8.8: Zoom MS Plus Hardware Slot Write Protocol Alignment & ACK Verification
+*Status:* **Completed**
+- [x] **Deep Protocol Forensics vs `zoom-explorer`:**
+  * Analyzed `ZoomDevice.js`, `ZoomPatch.js`, `tools.js`, and `miditools.js` against ALSA RawMIDI binary disassembly of `/usr/bin/amidi`.
+  * Identified the requirement of fixed 848-byte (`0x0350`) unpacked PTCF slot payload buffer length on Zoom MS Plus hardware.
+  * Verified opcode `0x45 0x00 0x00` writes directly without requiring PC Mode `0x52` or parameter edit enable/disable cycles.
+  * Confirmed Zoom hardware Success ACK packet: `F0 52 00 <familyIdByte> 00 00 F7`.
+- [x] **Binary Framing & Checksum Fixes (`ZoomMsPlusProtocol`):**
+  * Updated `buildSavePatchToSlotMessage` to zero-pad unpacked PTCF data to `msPlusPtcfSlotLength` (848 bytes).
+  * Set length fields strictly to LSB `0x50`, MSB `0x06` ($848$).
+  * Packed all 848 bytes into 970 bytes of 7-bit MIDI data.
+  * Computed inverted CRC32 ($\sim\text{CRC32}$) across the complete 848-byte padded buffer.
+  * Eliminated the trailing `0x00` padding byte before `0xF7` (message strictly ends after 5 CRC bytes, yielding exactly 989 SysEx bytes).
+  * Applied the same length padding, PRM2 volume ($100$), edit slot bit pattern, and CRC framing to edit buffer updates (`0x64 0x12 0x01`).
+  * Implemented `isSuccessAck(MidiMessage message)` in `DeviceProtocol` and `ZoomMsPlusProtocol`.
+- [x] **Bidirectional ACK Verification & Dialog Guardrails:**
+  * Added `MidiTransport.sendRequest` convenience method.
+  * Updated `PatchEditorController.savePatchToDeviceSlot` to await hardware ACK response (`F0 52 00 6E 00 00 F7`) with a 2500ms timeout when communicating with physical devices, maintaining seamless mock compatibility for `MockMidiTransport`.
+  * Guarded `WriteToSlotDialog` to keep the dialog open on timeout/rejection and display the error message rather than falsely showing a success snackbar.
+- [x] **Unit & Widget Test Suites (100% passing):**
+  * `test/protocols/zoom_ms_plus_protocol_test.dart` (21 tests).
+  * `test/protocol_bank_test.dart` (13 tests).
+  * `test/features/patch_editor_controller_test.dart` (12 tests).
+  * `test/hardware_bank_widget_test.dart` (9 tests).
+  * Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+
+---
 
 ### 🟢 Milestone 1: Project Scaffolding, Domain Models & Core MIDI Transport Abstraction
 *Status:* **Completed**
@@ -173,7 +308,8 @@
   * `Line6BassPodProProtocol`: Program dump request (`0x01`) and program memory dump write.
   * `BankSlotDescriptor` model representing remote hardware patch indices, empty/loaded flags, bank/program numbers (`1-1` to `10-10`), and formatted slot labels (`#00 (1-1)`).
   * `DeviceConnectionController.syncDeviceBank`: Non-blocking, incremental asynchronous fetch of all 100 persistent slots with live percentage progress, cancellation support, and individual timeout resilience.
-  * Direct memory slot loading (`loadPatchFromDeviceSlot`) and saving (`savePatchToDeviceSlot`) in `PatchEditorController`.
+  * Direct memory slot loading (`loadPatchFromDeviceSlot`) and hardware slot write SysEx dispatch (`savePatchToDeviceSlot` via `sendSysEx` / `send`) in `PatchEditorController`.
+  * Added `MidiTransport.sendSysEx(MidiMessage message)` convenience contract across all transport implementations.
 - [x] **Part 2: Patch Metadata Controls (Name & Tempo):**
   * `PatchEditorController.updatePatchName(String newName)`: Enforces hardware-specific character limits (10 chars for Zoom MS Plus pedals, 16 for Line 6 Bass Pod Pro), converts invalid/unprintable ASCII characters to spaces, marks patch dirty, and dispatches real-time update to connected device.
   * `PatchEditorController.updatePatchTempo(int bpm)`: Clamps tempo to 40–250 BPM, encodes into Zoom PRM2 subchunk, marks patch dirty, and dispatches real-time sync.
@@ -326,11 +462,8 @@
 
 ---
 
-### 🟡 Milestone 9: Platform Packaging & Release Distribution
-*Status:* **Ready / Next**
-- [ ] Linux AppImage / Debian packaging and desktop launcher entries (`.desktop`, icons).
-- [ ] Android USB Host OTG permissions in `AndroidManifest.xml` and release APK / AAB setup.
-- [ ] Windows MSIX / portable zip packaging.
+### 🟢 Milestone 9: Platform Packaging & Release Distribution
+*Status:* **Completed (Documented above in Milestone Roadmap)**
 
 ---
 
@@ -350,5 +483,5 @@
 | **State Controllers** | Complete | `DeviceConnectionController` (Bank sync), `PatchEditorController` (Name/Tempo/Slots), `PatchLibraryController` |
 | **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget` (RTL order), `RotaryKnobWidget`, `SlotInspectorWidget`, `HardwareBankBrowserWidget`, `WriteToSlotDialog`, `PatchLibraryDrawerOrPanel` |
 | **Static Analysis** | Passing (0 issues) | Verified via `flutter analyze --no-pub` |
-| **Unit & Widget Tests** | 100% Passing | 148 tests passing across 18 targeted test suites |
+| **Unit & Widget Tests** | 100% Passing | 219 tests passing across all test suites |
 

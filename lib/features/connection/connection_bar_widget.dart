@@ -333,7 +333,11 @@ class ConnectionBarWidget extends StatelessWidget {
             connectionController.connectedPort?.id == portId) {
           await connectionController.disconnect();
         } else {
-          await connectionController.connect(port);
+          await connectionController.connect(
+            port,
+            autoSyncBank: true,
+            fetchCurrentPatch: true,
+          );
         }
       },
     );

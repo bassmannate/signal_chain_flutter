@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Zoom Corporation (VID 0x1686 = 5766) -->
+    <!-- Zoom MS-50G+, MS-60B+, MS-70CDR+, MS-200D+, and Zoom audio/MIDI processors -->
+    <usb-device vendor-id="5766" />
+
+    <!-- Line 6 (VID 0x0E41 = 3649) -->
+    <!-- Line 6 Bass Pod Pro, Pod Pro, and USB/MIDI interfaces -->
+    <usb-device vendor-id="3649" />
+</resources>
+
