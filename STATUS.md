@@ -1,8 +1,8 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 5 Complete (Native Platform MIDI Transport, Composite Hardware/Simulation Bridge & Persistent Storage Wiring)  
-**Active Milestone:** Milestone 6 (Platform Packaging & Release Distribution)  
-**Last Updated:** 2026-11-10
+**Current Status:** Milestone 8 Complete (Zoom MS-60B+ Live Hardware Testing Protocol & UX Bug Fixes)  
+**Active Milestone:** Milestone 9 (Platform Packaging & Release Distribution)  
+**Last Updated:** 2026-11-11
 
 ---
 
@@ -138,7 +138,158 @@
 
 ---
 
-### 🟡 Milestone 6: Platform Packaging & Release Distribution
+### 🟢 Milestone 6: Full Zoom MS-60B+ / MS Plus Effect Catalog Extraction & Signal Chain Slot Workflows
+*Status:* **Completed**
+- [x] **Full Zoom MS-60B+ / MS Plus Catalog Extraction (`lib/catalog/`, `tool/`):**
+  * Located reference `zoom-effect-mappings-ms60bp.json` and created project reference at `tool/reference/zoom-effect-mappings-ms60bp.json`.
+  * Created deterministic, pure-Dart tool script `tool/generate_zoom_catalog.dart` parsing the complete 98-effect MS-60B+ mapping and generating `lib/catalog/zoom_ms_plus_catalog_data.dart`.
+  * Extracted all 98 effects across 11 categories: Dynamics, Filter / EQ, Drive / Distortion, Preamp, Amp Model, Modulation, Pitch / Octave, Bass Synth, Special / SFX, Delay, Reverb.
+  * Mapped all parameter descriptors with exact min, max, default values, step, and discrete non-numeric value labels (e.g., Attack SLOW/FAST, Ultra, MID-FREQ 32-band steps).
+  * Updated `ZoomMsPlusCatalog` in `lib/protocols/catalogs/zoom_ms_plus_catalog.dart` with backward-compatible lookup APIs (`getById`, `getByIntId`, `getByCategory`, `categories`, `search`).
+  * Updated `EffectDefinition` with `intEffectId` helper and `dspLoad` metadata support.
+- [x] **Signal Chain Slot Operations in `PatchEditorController` (`lib/features/editor/`):**
+  * `addEffectSlot({int? index, required dynamic effectId})`: Adds slot with default parameters from `EffectCatalogRegistry`, respecting device max slot limits (e.g. 6 slots on Zoom MS Plus).
+  * `removeEffectSlot(int slotIndex)`: Safely removes an effect slot, re-indexes remaining slots, and clamps `selectedSlotIndex`.
+  * `moveEffectSlot(int oldIndex, int newIndex)`: Reorders slots in the signal chain and maintains selected slot tracking.
+  * `changeSlotEffect(int slotIndex, dynamic newEffectId)`: Hot-swaps slot algorithm by integer DSP ID or hex string and re-populates default parameter descriptors.
+  * Live hardware synchronization: Automatic edit buffer dump dispatch (`protocol.encodePatch`) to connected devices on chain structure modifications.
+- [x] **Studio UI Enhancements & Modal Effect Picker (`lib/features/editor/`):**
+  * `SignalChainStripWidget`: Added Move Left and Move Right buttons, Swap Effect button, Remove Slot action, and "+ Add Effect" card with max slot indicators.
+  * `EffectPickerDialog` (`lib/features/editor/effect_picker_dialog.dart`): Modal dialog with live text search, category filter chips (All + 11 categories), parameter count and hex ID badges, and single-click selection.
+  * `SlotInspectorWidget`: Added "Browse Effect Catalog" button opening `EffectPickerDialog` alongside existing model dropdown.
+- [x] **Comprehensive Test Suites (100% passing, 124 total tests):**
+  * `test/zoom_full_catalog_test.dart` (7 tests covering full 98 effects, 11 categories, parameter integrity, search, and family registration).
+  * `test/controllers_and_ui_test.dart` (6 tests covering slot addition, removal, reordering, swapping, and widget interactions with `EffectPickerDialog`).
+- [x] Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+
+---
+
+---
+
+### 🟢 Milestone 7: Hardware Patch Memory Bank Protocol, Patch Metadata Controls & Hardware Bank Browser UI
+*Status:* **Completed**
+- [x] **Part 1: Hardware Patch Memory Bank Protocol (0–99 Slots):**
+  * `ZoomMsPlusProtocol`: Memory slot read request (`46 00 00 <bank_lsb> <bank_msb> <prog_lsb> <prog_msb>`) and save dump message (`45 00 00` with bank/prog offset, length, 7-bit packed PTCF, CRC, 00, F7).
+  * `Line6BassPodProProtocol`: Program dump request (`0x01`) and program memory dump write.
+  * `BankSlotDescriptor` model representing remote hardware patch indices, empty/loaded flags, bank/program numbers (`1-1` to `10-10`), and formatted slot labels (`#00 (1-1)`).
+  * `DeviceConnectionController.syncDeviceBank`: Non-blocking, incremental asynchronous fetch of all 100 persistent slots with live percentage progress, cancellation support, and individual timeout resilience.
+  * Direct memory slot loading (`loadPatchFromDeviceSlot`) and saving (`savePatchToDeviceSlot`) in `PatchEditorController`.
+- [x] **Part 2: Patch Metadata Controls (Name & Tempo):**
+  * `PatchEditorController.updatePatchName(String newName)`: Enforces hardware-specific character limits (10 chars for Zoom MS Plus pedals, 16 for Line 6 Bass Pod Pro), converts invalid/unprintable ASCII characters to spaces, marks patch dirty, and dispatches real-time update to connected device.
+  * `PatchEditorController.updatePatchTempo(int bpm)`: Clamps tempo to 40–250 BPM, encodes into Zoom PRM2 subchunk, marks patch dirty, and dispatches real-time sync.
+  * `PatchMetadataHeaderWidget`: Real-time name input `TextField`, dirty status badge (`* UNSAVED`), tempo BPM display, increment/decrement buttons (`-1`/`+1 BPM`), tempo slider, and "Write to Slot..." button.
+  * `WriteToSlotDialog`: Dedicated modal dialog for selecting destination memory slot (0–99) with overwrite confirmation.
+- [x] **Part 3: Hardware Bank Browser UI:**
+  * `HardwareBankBrowserWidget`: Dedicated scrollable 100-slot browser displaying slot numbers, names, active editor badges, search/filter bar, one-click load into editor buffer, and slot overwrite action.
+  * `PatchLibraryDrawerOrPanel`: Segmented tab toggle switching between `Local Presets` and `Hardware Bank` with zero overflow across desktop and mobile screens.
+  * Simulated memory slot responders in `MockMidiTransport` for Zoom MS-60B+ and Line 6 Bass Pod Pro.
+- [x] **Part 4: Targeted Unit & Widget Tests + Documentation:**
+  * `test/protocol_bank_test.dart` (7 tests verifying SysEx payloads for reading/writing slots 0–99 on Zoom and Line 6, round-trip encoding/decoding, and `BankSlotDescriptor`).
+  * `test/patch_metadata_test.dart` (5 tests verifying name length enforcement, character sanitization, tempo boundary clamping 40–250 BPM, and PRM2 persistence).
+  * `test/hardware_bank_widget_test.dart` (7 tests verifying `PatchMetadataHeaderWidget`, `HardwareBankBrowserWidget`, slot syncing, loading, and tab switching).
+  * Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+  * Comprehensive documentation updates in `PROJECT_CONTEXT.md`, `SPEC.md`, and `STATUS.md`.
+
+---
+
+### 🟢 Milestone 7.5: Live Bidirectional Hardware Sync, Patch Name Extraction, MIDI Auto-Select & Drag-and-Drop Effect Palette
+*Status:* **Completed**
+- [x] **MIDI Port Auto-Selection (`DeviceConnectionController`):**
+  * Auto-scans discovered MIDI ports for known hardware patterns (`ZOOM`, `MS Plus`, `MS-60B`, `MS-50G`, `MS-70CDR`, `MS-200D`, `Bass POD`, `Line 6`).
+  * If physical hardware is detected and not currently connected, auto-selects `DeviceFamily`, establishes connection, issues `buildRequestCurrentPatchMessage()`, and triggers background bank name sync.
+  * Preserves manual dropdown port selection and simulation fallback in studio UI.
+- [x] **Bidirectional Live Hardware-to-App Sync Without Feedback Loops:**
+  * Non-blocking raw MIDI streaming with `AlsaRawMidiTransport` (`LinuxAlsaMidiTransport`) reassembling SysEx and standard channel messages (Program Change `0xC0..0xCF`, Control Change `0xB0..0xBF`).
+  * `ZoomMsPlusProtocol` handles incoming current patch dumps (`0x28` / `0x64 0x12 0x01` / `0x45 0x00 0x00`), real-time parameter edits (`0x64 0x20` and legacy `0x31`), and Program Change events.
+  * Direct unsolicited event routing from `DeviceConnectionController` into `PatchEditorController.applyExternalHardwareUpdate(...)`.
+  * Guarantees local UI updates immediately without echoing messages back over MIDI, preventing feedback loops.
+- [x] **Accurate Hardware Patch Name Extraction (`ZoomMsPlusProtocol`):**
+  * `_cleanName` strips trailing null bytes (`0x00`) and whitespace while preserving printable ASCII characters and internal spaces.
+  * Reliable `NAME` subchunk extraction in PTCF parser with fallback marker scanning for malformed or non-contiguous chunks.
+  * Decoded names immediately populate `BankSlotDescriptor` in `HardwareBankBrowserWidget` and `PatchMetadataHeaderWidget`.
+- [x] **Drag-and-Drop Signal Chain & Effect Bank Palette:**
+  * `EffectBankPaletteWidget`: Studio shelf/panel with category filter chips (`All`, `Dynamics`, `Filter`, `Drive`, `Amp`, `Cabinet`, `Modulation`, `SFX`, `Delay`, `Reverb`), live search box, and `Draggable<EffectDragPayload>` cards with click-to-add accessibility.
+  * `SignalChainStripWidget`: Slot cards wrapped in `Draggable<SlotReorderPayload>` and `DragTarget<Object>`.
+  * Dragging slot A onto slot B calls `patchEditorController.reorderEffectSlots(fromIndex, toIndex)` and synchronizes to hardware.
+  * Dragging from Effect Palette onto a slot swaps algorithm (`changeSlotEffect`) and syncs to hardware; dragging onto "+ Add Slot" card inserts algorithm (`addEffectSlot`) and syncs to hardware.
+  * Visual hover feedback (`onWillAcceptWithDetails`) with glowing accent borders.
+- [x] **Targeted Unit & Widget Test Suites (100% passing):**
+  * `test/protocol_bank_test.dart` (10 tests, +3 tests verifying PTCF trailing null byte stripping, Current Patch dumps `0x28`/`0x64 0x12`, and parameter edits `0x31`/`0x64 0x20`).
+  * `test/drag_drop_editor_test.dart` (8 tests verifying port auto-selection heuristics, unsolicited updates without echo loop, effect palette rendering, reordering, and slot drops).
+  * Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+
+---
+
+### 🟢 Milestone 8: Zoom MS-60B+ Live Hardware Testing Protocol & UX Bug Fixes
+*Status:* **Completed**
+- [x] **Bug 1: USB Lock Screen Icon Handshake & Bidirectional Control Fix:**
+  * Updated `ZoomMsPlusProtocol.buildInitSequence()` to transmit `0x53` (`cmdPcModeDisable`) first to clear any USB lock screen PC Mode, followed by `0x50` (`cmdParameterEditEnable`) to enable live bidirectional parameter editing and physical pedal control.
+  * Completely removed `0x52` (`cmdPcModeEnable`) and `0x51` from the initialization sequence.
+  * Verified ALSA transport correctly receives knob turns, effect bypasses, and patch changes without echoing back.
+- [x] **Bug 2: USB Hot-Plug Auto-Connect & Bank Sync Isolation:**
+  * Added lightweight periodic hot-plug polling (every 2 seconds, disabled in `FLUTTER_TEST`) in `DeviceConnectionController` that auto-connects upon pedal plug-in and cleanly disconnects when unplugged.
+  * Isolated memory slot dumps (`0x45 0x00 0x00` / `isSlotPatchDump`) from current edit buffer dumps (`0x64 0x12 0x01` / `0x28` / `isCurrentPatchDump`).
+  * Incoming `0x45` responses strictly update `bankSlots[slotIndex]` using `extractSlotIndex(m)` and never overwrite or cycle the active editor patch buffer.
+- [x] **Bug 3: Single-Click Responsive Hardware Bank Slot Selection:**
+  * Tapping a slot in `HardwareBankBrowserWidget` immediately loads the pre-cached patch from `bankSlots` on single click with zero lag and without sending slot-write commands (`0x45`).
+  * If uncached, queries hardware using targeted `sendSysExAndWait` matcher validating slot index.
+  * Transmits standard Zoom slot switch messages (Bank Select CC 0, CC 32, and Program Change) to update the pedal's active slot.
+- [x] **Bug 4: Inter-Slot Signal Chain Drag-and-Drop Insertion:**
+  * Added `insertEffectSlotAt(int index, EffectCatalogEntry entry)` to `PatchEditorController`.
+  * Implemented dedicated `DragTarget<Object>` **insertion zones** between every slot in `SignalChainStripWidget` (before slot 0, between `i` and `i+1`, and after the last slot).
+  * Hovering an effect or slot reorder over an insertion zone displays an illuminated vertical insertion bar/spacer with glow styling.
+  * Dropping an effect from the palette inserts it at that exact chain index; dropping a slot moves it to that exact index.
+- [x] **Targeted Unit & Widget Test Suites (100% passing):**
+  * `test/protocol_bank_test.dart` (13 tests).
+  * `test/drag_drop_editor_test.dart` (10 tests).
+  * `test/hardware_bank_widget_test.dart` (9 tests).
+  * Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+
+---
+
+### 🟢 Milestone 8.5: Zoom MS-60B+ Hardware Patch Switch Feedback Loop Elimination & Bidirectional Knob/Bypass Sync
+*Status:* **Completed**
+- [x] **Bug A: Hardware Patch Switch Flopping & Echo Loop Elimination:**
+  * Added Bank Select CC tracking (`CC 0` MSB, `CC 32` LSB) in `DeviceConnectionController._handleIncomingHardwareEvent` to calculate the true slot index `(bank * 10) + prog` on incoming Program Change.
+  * Added parsing for Zoom MS Plus SysEx `bankAndProgramNumberV2` (`F0 52 00 6E 64 26 00 00 <bank> <prog> F7`).
+  * Updated `PatchEditorController.loadPatchFromDeviceSlot` with `bool notifyHardware = true` parameter.
+  * When patch change originates from the physical pedal, `applyExternalHardwareUpdate(programNumber: slot)` passes `notifyHardware: false`, strictly loading the cached patch without transmitting slot-select or write commands back to the pedal, breaking the feedback loop.
+- [x] **Bug B: Bidirectional Live Knob & Effect Bypass Sync (App <-> Pedal):**
+  * Discovered and aligned with reference wire protocol semantics: Parameter 0 = Bypass (1 = ON, 0 = OFF), Parameter 1 = Effect ID, Parameter 2+ = Knobs (knob index = `paramNumber - 2`).
+  * App to Pedal (Bypass): Implemented `buildSlotBypassMessage` in `DeviceProtocol` / `ZoomMsPlusProtocol` (15-byte SysEx: `F0 52 00 6E 64 20 00 <slot> 00 <val> ... F7`) and wired into `PatchEditorController.toggleSlotEnabled`.
+  * App to Pedal (Knobs): Updated `buildParameterEditMessage` to encode `paramIndex + 2` in byte 8 so knob parameters map to pedal controls accurately.
+  * Pedal to App (Bypass): Implemented `isSlotBypass` and `parseSlotBypass` in `ZoomMsPlusProtocol` to detect footswitch presses on physical pedal and toggle `slot.isEnabled` in UI under `_isHandlingIncoming = true` with zero echo.
+  * Pedal to App (Knobs): Updated `parseParameterEdit` to map incoming `paramNumber >= 2` back to `paramIndex = paramNumber - 2`, and updated `isParameterEdit` to ignore ACK frames (`data[6] == 0x01`).
+- [x] **Post-Sync Guardrail:**
+  * Re-asserts `0x50` (`cmdParameterEditEnable`) at the completion of `syncDeviceBank()` to guarantee live SysEx streaming continues uninterrupted after slot fetching.
+
+---
+
+### 🟢 Milestone 8.6: Physical Footswitch Bypass Real-Time Fix & Bidirectional Effect Slot Focus Sync
+*Status:* **Completed**
+- [x] **Bug 1: Physical Footswitch Bypass Real-Time Unbuffering (`LinuxAlsaMidiTransport`):**
+  * Discovered root cause of footswitch bypass inversion / 1-message lag: `feedHexStream` split on trailing whitespace, stranding raw `F7` terminating bytes emitted by `amidi -d` until the *subsequent* hardware action arrived.
+  * Rewrote `feedHexStream` tokenizer to immediately consume all complete 2-hex-digit tokens without waiting for trailing whitespace or newlines, only buffering incomplete 1-character tails at stream boundaries.
+  * Eliminated redundant secondary MIDI transport subscription in `PatchEditorController` to prevent duplicate message handling.
+- [x] **Bug 2: Bidirectional Effect Slot Focus Synchronization (Pedal <-> App):**
+  * Discovered Zoom MS Plus slot focus opcode in reference implementation: `F0 52 00 6E 64 20 00 64 01 <slotIndex> 00 00 00 00 F7`.
+  * Implemented `buildSlotFocusMessage`, `isSlotFocusChange`, and `parseSlotFocusChange` in `DeviceProtocol` and `ZoomMsPlusProtocol`.
+  * Guarded `isSlotBypass` and `isParameterEdit` to strictly match effect slots (`slotIndex < 6`), rejecting device-level `0x64` opcodes (such as slot focus `64 01`, tempo `64 02`, and autosave `64 0F`).
+  * Pedal to App: Physical Left/Right cursor button presses on pedal update `PatchEditorController.selectedSlotIndex` and trigger UI updates in real time.
+  * Pedal to App: Footswitch bypass toggles and knob tweaks automatically focus the targeted slot index in the UI inspector.
+  * App to Pedal: Clicking a slot card in `SignalChainStripWidget` transmits `buildSlotFocusMessage`, causing the physical pedal screen to follow the app's selected slot.
+- [x] **Targeted Unit & Widget Test Suites (100% passing):**
+  * `test/core/midi/linux_alsa_midi_transport_test.dart` (10 tests, +2 tests verifying unbuffered `F7` dispatch without trailing whitespace).
+  * `test/protocols/zoom_ms_plus_protocol_test.dart` (19 tests, +3 tests for `buildSlotFocusMessage`, `isSlotFocusChange`, and `0x64` opcode filtering).
+  * `test/features/patch_editor_controller_test.dart` (10 tests, +3 tests for focus transmission, incoming focus navigation, and incoming bypass focus).
+  * `test/protocol_bank_test.dart` (13 tests).
+  * `test/drag_drop_editor_test.dart` (10 tests).
+  * `test/hardware_bank_widget_test.dart` (9 tests).
+  * Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+
+---
+
+### 🟡 Milestone 9: Platform Packaging & Release Distribution
 *Status:* **Ready / Next**
 - [ ] Linux AppImage / Debian packaging and desktop launcher entries (`.desktop`, icons).
 - [ ] Android USB Host OTG permissions in `AndroidManifest.xml` and release APK / AAB setup.
@@ -151,15 +302,16 @@
 | Item | Status | Notes |
 | :--- | :--- | :--- |
 | **Workspace Repository** | Clean Flutter Project | Flutter 3.47.9 / Dart 3.13.7 baseline |
-| **Legacy Source Code** | Audited | Sibling archive audited at `~/.cache/.fr-CFTZU3/` |
+| **Legacy Source Code** | Audited | Reference mappings in `tool/reference/zoom-effect-mappings-ms60bp.json` |
 | **Directory Scaffolding** | Complete | Clean architecture layers maintained |
 | **Core MIDI Transport** | Complete | `MidiTransport`, `MidiMessage`, `MockMidiTransport`, `LinuxAlsaMidiTransport`, `CompositeMidiTransport` |
-| **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch` |
-| **SysEx & Protocol Engine** | Complete | `SysexCodec`, `ZoomMsPlusProtocol`, `Line6BassPodProProtocol` |
-| **Effect Catalogs** | Complete | `EffectDefinition`, `EffectCatalogRegistry`, `ZoomMsPlusCatalog`, `Line6BassPodProCatalog` |
+| **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch`, `BankSlotDescriptor` |
+| **SysEx & Protocol Engine** | Complete | `SysexCodec`, `ZoomMsPlusProtocol` (Memory slots 0–99 read/write), `Line6BassPodProProtocol` (Program dumps) |
+| **Effect Catalogs** | Complete (98 effects) | `EffectDefinition`, `EffectCatalogRegistry`, `ZoomMsPlusCatalog` (98 effects), `Line6BassPodProCatalog` |
+| **Catalog Generator** | Complete | Deterministic pure-Dart script `tool/generate_zoom_catalog.dart` |
 | **Persistence Repositories** | Complete | `PatchLibraryRepository`, `InMemoryPatchLibraryRepository`, `FileSystemPatchLibraryRepository` |
-| **State Controllers** | Complete | `DeviceConnectionController`, `PatchEditorController`, `PatchLibraryController` |
-| **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget`, `SlotInspectorWidget`, `PatchLibraryDrawerOrPanel` (Import/Export dialogs) |
+| **State Controllers** | Complete | `DeviceConnectionController` (Bank sync), `PatchEditorController` (Name/Tempo/Slots), `PatchLibraryController` |
+| **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget`, `PatchMetadataHeaderWidget`, `HardwareBankBrowserWidget`, `WriteToSlotDialog`, `PatchLibraryDrawerOrPanel` |
 | **Static Analysis** | Passing (0 issues) | Verified via `flutter analyze --no-pub` |
-| **Unit & Widget Tests** | 100% Passing | 124 tests passing across all test suites |
+| **Unit & Widget Tests** | 100% Passing | 143 tests passing across 17 targeted test suites |
 

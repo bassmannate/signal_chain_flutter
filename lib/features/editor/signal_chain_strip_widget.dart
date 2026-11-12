@@ -3,9 +3,13 @@ import 'package:flutter/material.dart';
 import '../../models/effect_slot.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
 import '../theme/studio_theme.dart';
+import 'effect_bank_palette_widget.dart';
+import 'effect_picker_dialog.dart';
 import 'patch_editor_controller.dart';
+import 'patch_metadata_header_widget.dart';
 
-/// Horizontal pedalboard strip displaying the ordered [EffectSlot] blocks in the current patch.
+/// Horizontal pedalboard strip displaying the ordered [EffectSlot] blocks in the current patch,
+/// supporting slot selection, reordering, adding, removing, and effect algorithm swapping.
 class SignalChainStripWidget extends StatelessWidget {
   final PatchEditorController controller;
 
@@ -22,7 +26,7 @@ class SignalChainStripWidget extends StatelessWidget {
         final patch = controller.patch;
         if (patch == null || patch.slots.isEmpty) {
           return Container(
-            height: 180,
+            height: 220,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: StudioTheme.surface,
@@ -36,8 +40,11 @@ class SignalChainStripWidget extends StatelessWidget {
           );
         }
 
+        final canAdd = controller.canAddEffectSlot;
+        final totalElements = 1 + (patch.slots.length * 2) + (canAdd ? 1 : 0);
+
         return Container(
-          height: 205,
+          height: 255,
           decoration: BoxDecoration(
             color: StudioTheme.surface,
             border: Border.all(color: StudioTheme.surfaceBorder),
@@ -46,46 +53,58 @@ class SignalChainStripWidget extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
+              // Metadata Header (Patch Name TextField, Tempo Slider/Input, Write to Slot)
+              PatchMetadataHeaderWidget(controller: controller),
+
+              // Subheader
               Padding(
-                padding: const EdgeInsets.only(left: 14, right: 14, top: 10, bottom: 4),
+                padding: const EdgeInsets.only(left: 14, right: 14, top: 6, bottom: 2),
                 child: Row(
                   children: [
-                    const Icon(Icons.linear_scale, size: 16, color: Colors.grey),
+                    const Icon(Icons.linear_scale, size: 14, color: Colors.grey),
                     const SizedBox(width: 6),
                     Text(
                       'SIGNAL CHAIN (${patch.slots.length} SLOTS)',
                       style: const TextStyle(
-                        fontSize: 11,
+                        fontSize: 10,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.0,
                         color: Colors.grey,
                       ),
                     ),
                     const Spacer(),
-                    Text(
-                      patch.name,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: StudioTheme.colorModulation,
+                    if (patch.programNumber != null)
+                      Text(
+                        'HARDWARE SLOT #${patch.programNumber!.toString().padLeft(2, '0')}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: StudioTheme.colorFilterEq,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
 
-              // Slot Cards
+              // Slot Cards, Insertion Zones, & Add Card
               Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   scrollDirection: Axis.horizontal,
-                  itemCount: patch.slots.length,
-                  separatorBuilder: (context, index) => _buildCableConnector(),
+                  itemCount: totalElements,
                   itemBuilder: (context, index) {
-                    final slot = patch.slots[index];
-                    final isSelected = controller.selectedSlotIndex == index;
-                    return _buildStompboxSlot(context, slot, index, isSelected);
+                    if (index == totalElements - 1 && canAdd) {
+                      return _buildAddEffectCard(context);
+                    }
+                    if (index.isEven) {
+                      final insertIndex = index ~/ 2;
+                      return _buildInsertionZone(insertIndex);
+                    } else {
+                      final slotIndex = index ~/ 2;
+                      final slot = patch.slots[slotIndex];
+                      final isSelected = controller.selectedSlotIndex == slotIndex;
+                      return _buildStompboxSlot(context, slot, slotIndex, isSelected, patch.slots.length);
+                    }
                   },
                 ),
               ),
@@ -96,10 +115,66 @@ class SignalChainStripWidget extends StatelessWidget {
     );
   }
 
+  Widget _buildInsertionZone(int insertIndex) {
+    return DragTarget<Object>(
+      key: Key('insertion_zone_$insertIndex'),
+      onWillAcceptWithDetails: (details) {
+        final data = details.data;
+        if (data is SlotReorderPayload) {
+          if (!controller.canReorderSlots) return false;
+          return data.fromIndex != insertIndex && data.fromIndex != insertIndex - 1;
+        }
+        if (data is EffectDragPayload || data is EffectCatalogEntry) {
+          return controller.canAddEffectSlot;
+        }
+        return false;
+      },
+      onAcceptWithDetails: (details) {
+        final data = details.data;
+        if (data is EffectDragPayload) {
+          controller.insertEffectSlotAt(insertIndex, data.entry);
+        } else if (data is EffectCatalogEntry) {
+          controller.insertEffectSlotAt(insertIndex, data);
+        } else if (data is SlotReorderPayload) {
+          final targetIndex = data.fromIndex < insertIndex ? insertIndex - 1 : insertIndex;
+          controller.reorderEffectSlots(data.fromIndex, targetIndex);
+        }
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isHovered = candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeInOut,
+          width: isHovered ? 32 : 18,
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          child: Center(
+            child: isHovered
+                ? Container(
+                    width: 5,
+                    height: 140,
+                    decoration: BoxDecoration(
+                      color: StudioTheme.colorModulation,
+                      borderRadius: BorderRadius.circular(3),
+                      boxShadow: [
+                        BoxShadow(
+                          color: StudioTheme.colorModulation.withValues(alpha: 0.7),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                  )
+                : _buildCableConnector(),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildCableConnector() {
     return Center(
       child: Container(
-        width: 22,
+        width: 14,
         height: 6,
         margin: const EdgeInsets.symmetric(horizontal: 2),
         decoration: BoxDecoration(
@@ -115,12 +190,101 @@ class SignalChainStripWidget extends StatelessWidget {
     EffectSlot slot,
     int index,
     bool isSelected,
+    int totalSlots,
   ) {
-    final def = EffectCatalogRegistry.getDefinition(
-      controller.connectionController.activeFamily,
-      slot.effectId,
-    );
+    final family = controller.connectionController.activeFamily;
+    final def = EffectCatalogRegistry.getDefinition(family, slot.effectId);
     final categoryColor = StudioTheme.getCategoryColor(def.category);
+
+    return DragTarget<Object>(
+      key: Key('slot_drag_target_$index'),
+      onWillAcceptWithDetails: (details) {
+        final data = details.data;
+        if (data is SlotReorderPayload) {
+          return data.fromIndex != index && controller.canReorderSlots;
+        }
+        if (data is EffectDragPayload || data is EffectCatalogEntry) {
+          return true;
+        }
+        return false;
+      },
+      onAcceptWithDetails: (details) {
+        final data = details.data;
+        if (data is SlotReorderPayload) {
+          controller.reorderEffectSlots(data.fromIndex, index);
+        } else if (data is EffectDragPayload) {
+          controller.changeSlotEffect(index, data.entry.effectId);
+        } else if (data is EffectCatalogEntry) {
+          controller.changeSlotEffect(index, data.effectId);
+        }
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isHovered = candidateData.isNotEmpty;
+
+        final slotWidget = _buildSlotCardContent(
+          context,
+          slot: slot,
+          index: index,
+          isSelected: isSelected,
+          totalSlots: totalSlots,
+          categoryColor: categoryColor,
+          def: def,
+          isHovered: isHovered,
+        );
+
+        if (!controller.canReorderSlots) {
+          return slotWidget;
+        }
+
+        return Draggable<SlotReorderPayload>(
+          key: Key('slot_draggable_$index'),
+          data: SlotReorderPayload(index),
+          feedback: Material(
+            elevation: 8,
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              width: 154,
+              height: 180,
+              child: _buildSlotCardContent(
+                context,
+                slot: slot,
+                index: index,
+                isSelected: true,
+                totalSlots: totalSlots,
+                categoryColor: categoryColor,
+                def: def,
+                isHovered: false,
+                isDragging: true,
+              ),
+            ),
+          ),
+          childWhenDragging: Opacity(
+            opacity: 0.35,
+            child: slotWidget,
+          ),
+          child: slotWidget,
+        );
+      },
+    );
+  }
+
+  Widget _buildSlotCardContent(
+    BuildContext context, {
+    required EffectSlot slot,
+    required int index,
+    required bool isSelected,
+    required int totalSlots,
+    required Color categoryColor,
+    required EffectDefinition def,
+    required bool isHovered,
+    bool isDragging = false,
+  }) {
+    final family = controller.connectionController.activeFamily;
+    final borderColor = isHovered
+        ? StudioTheme.colorModulation
+        : (isSelected ? categoryColor : StudioTheme.surfaceBorder);
+    final borderWidth = (isHovered || isSelected) ? 2.0 : 1.0;
 
     return InkWell(
       key: Key('effect_slot_$index'),
@@ -128,23 +292,25 @@ class SignalChainStripWidget extends StatelessWidget {
       onTap: () => controller.selectSlot(index),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        width: 148,
-        padding: const EdgeInsets.all(10),
+        width: 154,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected
+          color: isHovered
               ? StudioTheme.surfaceElevated
-              : StudioTheme.surfaceElevated.withValues(alpha: 0.5),
+              : (isSelected
+                  ? StudioTheme.surfaceElevated
+                  : StudioTheme.surfaceElevated.withValues(alpha: 0.5)),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: isSelected ? categoryColor : StudioTheme.surfaceBorder,
-            width: isSelected ? 2.0 : 1.0,
+            color: borderColor,
+            width: borderWidth,
           ),
-          boxShadow: isSelected
+          boxShadow: (isHovered || isSelected || isDragging)
               ? [
                   BoxShadow(
-                    color: categoryColor.withValues(alpha: 0.25),
-                    blurRadius: 8,
-                    spreadRadius: 1,
+                    color: (isHovered ? StudioTheme.colorModulation : categoryColor).withValues(alpha: 0.35),
+                    blurRadius: isHovered ? 12 : 8,
+                    spreadRadius: isHovered ? 2 : 1,
                   ),
                 ]
               : null,
@@ -152,9 +318,8 @@ class SignalChainStripWidget extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Row: Slot # & Category Badge
+            // Top Row: Slot # & Category Badge & Delete Slot
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   '#${index + 1}',
@@ -165,9 +330,9 @@ class SignalChainStripWidget extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 4),
-                Flexible(
+                Expanded(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                     decoration: BoxDecoration(
                       color: categoryColor.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(4),
@@ -177,36 +342,137 @@ class SignalChainStripWidget extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 9,
+                        fontSize: 8.5,
                         fontWeight: FontWeight.bold,
                         color: categoryColor,
                       ),
                     ),
                   ),
                 ),
+                if (controller.canRemoveEffectSlot)
+                  Tooltip(
+                    message: 'Remove Effect Slot',
+                    child: InkWell(
+                      key: Key('delete_slot_$index'),
+                      borderRadius: BorderRadius.circular(3),
+                      onTap: () => controller.removeEffectSlot(index),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.close, size: 14, color: Colors.grey),
+                      ),
+                    ),
+                  ),
               ],
             ),
-            const Spacer(),
+            const SizedBox(height: 3),
 
             // Effect Name
             Text(
               slot.effectName.isEmpty ? def.name : slot.effectName,
-              maxLines: 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 12.5,
                 fontWeight: FontWeight.bold,
                 color: slot.isEnabled ? Colors.white : Colors.grey,
               ),
             ),
-            const SizedBox(height: 4),
 
             // Parameter Count
             Text(
               '${slot.parameters.length} params',
-              style: const TextStyle(fontSize: 10, color: Colors.grey),
+              style: const TextStyle(fontSize: 9.5, color: Colors.grey),
             ),
             const Spacer(),
+
+            // Slot Action Controls: Move Left, Change Effect, Move Right
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Move Left
+                Tooltip(
+                  message: 'Move Left',
+                  child: InkWell(
+                    key: Key('move_slot_left_$index'),
+                    borderRadius: BorderRadius.circular(3),
+                    onTap: index > 0 && controller.canReorderSlots
+                        ? () => controller.moveEffectSlot(index, index - 1)
+                        : null,
+                    child: Padding(
+                      padding: const EdgeInsets.all(3),
+                      child: Icon(
+                        Icons.arrow_back,
+                        size: 15,
+                        color: index > 0 && controller.canReorderSlots
+                            ? Colors.white70
+                            : Colors.white24,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Change Effect Button
+                InkWell(
+                  key: Key('change_effect_slot_$index'),
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: () async {
+                    final selected = await EffectPickerDialog.show(
+                      context: context,
+                      deviceFamily: family,
+                      currentEffectId: slot.effectId,
+                      title: 'Change Slot #${index + 1} Effect',
+                    );
+                    if (selected != null) {
+                      controller.changeSlotEffect(index, selected.effectId);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                    decoration: BoxDecoration(
+                      color: StudioTheme.surface,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: isSelected ? categoryColor.withValues(alpha: 0.5) : StudioTheme.surfaceBorder,
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.swap_horiz, size: 12, color: Colors.grey),
+                        SizedBox(width: 2),
+                        Text(
+                          'Swap',
+                          style: TextStyle(fontSize: 9.5, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Move Right
+                Tooltip(
+                  message: 'Move Right',
+                  child: InkWell(
+                    key: Key('move_slot_right_$index'),
+                    borderRadius: BorderRadius.circular(3),
+                    onTap: index < totalSlots - 1 && controller.canReorderSlots
+                        ? () => controller.moveEffectSlot(index, index + 1)
+                        : null,
+                    child: Padding(
+                      padding: const EdgeInsets.all(3),
+                      child: Icon(
+                        Icons.arrow_forward,
+                        size: 15,
+                        color: index < totalSlots - 1 && controller.canReorderSlots
+                            ? Colors.white70
+                            : Colors.white24,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 3),
 
             // LED & Bypass Button
             Row(
@@ -234,11 +500,11 @@ class SignalChainStripWidget extends StatelessWidget {
                             : null,
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 5),
                     Text(
                       slot.isEnabled ? 'ON' : 'BYP',
                       style: TextStyle(
-                        fontSize: 10,
+                        fontSize: 9.5,
                         fontWeight: FontWeight.bold,
                         color: slot.isEnabled ? categoryColor : Colors.grey,
                       ),
@@ -251,7 +517,11 @@ class SignalChainStripWidget extends StatelessWidget {
                   key: Key('toggle_slot_${index}_button'),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
-                  iconSize: 22,
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: EdgeInsets.zero,
+                  ),
+                  iconSize: 18,
                   icon: Icon(
                     slot.isEnabled
                         ? Icons.power_settings_new
@@ -266,6 +536,101 @@ class SignalChainStripWidget extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildAddEffectCard(BuildContext context) {
+    final family = controller.connectionController.activeFamily;
+
+    return DragTarget<Object>(
+      key: const Key('add_slot_drag_target'),
+      onWillAcceptWithDetails: (details) {
+        final data = details.data;
+        return controller.canAddEffectSlot &&
+            (data is EffectDragPayload || data is EffectCatalogEntry);
+      },
+      onAcceptWithDetails: (details) {
+        final data = details.data;
+        if (data is EffectDragPayload) {
+          controller.addEffectSlot(effectId: data.entry.effectId);
+        } else if (data is EffectCatalogEntry) {
+          controller.addEffectSlot(effectId: data.effectId);
+        }
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isHovered = candidateData.isNotEmpty;
+
+        return InkWell(
+          key: const Key('add_effect_slot_button'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: () async {
+            final selected = await EffectPickerDialog.show(
+              context: context,
+              deviceFamily: family,
+              title: 'Add Effect to Signal Chain',
+            );
+            if (selected != null) {
+              controller.addEffectSlot(effectId: selected.effectId);
+            }
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 130,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isHovered
+                  ? StudioTheme.colorModulation.withValues(alpha: 0.15)
+                  : StudioTheme.surfaceElevated.withValues(alpha: 0.25),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isHovered ? StudioTheme.colorModulation : StudioTheme.surfaceBorder,
+                style: BorderStyle.solid,
+                width: isHovered ? 2.5 : 1.5,
+              ),
+              boxShadow: isHovered
+                  ? [
+                      BoxShadow(
+                        color: StudioTheme.colorModulation.withValues(alpha: 0.35),
+                        blurRadius: 10,
+                        spreadRadius: 2,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: StudioTheme.colorModulation.withValues(alpha: 0.15),
+                  ),
+                  child: const Icon(
+                    Icons.add,
+                    size: 22,
+                    color: StudioTheme.colorModulation,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '+ Add Effect',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: StudioTheme.colorModulation,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Max ${family.maxEffectSlots} slots',
+                  style: const TextStyle(fontSize: 9.5, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

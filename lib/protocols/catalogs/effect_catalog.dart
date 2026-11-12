@@ -5,6 +5,9 @@ import '../../models/parameter_descriptor.dart';
 import 'line6_bass_pod_pro_catalog.dart';
 import 'zoom_ms_plus_catalog.dart';
 
+/// Alias for [EffectDefinition] used throughout palette and drag-and-drop operations.
+typedef EffectCatalogEntry = EffectDefinition;
+
 /// Immutable specification of a DSP effect type in an effect catalog.
 @immutable
 class EffectDefinition {
@@ -13,6 +16,7 @@ class EffectDefinition {
   final String category;
   final DeviceFamily deviceFamily;
   final List<ParameterDescriptor> parameters;
+  final int? dspLoad;
 
   const EffectDefinition({
     required this.effectId,
@@ -20,7 +24,17 @@ class EffectDefinition {
     required this.category,
     required this.deviceFamily,
     this.parameters = const [],
+    this.dspLoad,
   });
+
+  /// The integer DSP effect ID (parsed from hex if string starts with 0x).
+  int get intEffectId {
+    final clean = effectId.trim();
+    if (clean.startsWith('0x') || clean.startsWith('0X')) {
+      return int.tryParse(clean.substring(2), radix: 16) ?? 0;
+    }
+    return int.tryParse(clean) ?? 0;
+  }
 
   /// Returns the [ParameterDescriptor] at the given index, or null if out of range.
   ParameterDescriptor? getParameter(int index) {
@@ -36,6 +50,7 @@ class EffectDefinition {
     String? category,
     DeviceFamily? deviceFamily,
     List<ParameterDescriptor>? parameters,
+    int? dspLoad,
   }) {
     return EffectDefinition(
       effectId: effectId ?? this.effectId,
@@ -43,6 +58,7 @@ class EffectDefinition {
       category: category ?? this.category,
       deviceFamily: deviceFamily ?? this.deviceFamily,
       parameters: parameters ?? this.parameters,
+      dspLoad: dspLoad ?? this.dspLoad,
     );
   }
 
@@ -55,6 +71,7 @@ class EffectDefinition {
           name == other.name &&
           category == other.category &&
           deviceFamily == other.deviceFamily &&
+          dspLoad == other.dspLoad &&
           listEquals(parameters, other.parameters);
 
   @override
@@ -63,6 +80,7 @@ class EffectDefinition {
         name,
         category,
         deviceFamily,
+        dspLoad,
         Object.hashAll(parameters),
       );
 

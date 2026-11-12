@@ -27,6 +27,8 @@ typedef ProcessStarter = Future<Process> Function(
 /// Discovers hardware ports via `amidi -l` (with fallback to `/proc/asound/cards`),
 /// streams raw MIDI bytes using background `amidi -p <port> -d` processes,
 /// and transmits outbound messages via `amidi -p <port> -S <hex>`.
+typedef AlsaRawMidiTransport = LinuxAlsaMidiTransport;
+
 class LinuxAlsaMidiTransport extends MidiTransport {
   final ProcessRunner _processRunner;
   final ProcessStarter _processStarter;
@@ -232,27 +234,39 @@ class LinuxAlsaMidiTransport extends MidiTransport {
   }
 
   /// Feeds incoming text containing hex tokens (e.g. from `amidi -d`) into the message assembler.
+  ///
+  /// Immediately processes complete 2-hex-digit bytes without requiring trailing whitespace,
+  /// ensuring real-time messages (such as 0xF7 SysEx terminations) are dispatched on the
+  /// very turn they arrive rather than lagging behind by one message.
   void feedHexStream(String chunk) {
     _pendingText += chunk;
 
-    // Process all tokens up to the last whitespace delimiter
-    final lastWs = _pendingText.lastIndexOf(RegExp(r'\s'));
-    if (lastWs == -1) {
-      // No complete whitespace-delimited token yet
+    final hasTrailingWs = _pendingText.isNotEmpty && RegExp(r'\s$').hasMatch(_pendingText);
+    final rawTokens = _pendingText.trim().split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+
+    if (rawTokens.isEmpty) {
+      if (hasTrailingWs) _pendingText = '';
       return;
     }
 
-    final toProcess = _pendingText.substring(0, lastWs);
-    _pendingText = _pendingText.substring(lastWs + 1);
-
-    final tokens = toProcess.split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
-    for (final token in tokens) {
-      final byte = int.tryParse(token, radix: 16);
-      if (byte == null || byte < 0 || byte > 255) {
-        continue;
+    // If the stream did not end with whitespace, the very last token is only complete
+    // if it is already 2 hex digits (a full byte). If it's a 1-character fragment, retain it.
+    String? incompleteTail;
+    if (!hasTrailingWs) {
+      final lastToken = rawTokens.last;
+      if (lastToken.length < 2) {
+        incompleteTail = rawTokens.removeLast();
       }
-      _consumeByte(byte);
     }
+
+    for (final token in rawTokens) {
+      final byte = int.tryParse(token, radix: 16);
+      if (byte != null && byte >= 0 && byte <= 255) {
+        _consumeByte(byte);
+      }
+    }
+
+    _pendingText = incompleteTail ?? '';
   }
 
   void _consumeByte(int byte) {

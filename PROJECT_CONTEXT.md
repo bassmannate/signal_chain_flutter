@@ -14,6 +14,12 @@ The goal of this Flutter rewrite is to replace the heavier Electron desktop foot
 - **Milestone 3:** Effect Catalogs, Patch Serialization & Local Persistence Layer — **Completed**
 - **Milestone 4:** Application State Controllers & Cross-Platform Signal Chain UI — **Completed**
 - **Milestone 5:** Native Platform MIDI Transport (`LinuxAlsaMidiTransport`, `CompositeMidiTransport`), Persistent Disk Storage & Presets Import/Export — **Completed**
+- **Milestone 6:** Full Zoom MS-60B+ / MS Plus Effect Catalog Extraction & Signal Chain Slot Workflows (Reordering, Add, Remove, Swap & Modal Catalog Picker) — **Completed**
+- **Milestone 7:** Hardware Patch Memory Bank Protocol (0–99 Slots), Patch Metadata Controls (Name & Tempo), Hardware Bank Browser UI — **Completed**
+- **Milestone 7.5:** Live Bidirectional Hardware Sync, Patch Name Extraction, MIDI Auto-Select, and Drag-and-Drop Effect Palette — **Completed**
+- **Milestone 8:** Zoom MS-60B+ Live Hardware Testing Protocol & UX Bug Fixes (0x50/0x53 Handshake, Bank Sync Isolation, Single-Click Slot Loading, Inter-Slot Insertion Zones) — **Completed**
+- **Milestone 8.5:** Zoom MS-60B+ Hardware Patch Switch Feedback Loop Elimination & Bidirectional Knob/Bypass Sync — **Completed**
+- **Milestone 8.6:** Physical Footswitch Bypass Real-Time Fix & Bidirectional Effect Slot Focus Synchronization — **Completed**
 
 ---
 
@@ -76,7 +82,38 @@ The project adheres strictly to Clean Architecture separation of concerns:
 
 ---
 
-## 6. Terminal Sandbox Execution Guidelines
+## 6. Milestone 7 Highlights: Hardware Memory Bank & Patch Metadata
+
+- **Hardware Memory Bank Protocol (0–99 Slots):**
+  - Bidirectional memory slot commands for Zoom MS Plus (`46 00 00` read request, `45 00 00` slot dump/write).
+  - Program dump request and write for Line 6 Bass Pod Pro (`0x01`).
+  - `BankSlotDescriptor` model representing remote hardware patch indices, synchronization state, and bank/slot formatting (`#42 (5-3)`).
+- **Asynchronous Bank Synchronization:**
+  - `DeviceConnectionController.syncDeviceBank`: Non-blocking, incremental fetch of all 100 slots with live progress tracking and error tolerance.
+- **Real-Time Patch Metadata Controls:**
+  - `PatchEditorController.updatePatchName`: Enforces hardware character limits (10 chars for Zoom MS Plus, 16 for Line 6) and sanitizes invalid/unprintable characters to spaces.
+  - `PatchEditorController.updatePatchTempo`: Clamps BPM to 40–250 boundaries and persists into PRM2 subchunk.
+  - `PatchMetadataHeaderWidget`: Real-time name input, dirty indicator, BPM display, increment/decrement buttons, tempo slider, and "Write to Slot..." button.
+- **Hardware Bank Browser UI:**
+  - `HardwareBankBrowserWidget`: Scrollable 100-slot browser with live text search, active preset indicators, one-click load into editor buffer, and "Write to Hardware Slot..." dialog.
+  - Integrated into `PatchLibraryDrawerOrPanel` with responsive segmented tab navigation (`Local Presets` | `Hardware Bank`).
+
+---
+
+## 7. Live Hardware Synchronization & Screen Focus (Milestones 8.5 & 8.6)
+
+- **ALSA Stream Real-Time Unbuffering (`LinuxAlsaMidiTransport.feedHexStream`):**
+  - Resolved physical footswitch bypass 1-message lag where `amidi -d` stdout terminates with raw `F7` without trailing whitespace.
+  - Complete 2-hex-digit tokens are now processed immediately without stranding in buffer tails, ensuring live hardware actions reflect on the app screen in real time on the very first footswitch press.
+- **Bidirectional Effect Slot Screen Focus (`64 20 00 64 01`):**
+  - Hardware Left/Right cursor buttons emit `F0 52 00 6E 64 20 00 64 01 <slot> 00 00 00 00 F7`. The app parses this to immediately update `selectedSlotIndex` and notify listeners, tracking the pedal's active screen.
+  - Selecting a slot in the app UI dispatches the same SysEx focus message, causing the physical pedal display to navigate to that slot.
+  - Physical footswitch bypass and knob turns automatically update `selectedSlotIndex` so the slot inspector aligns with physical pedal interactions.
+  - Guarded `isSlotBypass` and `isParameterEdit` with `slotIndex < 6` to reject pedal-level global parameters (`0x64`), preventing false bypass toggles.
+
+---
+
+## 8. Terminal Sandbox Execution Guidelines
 
 When running `flutter` or `dart` commands in sandboxed environments:
 1. **Binary Location:** Flutter is installed at `/home/nreynolds/.local/share/flutter/bin/flutter` and Dart at `/home/nreynolds/.local/share/flutter/bin/dart`. Ensure the path is prefixed or exported:

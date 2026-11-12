@@ -29,6 +29,9 @@ class Patch {
     this.metadata = const {},
   });
 
+  /// Active patch tempo in BPM (typically 40–250 BPM, default 120).
+  int get tempo => ((metadata['tempo'] as num?)?.round()) ?? 120;
+
   Patch copyWith({
     String? id,
     String? name,

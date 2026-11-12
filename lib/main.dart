@@ -13,6 +13,7 @@ import 'core/storage/in_memory_patch_library_repository.dart';
 import 'core/storage/patch_library_repository.dart';
 import 'features/connection/connection_bar_widget.dart';
 import 'features/connection/device_connection_controller.dart';
+import 'features/editor/effect_bank_palette_widget.dart';
 import 'features/editor/patch_editor_controller.dart';
 import 'features/editor/signal_chain_strip_widget.dart';
 import 'features/editor/slot_inspector_widget.dart';
@@ -109,6 +110,8 @@ class _SignalChainAppState extends State<SignalChainApp> {
           initialPatch: zoomSample,
         );
 
+    _connectionController.setEditorController(_editorController);
+
     _libraryController = widget.libraryController ??
         PatchLibraryController(repository: _libraryRepo);
 
@@ -197,6 +200,29 @@ class _SignalChainAppState extends State<SignalChainApp> {
       (req) => const ZoomMsPlusProtocol().encodePatch(zoomSample),
     );
 
+    // Auto-responder for Zoom Memory Slot Request (46 00 00)
+    mock.registerResponder(
+      (req) =>
+          req.isSysEx &&
+          req.data.length >= 11 &&
+          req.data[1] == 0x52 &&
+          req.data[4] == 0x46 &&
+          req.data[5] == 0x00 &&
+          req.data[6] == 0x00,
+      (req) {
+        final bank = req.data[7] | (req.data[8] << 7);
+        final prog = req.data[9] | (req.data[10] << 7);
+        final slotNum = (bank * 10) + prog;
+        return const ZoomMsPlusProtocol().buildSavePatchToSlotMessage(
+          zoomSample.copyWith(
+            name: 'Slot ${slotNum.toString().padLeft(2, '0')}',
+            programNumber: slotNum,
+          ),
+          slotNum,
+        );
+      },
+    );
+
     // Auto-responder for Line 6 Edit Buffer Dump Request (F0 00 01 0C 01 00 F7)
     mock.registerResponder(
       (req) =>
@@ -207,6 +233,27 @@ class _SignalChainAppState extends State<SignalChainApp> {
           req.data[3] == 0x0C &&
           req.data[5] == 0x00,
       (req) => const Line6BassPodProProtocol().encodePatch(line6Sample),
+    );
+
+    // Auto-responder for Line 6 Program Dump Request (F0 00 01 0C 01 01 <prog> F7)
+    mock.registerResponder(
+      (req) =>
+          req.isSysEx &&
+          req.data.length >= 7 &&
+          req.data[1] == 0x00 &&
+          req.data[2] == 0x01 &&
+          req.data[3] == 0x0C &&
+          req.data[5] == 0x01,
+      (req) {
+        final prog = req.data[6] & 0x7F;
+        return const Line6BassPodProProtocol().buildSavePatchToSlotMessage(
+          line6Sample.copyWith(
+            name: 'POD ${prog.toString().padLeft(2, '0')}',
+            programNumber: prog,
+          ),
+          prog,
+        );
+      },
     );
 
     return mock;
@@ -295,11 +342,61 @@ class _SignalChainAppState extends State<SignalChainApp> {
                     child: SignalChainStripWidget(controller: _editorController),
                   ),
 
-                  // Selected Slot Parameter Inspector
+                  // Selected Slot Parameter Inspector + Studio Effect Palette
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                      child: SlotInspectorWidget(controller: _editorController),
+                      child: isDesktopWide
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: SlotInspectorWidget(controller: _editorController),
+                                ),
+                                const SizedBox(width: 12),
+                                SizedBox(
+                                  width: 320,
+                                  child: EffectBankPaletteWidget(controller: _editorController),
+                                ),
+                              ],
+                            )
+                          : DefaultTabController(
+                              length: 2,
+                              child: Column(
+                                children: [
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: StudioTheme.surface,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: StudioTheme.surfaceBorder),
+                                    ),
+                                    child: const TabBar(
+                                      indicatorColor: StudioTheme.colorModulation,
+                                      tabs: [
+                                        Tab(
+                                          text: 'INSPECTOR',
+                                          icon: Icon(Icons.tune, size: 16),
+                                        ),
+                                        Tab(
+                                          text: 'EFFECT PALETTE',
+                                          icon: Icon(Icons.widgets, size: 16),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Expanded(
+                                    child: TabBarView(
+                                      children: [
+                                        SlotInspectorWidget(controller: _editorController),
+                                        EffectBankPaletteWidget(controller: _editorController),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                     ),
                   ),
                 ],

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/parameter_descriptor.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
 import '../theme/studio_theme.dart';
+import 'effect_picker_dialog.dart';
 import 'patch_editor_controller.dart';
 
 /// Detailed parameter inspector for the currently selected [EffectSlot], allowing
@@ -76,6 +77,22 @@ class SlotInspectorWidget extends StatelessWidget {
                     ),
                   ),
                   _buildEffectDropdown(context, slot.slotIndex, slot.effectId, availableEffects),
+                  IconButton(
+                    key: const Key('open_effect_picker_button'),
+                    icon: const Icon(Icons.search, size: 20, color: StudioTheme.colorModulation),
+                    tooltip: 'Browse Effect Catalog',
+                    onPressed: () async {
+                      final selected = await EffectPickerDialog.show(
+                        context: context,
+                        deviceFamily: family,
+                        currentEffectId: slot.effectId,
+                        title: 'Change Slot #${slot.slotIndex + 1} Effect',
+                      );
+                      if (selected != null) {
+                        controller.changeSlotEffect(slot.slotIndex, selected.effectId);
+                      }
+                    },
+                  ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(

@@ -23,6 +23,16 @@ class MockMidiTransport extends MidiTransport {
   MockMidiTransport({List<MidiPortDescriptor>? initialPorts})
       : mockPorts = initialPorts ?? [];
 
+  /// Dynamically simulates plugging in a MIDI port.
+  void addPort(MidiPortDescriptor port) {
+    mockPorts.add(port);
+  }
+
+  /// Dynamically simulates unplugging a MIDI port by [portId].
+  void removePort(String portId) {
+    mockPorts.removeWhere((p) => p.id == portId);
+  }
+
   /// All messages transmitted via [send].
   List<MidiMessage> get sentMessages => List.unmodifiable(_sentMessages);
 

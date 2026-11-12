@@ -183,6 +183,26 @@ O   hw:3,0,1  Line 6 Bass Pod Pro Out
         ]),
       );
 
+      // 3. SysEx without trailing whitespace or newline (critical for live amidi -d real-time events)
+      transport.feedHexStream('F0 52 00 6E 64 20 00 01 00 01 00 00 00 00 F7');
+      await Future<void>.delayed(Duration.zero);
+      expect(received.length, 3);
+      expect(
+        received[2].data,
+        Uint8List.fromList([
+          0xF0, 0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xF7,
+        ]),
+      );
+
+      // 4. Incomplete 1-char token buffering across chunk boundaries
+      transport.feedHexStream('F0 52 00 6E F');
+      await Future<void>.delayed(Duration.zero);
+      expect(received.length, 3); // Still 3, 'F' is incomplete tail
+      transport.feedHexStream('7');
+      await Future<void>.delayed(Duration.zero);
+      expect(received.length, 4);
+      expect(received[3].data, Uint8List.fromList([0xF0, 0x52, 0x00, 0x6E, 0xF7]));
+
       await sub.cancel();
       await transport.dispose();
     });

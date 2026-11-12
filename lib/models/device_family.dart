@@ -51,6 +51,25 @@ enum DeviceFamily {
   /// Returns true if this device is a Line 6 Bass Pod Pro.
   bool get isLine6BassPodPro => this == line6BassPodPro;
 
+  /// Maximum patch name character limit supported by this hardware family.
+  ///
+  /// Zoom MS Plus displays up to 10 characters on the pedal screen;
+  /// Line 6 Bass Pod Pro stores up to 16 ASCII characters.
+  int get maxNameLength {
+    if (isZoomMsPlus) return 10;
+    if (isLine6BassPodPro) return 16;
+    return 16;
+  }
+
+  /// Total number of persistent memory bank slots on this hardware.
+  ///
+  /// Zoom MS Plus features 100 slots (00 to 99 across 10 banks).
+  int get totalMemorySlots {
+    if (isZoomMsPlus) return 100;
+    if (isLine6BassPodPro) return 64;
+    return 100;
+  }
+
   /// Serializes the enum instance to a stable string identifier.
   String toJson() => name;
 

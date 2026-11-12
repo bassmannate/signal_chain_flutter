@@ -36,6 +36,9 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   static const int cmdMemoryPatchDump = 0x45; // with prefix 0x00 0x00
   static const int cmdParameterEdit = 0x20; // with prefix 0x64 0x20 0x00
   static const int cmdParameterAccepted = 0x01; // with prefix 0x64 0x20 0x01
+  static const int cmdBankAndProgramV2 = 0x26; // with prefix 0x64 0x26 0x00 0x00
+  static const int cmdCurrentPatchDumpV1 = 0x28; // legacy Zoom current patch dump
+  static const int cmdParameterEditV1 = 0x31; // legacy Zoom real-time parameter edit
 
   /// Target pedal constants in PTCF header.
   static const int ptcfTargetMs50gPlus = 0x00040000;
@@ -89,8 +92,10 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   @override
   List<MidiMessage> buildInitSequence() {
     return [
-      buildEditorModeMessage(enable: true)!,
-      MidiMessage.sysEx([manufacturerId, 0x00, familyIdByte, cmdPcModeEnable]),
+      // 1. Send PC Mode Disable (0x53) to ensure the pedal exits USB lock screen mode if stuck in it
+      MidiMessage.sysEx([manufacturerId, 0x00, familyIdByte, cmdPcModeDisable]),
+      // 2. Send Parameter Edit Enable (0x50) to allow normal playable screen and live SysEx notifications
+      MidiMessage.sysEx([manufacturerId, 0x00, familyIdByte, cmdParameterEditEnable]),
     ];
   }
 
@@ -126,12 +131,12 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   }
 
   @override
-  MidiMessage buildParameterEditMessage({
+  MidiMessage buildSlotBypassMessage({
     required int slotIndex,
-    required int paramIndex,
-    required int value,
+    required bool isEnabled,
   }) {
-    // F0 52 00 6E 64 20 00 <slot> <param> <v0> <v1> <v2> <v3> <v4> F7
+    // Zoom MS Plus: paramNumber 0 = Effect Bypass (1 = Enabled, 0 = Bypassed)
+    // F0 52 00 6E 64 20 00 <slot> 00 <01/00> 00 00 00 00 F7
     return MidiMessage.sysEx([
       manufacturerId,
       0x00,
@@ -140,7 +145,34 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
       cmdParameterEdit,
       0x00,
       slotIndex & 0x7F,
-      paramIndex & 0x7F,
+      0x00,
+      isEnabled ? 0x01 : 0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+    ]);
+  }
+
+  @override
+  MidiMessage buildParameterEditMessage({
+    required int slotIndex,
+    required int paramIndex,
+    required int value,
+  }) {
+    // On Zoom MS Plus pedals:
+    // paramNumber 0 = Bypass, paramNumber 1 = Effect ID, paramNumber >= 2 = Knobs (paramIndex + 2)
+    // F0 52 00 6E 64 20 00 <slot> <paramNumber> <v0> <v1> <v2> <v3> <v4> F7
+    final paramNumber = (paramIndex + 2) & 0x7F;
+    return MidiMessage.sysEx([
+      manufacturerId,
+      0x00,
+      familyIdByte,
+      0x64,
+      cmdParameterEdit,
+      0x00,
+      slotIndex & 0x7F,
+      paramNumber,
       value & 0x7F,
       (value >> 7) & 0x7F,
       (value >> 14) & 0x7F,
@@ -151,46 +183,239 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
 
   @override
   bool isPatchDump(MidiMessage message) {
+    return isCurrentPatchDump(message) || isSlotPatchDump(message);
+  }
+
+  @override
+  bool isCurrentPatchDump(MidiMessage message) {
     final data = message.data;
-    if (!message.isSysEx || data.length < 14) return false;
-    if (data[1] != manufacturerId || data[2] != 0x00 || data[3] != familyIdByte) {
+    if (!message.isSysEx || data.length < 7) return false;
+    if (data[1] != manufacturerId || data[2] != 0x00) {
       return false;
     }
+    final isZoomFamily = data[3] == familyIdByte ||
+        data[3] == 0x58 ||
+        data[3] == 0x59 ||
+        data[3] == 0x61;
+    if (!isZoomFamily) return false;
+
     // Check for Current Patch V2 (64 12 01)
-    final isCurrentV2 = data[4] == 0x64 && data[5] == cmdCurrentPatchDump && data[6] == 0x01;
+    final isCurrentV2 = data.length >= 7 &&
+        data[4] == 0x64 &&
+        data[5] == cmdCurrentPatchDump &&
+        data[6] == 0x01;
+    // Check for Current Patch dump opcode 0x28 (Zoom MS legacy / 0x28 dump)
+    final isCurrentV1 = data[4] == cmdCurrentPatchDumpV1;
+
+    return isCurrentV2 || isCurrentV1;
+  }
+
+  @override
+  bool isSlotPatchDump(MidiMessage message) {
+    final data = message.data;
+    if (!message.isSysEx || data.length < 7) return false;
+    if (data[1] != manufacturerId || data[2] != 0x00) {
+      return false;
+    }
+    final isZoomFamily = data[3] == familyIdByte ||
+        data[3] == 0x58 ||
+        data[3] == 0x59 ||
+        data[3] == 0x61;
+    if (!isZoomFamily) return false;
+
     // Check for Memory Slot V2 (45 00 00)
-    final isMemoryV2 = data[4] == cmdMemoryPatchDump && data[5] == 0x00 && data[6] == 0x00;
-    return isCurrentV2 || isMemoryV2;
+    final isMemoryV2 = data.length >= 7 &&
+        data[4] == cmdMemoryPatchDump &&
+        data[5] == 0x00 &&
+        data[6] == 0x00;
+    // Check for legacy Zoom MS memory slot dump (08 00 00)
+    final isMemoryV1 = data.length >= 8 &&
+        data[4] == 0x08 &&
+        data[5] == 0x00 &&
+        data[6] == 0x00;
+
+    return isMemoryV2 || isMemoryV1;
+  }
+
+  @override
+  int? extractSlotIndex(MidiMessage message) {
+    if (!isSlotPatchDump(message)) return null;
+    final data = message.data;
+    if (data[4] == cmdMemoryPatchDump && data.length >= 11) {
+      final bank = data[7] | (data[8] << 7);
+      final prog = data[9] | (data[10] << 7);
+      return (bank * 10) + prog;
+    }
+    if (data[4] == 0x08 && data.length >= 8) {
+      return data[7] & 0x7F;
+    }
+    return null;
+  }
+
+  @override
+  List<MidiMessage> buildSlotSelectMessages(int slotIndex, {int patchesPerBank = 10}) {
+    final bank = slotIndex ~/ patchesPerBank;
+    final prog = slotIndex % patchesPerBank;
+    return [
+      MidiMessage.controlChange(channel: 0, controller: 0x00, value: 0x00),
+      MidiMessage.controlChange(channel: 0, controller: 0x20, value: bank & 0x7F),
+      MidiMessage.programChange(channel: 0, program: prog & 0x7F),
+    ];
+  }
+
+  @override
+  MidiMessage? buildSlotFocusMessage(int slotIndex) {
+    // Zoom MS Plus: Change active displayed effect slot using 64 20 00 64 01 <slot>
+    // F0 52 00 6E 64 20 00 64 01 <slotIndex> 00 00 00 00 F7
+    return MidiMessage.sysEx([
+      manufacturerId,
+      0x00,
+      familyIdByte,
+      0x64,
+      cmdParameterEdit,
+      0x00,
+      0x64,
+      0x01,
+      slotIndex & 0x7F,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+    ]);
+  }
+
+  @override
+  bool isSlotBypass(MidiMessage message) {
+    final data = message.data;
+    if (!message.isSysEx || data.length < 10) return false;
+    if (data[1] != manufacturerId || data[2] != 0x00) return false;
+
+    // Zoom MS Plus: F0 52 00 6E 64 20 00 <slot> 00 <val> ... F7
+    // Must be opcode 64 20 00 (unsolicited edit from pedal) with paramNumber == 0
+    // data[7] is slotIndex (< 6), ensuring device-level opcodes (data[7] == 0x64) are excluded.
+    return data[3] == familyIdByte &&
+        data[4] == 0x64 &&
+        data[5] == cmdParameterEdit &&
+        data[6] == 0x00 &&
+        (data[7] & 0x7F) < 6 &&
+        data[8] == 0x00;
+  }
+
+  @override
+  ({int slotIndex, bool isEnabled})? parseSlotBypass(MidiMessage message) {
+    if (!isSlotBypass(message)) return null;
+    final data = message.data;
+    final slot = data[7] & 0x7F;
+    final enabled = data.length > 9 ? (data[9] & 0x7F) != 0 : true;
+    return (slotIndex: slot, isEnabled: enabled);
+  }
+
+  @override
+  bool isSlotFocusChange(MidiMessage message) {
+    final data = message.data;
+    if (!message.isSysEx || data.length < 11) return false;
+    if (data[1] != manufacturerId || data[2] != 0x00) return false;
+
+    // Zoom MS Plus currentEffectSlotV2:
+    // F0 52 00 6E 64 20 00 64 01 <newEffectSlot> ... F7
+    return data[3] == familyIdByte &&
+        data[4] == 0x64 &&
+        data[5] == cmdParameterEdit &&
+        data[6] == 0x00 &&
+        data[7] == 0x64 &&
+        data[8] == 0x01;
+  }
+
+  @override
+  int? parseSlotFocusChange(MidiMessage message) {
+    if (!isSlotFocusChange(message)) return null;
+    return message.data[9] & 0x7F;
+  }
+
+  @override
+  bool isSlotChange(MidiMessage message) {
+    final data = message.data;
+    if (!message.isSysEx || data.length < 13) return false;
+    if (data[1] != manufacturerId || data[2] != 0x00) return false;
+
+    // Zoom MS Plus bankAndProgramNumberV2:
+    // F0 52 00 6E 64 26 00 00 <bank_lsb> <bank_msb> <prog_lsb> <prog_msb> F7
+    return data[3] == familyIdByte &&
+        data[4] == 0x64 &&
+        data[5] == cmdBankAndProgramV2 &&
+        data[6] == 0x00 &&
+        data[7] == 0x00;
+  }
+
+  @override
+  int? parseSlotChange(MidiMessage message, {int patchesPerBank = 10}) {
+    if (!isSlotChange(message)) return null;
+    final data = message.data;
+    final bank = (data[8] & 0x7F) | ((data[9] & 0x7F) << 7);
+    final prog = (data[10] & 0x7F) | ((data[11] & 0x7F) << 7);
+    return (bank * patchesPerBank) + prog;
   }
 
   @override
   bool isParameterEdit(MidiMessage message) {
     final data = message.data;
-    if (!message.isSysEx || data.length < 10) return false;
-    if (data[1] != manufacturerId || data[2] != 0x00 || data[3] != familyIdByte) {
+    if (!message.isSysEx || data.length < 8) return false;
+    if (data[1] != manufacturerId || data[2] != 0x00) {
       return false;
     }
-    return data[4] == 0x64 && data[5] == cmdParameterEdit && (data[6] == 0x00 || data[6] == cmdParameterAccepted);
+    // MS Plus V2 format: F0 52 00 6E 64 20 00 <slot> <paramNumber >= 2> ...
+    // Note: data[6] MUST be 0x00 (unsolicited edit from pedal).
+    // data[6] == 0x01 is parameterValueAcceptedV2 ACK from the pedal and must NOT trigger a new edit!
+    // data[8] >= 0x02 is a knob parameter (0 = bypass, 1 = effect ID).
+    // data[7] is slotIndex (< 6), ensuring device-level opcodes (data[7] == 0x64) are excluded.
+    final isV2 = data.length >= 10 &&
+        data[3] == familyIdByte &&
+        data[4] == 0x64 &&
+        data[5] == cmdParameterEdit &&
+        data[6] == 0x00 &&
+        (data[7] & 0x7F) < 6 &&
+        (data[8] & 0x7F) >= 2;
+
+    // Zoom MS V1 format: F0 52 00 <family> 31 <slot> <param> <v_lsb> <v_msb> F7
+    final isV1 = data[4] == cmdParameterEditV1;
+
+    return isV2 || isV1;
   }
 
   @override
   ({int slotIndex, int paramIndex, int value})? parseParameterEdit(MidiMessage message) {
     if (!isParameterEdit(message)) return null;
     final data = message.data;
-    const offset = 7; // after F0 52 00 6E 64 20 <00/01>
-    if (data.length < offset + 4) return null; // needs at least slot, param, val_lsb, and F7
 
-    final slot = data[offset] & 0x7F;
-    final param = data[offset + 1] & 0x7F;
-    int val = 0;
-    int shift = 0;
-
-    // Read remaining bytes up to trailing 0xF7
-    for (int i = offset + 2; i < data.length - 1 && shift <= 28; i++) {
-      val |= (data[i] & 0x7F) << shift;
-      shift += 7;
+    if (data[4] == cmdParameterEditV1 && data.length >= 8) {
+      final slot = data[5] & 0x7F;
+      final param = data[6] & 0x7F;
+      final val = data.length > 8
+          ? ((data[7] & 0x7F) | ((data[8] & 0x7F) << 7))
+          : (data[7] & 0x7F);
+      return (slotIndex: slot, paramIndex: param, value: val);
     }
-    return (slotIndex: slot, paramIndex: param, value: val);
+
+    if (data[4] == 0x64 && data[5] == cmdParameterEdit) {
+      const offset = 7; // after F0 52 00 6E 64 20 00
+      if (data.length < offset + 4) return null; // needs at least slot, param, val_lsb, and F7
+
+      final slot = data[offset] & 0x7F;
+      final rawParam = data[offset + 1] & 0x7F;
+      // On Zoom MS Plus: paramIndex = paramNumber - 2
+      final paramIndex = rawParam >= 2 ? rawParam - 2 : rawParam;
+      int val = 0;
+      int shift = 0;
+
+      // Read remaining bytes up to trailing 0xF7
+      for (int i = offset + 2; i < data.length - 1 && shift <= 28; i++) {
+        val |= (data[i] & 0x7F) << shift;
+        shift += 7;
+      }
+      return (slotIndex: slot, paramIndex: paramIndex, value: val);
+    }
+
+    return null;
   }
 
   @override
@@ -205,6 +430,19 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     if (data[4] == 0x64 && data[5] == cmdCurrentPatchDump) {
       // Current Patch V2: Header is 9 bytes
       offset = 9;
+    } else if (data[4] == cmdCurrentPatchDumpV1) {
+      // Current Patch V1 / 0x28 dump:
+      // Try offset 5 (F0 52 00 dev 28) or offset 7
+      if (data.length > 7) {
+        final test5 = SysexCodec.unpack7BitTo8Bit(data, start: 5, end: data.length - 2);
+        if (test5.length >= 4 && ascii.decode(test5.sublist(0, 4), allowInvalid: true) == 'PTCF') {
+          offset = 5;
+        } else {
+          offset = 7;
+        }
+      } else {
+        offset = 5;
+      }
     } else {
       // Memory Location V2: Header is 13 bytes
       final bank = data[7] | (data[8] << 7);
@@ -214,18 +452,44 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     }
 
     // Unpack 7-bit payload to 8-bit PTCF buffer.
-    // Last bytes in SysEx: 5 CRC bytes, 1 zero-pad byte (optional), and 0xF7.
-    // Locate trailing 0xF7 and strip 5 CRC bytes + optional trailing padding.
+    // Strip trailing 0xF7, optional zero padding, and 5 CRC bytes.
     int end = data.length - 2; // exclude 0xF7
-    // Zoom dumps typically end with [CRC0..CRC4, 0x00, 0xF7]
     if (end >= offset + 6 && data[end] == 0x00) {
       end -= 6; // strip padding + 5 CRC bytes
     } else if (end >= offset + 5) {
       end -= 5; // strip 5 CRC bytes
     }
 
-    final unpacked = SysexCodec.unpack7BitTo8Bit(data, start: offset, end: end);
+    Uint8List unpacked = SysexCodec.unpack7BitTo8Bit(data, start: offset, end: end);
+    // If unpacked doesn't start with PTCF, attempt fallback without CRC stripping
+    if (unpacked.length < 4 || ascii.decode(unpacked.sublist(0, 4), allowInvalid: true) != 'PTCF') {
+      final unstripped = SysexCodec.unpack7BitTo8Bit(data, start: offset, end: data.length - 1);
+      if (unstripped.length >= 4 && ascii.decode(unstripped.sublist(0, 4), allowInvalid: true) == 'PTCF') {
+        unpacked = unstripped;
+      }
+    }
+
     return decodePtcf(unpacked, programNumber: programNumber);
+  }
+
+  /// Strips trailing null bytes (0x00) and spaces, preserving printable ASCII characters.
+  static String _cleanName(List<int> bytes) {
+    if (bytes.isEmpty) return '';
+    int end = bytes.length;
+    while (end > 0 && (bytes[end - 1] == 0x00 || bytes[end - 1] == 0x20)) {
+      end--;
+    }
+    if (end <= 0) return '';
+    final chars = <int>[];
+    for (int i = 0; i < end; i++) {
+      final b = bytes[i];
+      if (b >= 32 && b <= 126) {
+        chars.add(b);
+      } else if (b == 0) {
+        chars.add(32);
+      }
+    }
+    return String.fromCharCodes(chars).trim();
   }
 
   /// Decodes raw 8-bit PTCF binary payload into a domain [Patch].
@@ -246,7 +510,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
 
     // Short name at offset 26 (10 bytes)
     final shortName = ptcf.length >= 36
-        ? ascii.decode(ptcf.sublist(26, 36), allowInvalid: true).trim()
+        ? _cleanName(ptcf.sublist(26, 36))
         : 'Patch';
 
     // Effect IDs table
@@ -258,13 +522,17 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     }
 
     // Parse subchunks: TXJ1, TXE1, EDTB, PRM2, NAME
-    String patchName = shortName;
+    String patchName = shortName.isNotEmpty ? shortName : 'Patch';
     String description = '';
     double tempo = 120.0;
     int activeEffectSlot = 0;
     final List<EffectSlot> slots = [];
 
-    while (cursor + 8 <= ptcf.length && cursor < ptcfLength) {
+    final maxScanLength = (ptcfLength > 8 && ptcfLength <= ptcf.length)
+        ? ptcfLength
+        : ptcf.length;
+
+    while (cursor + 8 <= maxScanLength) {
       final chunkId = ascii.decode(ptcf.sublist(cursor, cursor + 4), allowInvalid: true);
       final chunkSize = byteData.getUint32(cursor + 4, Endian.little);
       cursor += 8;
@@ -275,18 +543,12 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
 
       switch (chunkId) {
         case 'NAME':
-          final nameStr = ascii
-              .decode(chunkData, allowInvalid: true)
-              .replaceAll('\x00', '')
-              .trim();
+          final nameStr = _cleanName(chunkData);
           if (nameStr.isNotEmpty) patchName = nameStr;
           break;
 
         case 'TXE1':
-          description = ascii
-              .decode(chunkData, allowInvalid: true)
-              .replaceAll('\x00', '')
-              .trim();
+          description = _cleanName(chunkData);
           break;
 
         case 'PRM2':
@@ -383,6 +645,22 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
       }
     }
 
+    // Fallback scan for 'NAME' chunk marker if not resolved during chunk loop
+    if (patchName == shortName || patchName.isEmpty) {
+      for (int i = 36; i <= ptcf.length - 12; i++) {
+        if (ptcf[i] == 0x4E && ptcf[i + 1] == 0x41 && ptcf[i + 2] == 0x4D && ptcf[i + 3] == 0x45) {
+          final size = byteData.getUint32(i + 4, Endian.little);
+          if (size > 0 && size <= 64 && i + 8 + size <= ptcf.length) {
+            final fallbackName = _cleanName(ptcf.sublist(i + 8, i + 8 + size));
+            if (fallbackName.isNotEmpty) {
+              patchName = fallbackName;
+              break;
+            }
+          }
+        }
+      }
+    }
+
     return Patch(
       id: programNumber != null ? 'zoom_slot_$programNumber' : 'zoom_active_patch',
       name: patchName,
@@ -401,7 +679,49 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   }
 
   @override
-  MidiMessage encodePatch(Patch patch) {
+  MidiMessage buildSavePatchToSlotMessage(
+    Patch patch,
+    int programNumber, {
+    int patchesPerBank = 10,
+  }) {
+    final ptcfData = encodePtcf(patch);
+    final packed7Bit = SysexCodec.pack8BitTo7Bit(ptcfData);
+    final crc = SysexCodec.calculateZoom7BitCrc(ptcfData);
+
+    final patchLength = ptcfData.length;
+    final lenLsb = patchLength & 0x7F;
+    final lenMsb = (patchLength >> 7) & 0x7F;
+
+    final bank = (programNumber ~/ patchesPerBank).clamp(0, 127);
+    final prog = (programNumber % patchesPerBank).clamp(0, 127);
+
+    // F0 52 00 6E 45 00 00 <bank_lsb> <bank_msb> <prog_lsb> <prog_msb> <len_lsb> <len_msb> <data...> <CRC> 00 F7
+    final List<int> payload = [
+      manufacturerId,
+      0x00,
+      familyIdByte,
+      cmdMemoryPatchDump,
+      0x00,
+      0x00,
+      bank & 0x7F,
+      (bank >> 7) & 0x7F,
+      prog & 0x7F,
+      (prog >> 7) & 0x7F,
+      lenLsb,
+      lenMsb,
+      ...packed7Bit,
+      ...crc,
+      0x00, // zero padding
+    ];
+
+    return MidiMessage.sysEx(payload);
+  }
+
+  @override
+  MidiMessage encodePatch(Patch patch, {int? programNumber}) {
+    if (programNumber != null) {
+      return buildSavePatchToSlotMessage(patch, programNumber);
+    }
     final ptcfData = encodePtcf(patch);
     final packed7Bit = SysexCodec.pack8BitTo7Bit(ptcfData);
     final crc = SysexCodec.calculateZoom7BitCrc(ptcfData);

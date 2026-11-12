@@ -54,14 +54,14 @@ void main() {
   });
 
   group('ZoomMsPlusProtocol Command Framing', () {
-    test('buildInitSequence generates editor mode and pc mode commands', () {
+    test('buildInitSequence sends 0x53 (PC Mode Disable) and 0x50 (Parameter Edit Enable)', () {
       final seq = protocol.buildInitSequence();
       expect(seq.length, equals(2));
 
-      // Editor mode enable: F0 52 00 6E 50 F7
-      expect(seq[0].data, equals([0xF0, 0x52, 0x00, 0x6E, 0x50, 0xF7]));
-      // PC mode enable: F0 52 00 6E 52 F7
-      expect(seq[1].data, equals([0xF0, 0x52, 0x00, 0x6E, 0x52, 0xF7]));
+      // PC Mode Disable: F0 52 00 6E 53 F7 (exits USB lock screen if stuck)
+      expect(seq[0].data, equals([0xF0, 0x52, 0x00, 0x6E, 0x53, 0xF7]));
+      // Parameter Edit Enable: F0 52 00 6E 50 F7 (enables live bidirectional editing)
+      expect(seq[1].data, equals([0xF0, 0x52, 0x00, 0x6E, 0x50, 0xF7]));
     });
 
     test('buildEditorModeMessage handles enable and disable', () {
@@ -85,26 +85,113 @@ void main() {
       ]));
     });
 
-    test('buildParameterEditMessage encodes slot, param, and 7-bit words', () {
-      // slot 2, param 1, value 1500 (0x05DC) -> 1500 & 0x7F = 92 (0x5C), (1500 >> 7) & 0x7F = 11 (0x0B)
-      final msg = protocol.buildParameterEditMessage(slotIndex: 2, paramIndex: 1, value: 1500);
-      expect(msg.data, equals([
-        0xF0, 0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x02, 0x01, 0x5C, 0x0B, 0x00, 0x00, 0x00, 0xF7,
+    test('buildSlotBypassMessage formats param 0 bypass SysEx', () {
+      final onMsg = protocol.buildSlotBypassMessage(slotIndex: 1, isEnabled: true);
+      expect(onMsg.data, equals([
+        0xF0, 0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xF7,
+      ]));
+
+      final offMsg = protocol.buildSlotBypassMessage(slotIndex: 2, isEnabled: false);
+      expect(offMsg.data, equals([
+        0xF0, 0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7,
       ]));
     });
 
-    test('parseParameterEdit extracts parameters from hardware feedback', () {
+    test('buildParameterEditMessage encodes slot, paramIndex + 2, and 7-bit words', () {
+      // slot 2, paramIndex 1 -> paramNumber = 1 + 2 = 3
+      // value 1500 (0x05DC) -> 1500 & 0x7F = 92 (0x5C), (1500 >> 7) & 0x7F = 11 (0x0B)
+      final msg = protocol.buildParameterEditMessage(slotIndex: 2, paramIndex: 1, value: 1500);
+      expect(msg.data, equals([
+        0xF0, 0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x02, 0x03, 0x5C, 0x0B, 0x00, 0x00, 0x00, 0xF7,
+      ]));
+    });
+
+    test('isSlotBypass and parseSlotBypass extract bypass state from physical footswitch', () {
+      // slot 2, paramNumber 0, value 1 (Enabled)
+      final bypassOn = MidiMessage.sysEx([
+        0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+      ]);
+      expect(protocol.isSlotBypass(bypassOn), isTrue);
+      expect(protocol.isParameterEdit(bypassOn), isFalse);
+      final parsedOn = protocol.parseSlotBypass(bypassOn);
+      expect(parsedOn, isNotNull);
+      expect(parsedOn!.slotIndex, equals(2));
+      expect(parsedOn.isEnabled, isTrue);
+
+      // slot 3, paramNumber 0, value 0 (Bypassed)
+      final bypassOff = MidiMessage.sysEx([
+        0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      ]);
+      expect(protocol.isSlotBypass(bypassOff), isTrue);
+      final parsedOff = protocol.parseSlotBypass(bypassOff);
+      expect(parsedOff, isNotNull);
+      expect(parsedOff!.slotIndex, equals(3));
+      expect(parsedOff.isEnabled, isFalse);
+    });
+
+    test('parseParameterEdit extracts knob parameter and maps paramNumber to paramIndex', () {
+      // Unsolicited physical knob edit from pedal: 64 20 00, slot 3, paramNumber 4 (knob 2), value 192 (0x40 0x01)
       final feedbackMsg = MidiMessage.sysEx([
-        0x52, 0x00, 0x6E, 0x64, 0x20, 0x01, 0x03, 0x02, 0x40, 0x01,
+        0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x03, 0x04, 0x40, 0x01, 0x00, 0x00, 0x00,
       ]);
       expect(protocol.isParameterEdit(feedbackMsg), isTrue);
+      expect(protocol.isSlotBypass(feedbackMsg), isFalse);
 
       final parsed = protocol.parseParameterEdit(feedbackMsg);
       expect(parsed, isNotNull);
       expect(parsed!.slotIndex, equals(3));
-      expect(parsed.paramIndex, equals(2));
+      expect(parsed.paramIndex, equals(2)); // 4 - 2 = 2
       // value: 0x40 | (0x01 << 7) = 64 + 128 = 192
       expect(parsed.value, equals(192));
+
+      // Rejects ACK feedback (64 20 01)
+      final ackMsg = MidiMessage.sysEx([
+        0x52, 0x00, 0x6E, 0x64, 0x20, 0x01, 0x03, 0x04, 0x40, 0x01, 0x00, 0x00, 0x00,
+      ]);
+      expect(protocol.isParameterEdit(ackMsg), isFalse);
+    });
+
+    test('isSlotChange and parseSlotChange extract slot index from 64 26 00 00 SysEx', () {
+      // Bank 3, Prog 4 -> Slot 34
+      // F0 52 00 6E 64 26 00 00 <bank_lsb> <bank_msb> <prog_lsb> <prog_msb> F7
+      final slotMsg = MidiMessage.sysEx([
+        0x52, 0x00, 0x6E, 0x64, 0x26, 0x00, 0x00, 0x03, 0x00, 0x04, 0x00,
+      ]);
+      expect(protocol.isSlotChange(slotMsg), isTrue);
+      final slotIndex = protocol.parseSlotChange(slotMsg);
+      expect(slotIndex, equals(34));
+    });
+
+    test('buildSlotFocusMessage formats 64 20 00 64 01 <slot> SysEx', () {
+      final focusMsg = protocol.buildSlotFocusMessage(2);
+      expect(focusMsg, isNotNull);
+      expect(focusMsg!.data, equals([
+        0xF0, 0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x64, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0xF7,
+      ]));
+    });
+
+    test('isSlotFocusChange and parseSlotFocusChange extract focused slot index from hardware Left/Right buttons', () {
+      // Hardware Left/Right cursor button press on MS-60B+:
+      // F0 52 00 6E 64 20 00 64 01 03 00 00 00 00 F7
+      final focusMsg = MidiMessage.sysEx([
+        0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x64, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00,
+      ]);
+      expect(protocol.isSlotFocusChange(focusMsg), isTrue);
+      expect(protocol.isSlotBypass(focusMsg), isFalse);
+      expect(protocol.isParameterEdit(focusMsg), isFalse);
+
+      final slotIndex = protocol.parseSlotFocusChange(focusMsg);
+      expect(slotIndex, equals(3));
+    });
+
+    test('isSlotBypass and isParameterEdit reject global device-level 0x64 parameters', () {
+      // Tempo message: 64 20 00 64 02 ...
+      final tempoMsg = MidiMessage.sysEx([
+        0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x64, 0x02, 0x78, 0x00, 0x00, 0x00, 0x00,
+      ]);
+      expect(protocol.isSlotBypass(tempoMsg), isFalse);
+      expect(protocol.isParameterEdit(tempoMsg), isFalse);
+      expect(protocol.isSlotFocusChange(tempoMsg), isFalse);
     });
   });
 

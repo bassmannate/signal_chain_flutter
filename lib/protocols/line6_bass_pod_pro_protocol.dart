@@ -172,13 +172,45 @@ class Line6BassPodProProtocol extends DeviceProtocol {
 
   @override
   bool isPatchDump(MidiMessage message) {
+    return isCurrentPatchDump(message) || isSlotPatchDump(message);
+  }
+
+  @override
+  bool isCurrentPatchDump(MidiMessage message) {
     final data = message.data;
-    if (!message.isSysEx || data.length < 10) return false;
-    return data[1] == manufacturerId[0] &&
+    if (!message.isSysEx || data.length < 8) return false;
+    final isLine6 = data[1] == manufacturerId[0] &&
         data[2] == manufacturerId[1] &&
         data[3] == manufacturerId[2] &&
-        data[4] == deviceFamilyByte &&
-        data[5] == cmdEditBufferDump;
+        data[4] == deviceFamilyByte;
+    if (!isLine6) return false;
+    return data[5] == cmdEditBufferDump;
+  }
+
+  @override
+  bool isSlotPatchDump(MidiMessage message) {
+    final data = message.data;
+    if (!message.isSysEx || data.length < 8) return false;
+    final isLine6 = data[1] == manufacturerId[0] &&
+        data[2] == manufacturerId[1] &&
+        data[3] == manufacturerId[2] &&
+        data[4] == deviceFamilyByte;
+    if (!isLine6) return false;
+    return data[5] == cmdProgramDumpRequest;
+  }
+
+  @override
+  int? extractSlotIndex(MidiMessage message) {
+    if (!isSlotPatchDump(message)) return null;
+    final data = message.data;
+    return data.length > 6 ? (data[6] & 0x7F) : null;
+  }
+
+  @override
+  List<MidiMessage> buildSlotSelectMessages(int slotIndex) {
+    return [
+      MidiMessage.programChange(channel: 0, program: slotIndex.clamp(0, 127)),
+    ];
   }
 
   @override
@@ -205,8 +237,10 @@ class Line6BassPodProProtocol extends DeviceProtocol {
       throw FormatException('Message is not a valid Line 6 Bass Pod Pro SysEx dump: $message');
     }
 
-    // Header: F0 00 01 0C 01 00 (6 bytes)
-    final payloadBytes = data.sublist(6, data.length - 1); // exclude trailing F7
+    final isProgramDump = data[5] == cmdProgramDumpRequest;
+    final int? programNumber = isProgramDump ? (data[6] & 0x7F) : null;
+    final payloadOffset = isProgramDump ? 7 : 6;
+    final payloadBytes = data.sublist(payloadOffset, data.length - 1); // exclude trailing F7
     Uint8List buffer;
 
     if (payloadBytes.length >= editBufferSize * 2) {
@@ -221,7 +255,7 @@ class Line6BassPodProProtocol extends DeviceProtocol {
       );
     }
 
-    return decodeEditBuffer(buffer);
+    return decodeEditBuffer(buffer, programNumber: programNumber);
   }
 
   /// Decodes a 72-byte Edit Buffer payload into a domain [Patch].
@@ -422,7 +456,45 @@ class Line6BassPodProProtocol extends DeviceProtocol {
   }
 
   @override
-  MidiMessage encodePatch(Patch patch, {bool useNibbles = true}) {
+  MidiMessage buildSavePatchToSlotMessage(
+    Patch patch,
+    int programNumber, {
+    bool useNibbles = true,
+  }) {
+    final buffer = encodeEditBuffer(patch);
+    final payloadData = useNibbles ? SysexCodec.packNibbles(buffer) : buffer;
+
+    return MidiMessage.sysEx([
+      ...manufacturerId,
+      deviceFamilyByte,
+      cmdProgramDumpRequest,
+      programNumber.clamp(0, 127) & 0x7F,
+      ...payloadData,
+    ]);
+  }
+
+  @override
+  MidiMessage encodePatch(
+    Patch patch, {
+    int? programNumber,
+    bool useNibbles = true,
+  }) {
+    if (programNumber != null) {
+      return buildSavePatchToSlotMessage(patch, programNumber, useNibbles: useNibbles);
+    }
+    final buffer = encodeEditBuffer(patch);
+    final payloadData = useNibbles ? SysexCodec.packNibbles(buffer) : buffer;
+
+    return MidiMessage.sysEx([
+      ...manufacturerId,
+      deviceFamilyByte,
+      cmdEditBufferDump,
+      ...payloadData,
+    ]);
+  }
+
+  /// Encodes [patch] into a 72-byte raw binary edit buffer.
+  Uint8List encodeEditBuffer(Patch patch) {
     final buffer = Uint8List(editBufferSize);
 
     // If existing raw dump is preserved in metadata, start with it
@@ -499,14 +571,7 @@ class Line6BassPodProProtocol extends DeviceProtocol {
     final paddedName = patch.name.padRight(16, ' ').substring(0, 16);
     buffer.setRange(56, 72, ascii.encode(paddedName));
 
-    final payloadData = useNibbles ? SysexCodec.packNibbles(buffer) : buffer;
-
-    return MidiMessage.sysEx([
-      ...manufacturerId,
-      deviceFamilyByte,
-      cmdEditBufferDump,
-      ...payloadData,
-    ]);
+    return buffer;
   }
 
   int _mapSlotParamToCc(int slotIndex, int paramIndex) {

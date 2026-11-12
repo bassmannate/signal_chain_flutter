@@ -157,7 +157,8 @@ void main() {
       expect(editorController.selectedSlotIndex, equals(0));
     });
 
-    test('toggleSlotEnabled toggles bypass flag and marks patch dirty', () {
+    test('toggleSlotEnabled toggles bypass flag, marks patch dirty, and transmits bypass SysEx', () {
+      transport.clearSentMessages();
       expect(editorController.patch!.slots[0].isEnabled, isTrue);
       expect(editorController.isDirty, isFalse);
 
@@ -165,12 +166,29 @@ void main() {
       expect(editorController.patch!.slots[0].isEnabled, isFalse);
       expect(editorController.isDirty, isTrue);
 
+      // Verify bypass message sent over transport: paramNumber = 0, value = 0 (Bypassed)
+      expect(transport.sentMessages.length, equals(1));
+      final sent1 = transport.sentMessages.first;
+      expect(sent1.isSysEx, isTrue);
+      expect(sent1.data[7], equals(0)); // Slot 0
+      expect(sent1.data[8], equals(0)); // paramNumber 0 = Bypass
+      expect(sent1.data[9], equals(0)); // 0 = Bypassed
+
+      transport.clearSentMessages();
       editorController.toggleSlotEnabled(0);
       expect(editorController.patch!.slots[0].isEnabled, isTrue);
       expect(editorController.isDirty, isTrue);
+
+      // Verify enable message sent: paramNumber = 0, value = 1 (Enabled)
+      expect(transport.sentMessages.length, equals(1));
+      final sent2 = transport.sentMessages.first;
+      expect(sent2.isSysEx, isTrue);
+      expect(sent2.data[7], equals(0)); // Slot 0
+      expect(sent2.data[8], equals(0)); // paramNumber 0 = Bypass
+      expect(sent2.data[9], equals(1)); // 1 = Enabled
     });
 
-    test('updateParameter updates local parameter and dispatches SysEx edit message', () async {
+    test('updateParameter updates local parameter and dispatches SysEx edit message with paramIndex + 2', () async {
       transport.clearSentMessages();
 
       await editorController.updateParameter(0, 1, 8);
@@ -179,6 +197,7 @@ void main() {
       expect(editorController.isDirty, isTrue);
 
       // Verify exact SysEx message sent over transport
+      // On Zoom MS Plus: paramNumber = paramIndex + 2 = 1 + 2 = 3
       expect(transport.sentMessages.length, equals(1));
       final sent = transport.sentMessages.first;
       expect(sent.isSysEx, isTrue);
@@ -188,7 +207,7 @@ void main() {
       expect(sent.data[5], equals(ZoomMsPlusProtocol.cmdParameterEdit)); // 0x20
       expect(sent.data[6], equals(0x00));
       expect(sent.data[7], equals(0)); // Slot 0
-      expect(sent.data[8], equals(1)); // Param 1
+      expect(sent.data[8], equals(3)); // paramNumber = 1 + 2 = 3
       expect(sent.data[9], equals(8)); // Value 8
     });
 
@@ -242,6 +261,59 @@ void main() {
       expect(editorController.patch!.slots[0].parameters[0].currentValue, equals(9.0));
 
       // Assert no echo message was dispatched back to transport
+      expect(transport.sentMessages.isEmpty, isTrue);
+    });
+
+    test('selectSlot transmits buildSlotFocusMessage to sync physical pedal screen', () {
+      transport.clearSentMessages();
+      expect(editorController.selectedSlotIndex, equals(0));
+
+      editorController.selectSlot(1);
+
+      expect(editorController.selectedSlotIndex, equals(1));
+      expect(transport.sentMessages.length, equals(1));
+      final sent = transport.sentMessages.first;
+      expect(sent.isSysEx, isTrue);
+      // 64 20 00 64 01 01 00 00 00 00
+      expect(sent.data[4], equals(0x64));
+      expect(sent.data[5], equals(0x20));
+      expect(sent.data[6], equals(0x00));
+      expect(sent.data[7], equals(0x64));
+      expect(sent.data[8], equals(0x01));
+      expect(sent.data[9], equals(1)); // Selected slot 1
+    });
+
+    test('handles incoming hardware slot focus navigation without feedback loop', () async {
+      transport.clearSentMessages();
+      expect(editorController.selectedSlotIndex, equals(0));
+
+      const zoomProtocol = ZoomMsPlusProtocol();
+      // Hardware cursor Left/Right button press on pedal focused slot 1
+      final focusMsg = zoomProtocol.buildSlotFocusMessage(1)!;
+
+      transport.simulateIncomingMessage(focusMsg);
+      await pumpEventQueue();
+
+      expect(editorController.selectedSlotIndex, equals(1));
+      // No echo message sent back to pedal
+      expect(transport.sentMessages.isEmpty, isTrue);
+    });
+
+    test('handles incoming hardware footswitch bypass and updates selectedSlotIndex without echo', () async {
+      transport.clearSentMessages();
+      expect(editorController.patch!.slots[1].isEnabled, isFalse);
+      expect(editorController.selectedSlotIndex, equals(0));
+
+      const zoomProtocol = ZoomMsPlusProtocol();
+      // Physical footswitch enabled slot 1
+      final bypassMsg = zoomProtocol.buildSlotBypassMessage(slotIndex: 1, isEnabled: true);
+
+      transport.simulateIncomingMessage(bypassMsg);
+      await pumpEventQueue();
+
+      expect(editorController.patch!.slots[1].isEnabled, isTrue);
+      expect(editorController.selectedSlotIndex, equals(1)); // Follows active slot
+      // No echo message sent back to pedal
       expect(transport.sentMessages.isEmpty, isTrue);
     });
 

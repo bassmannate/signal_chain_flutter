@@ -8,35 +8,54 @@ import '../../protocols/line6_bass_pod_pro_protocol.dart';
 import '../../protocols/zoom_ms_plus_protocol.dart';
 import '../editor/patch_editor_controller.dart';
 import '../theme/studio_theme.dart';
+import 'hardware_bank_browser_widget.dart';
 import 'patch_library_controller.dart';
 
-/// Responsive preset library browser showing search, device filters, tags,
-/// and patch cards with load, export, and delete capabilities.
-class PatchLibraryDrawerOrPanel extends StatelessWidget {
+/// Responsive preset library and hardware bank browser showing search, device filters,
+/// tags, patch cards with load/export/delete capabilities, and hardware slot management.
+class PatchLibraryDrawerOrPanel extends StatefulWidget {
   final PatchLibraryController libraryController;
   final PatchEditorController editorController;
   final bool isPanel; // true if side panel, false if in drawer / bottom sheet
+  final int initialTabIndex;
 
   const PatchLibraryDrawerOrPanel({
     super.key,
     required this.libraryController,
     required this.editorController,
     this.isPanel = true,
+    this.initialTabIndex = 0,
   });
+
+  @override
+  State<PatchLibraryDrawerOrPanel> createState() => _PatchLibraryDrawerOrPanelState();
+}
+
+class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
+  late int _selectedTabIndex;
+
+  PatchLibraryController get libraryController => widget.libraryController;
+  PatchEditorController get editorController => widget.editorController;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedTabIndex = widget.initialTabIndex;
+  }
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: libraryController,
+      listenable: widget.libraryController,
       builder: (context, _) {
-        final patches = libraryController.patches;
-        final selectedFamily = libraryController.deviceFilter;
+        final patches = widget.libraryController.patches;
+        final selectedFamily = widget.libraryController.deviceFilter;
 
         return Container(
-          width: isPanel ? 340 : double.infinity,
+          width: widget.isPanel ? 340 : double.infinity,
           decoration: BoxDecoration(
             color: StudioTheme.surface,
-            border: isPanel
+            border: widget.isPanel
                 ? const Border(
                     left: BorderSide(color: StudioTheme.surfaceBorder, width: 1),
                   )
@@ -45,6 +64,130 @@ class PatchLibraryDrawerOrPanel extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Segmented Tab Toggle: [Local Presets] | [Hardware Bank]
+              Container(
+                margin: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: StudioTheme.surfaceElevated,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: StudioTheme.surfaceBorder),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        key: const Key('library_tab_local'),
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => setState(() => _selectedTabIndex = 0),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: _selectedTabIndex == 0 ? StudioTheme.surface : Colors.transparent,
+                            borderRadius: BorderRadius.circular(6),
+                            border: _selectedTabIndex == 0
+                                ? Border.all(color: StudioTheme.surfaceBorder)
+                                : null,
+                          ),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.folder,
+                                  size: 14,
+                                  color: _selectedTabIndex == 0
+                                      ? StudioTheme.colorModulation
+                                      : Colors.grey,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Local Presets',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: _selectedTabIndex == 0 ? Colors.white : Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: InkWell(
+                        key: const Key('library_tab_hardware'),
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => setState(() => _selectedTabIndex = 1),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: _selectedTabIndex == 1 ? StudioTheme.surface : Colors.transparent,
+                            borderRadius: BorderRadius.circular(6),
+                            border: _selectedTabIndex == 1
+                                ? Border.all(color: StudioTheme.surfaceBorder)
+                                : null,
+                          ),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.memory,
+                                  size: 14,
+                                  color: _selectedTabIndex == 1
+                                      ? StudioTheme.colorFilterEq
+                                      : Colors.grey,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Hardware Bank',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: _selectedTabIndex == 1 ? Colors.white : Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Active Tab Content
+              Expanded(
+                child: _selectedTabIndex == 1
+                    ? HardwareBankBrowserWidget(
+                        connectionController: widget.editorController.connectionController,
+                        editorController: widget.editorController,
+                        isPanel: false,
+                      )
+                    : _buildLocalLibraryContent(context, patches, selectedFamily),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLocalLibraryContent(
+    BuildContext context,
+    List<Patch> patches,
+    DeviceFamily? selectedFamily,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
               // Header
               Padding(
                 padding: const EdgeInsets.only(left: 14, right: 14, top: 16, bottom: 8),
@@ -174,10 +317,7 @@ class PatchLibraryDrawerOrPanel extends StatelessWidget {
                           ),
               ),
             ],
-          ),
-        );
-      },
-    );
+          );
   }
 
   Widget _buildPatchCard(BuildContext context, Patch patch) {

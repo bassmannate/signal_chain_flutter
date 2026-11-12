@@ -80,6 +80,7 @@ abstract class MidiTransport {
 - **Background Stream Reassembly:**
   * Background `amidi -p <port> -d` process streaming hex bytes from stdout.
   * Reassembles fragmented multi-line SysEx (`F0 ... F7`), Continuous Controller (`B0 cc vv`), and Program Change (`C0 pp`) messages without data loss.
+  * Real-Time Stream Tokenization (`feedHexStream`): Immediately processes complete 2-hex-digit tokens without waiting for trailing whitespace or newlines. Only 1-character fragments at stream boundaries are retained, eliminating the single-action lag where terminating `F7` bytes would otherwise remain buffered until subsequent hardware events.
 - **Outbound Transmission:**
   * Formats byte payloads into uppercase hex strings dispatched via `amidi -p <port> -S "<hex>"`.
 - **Process Lifecycle Safety:**
@@ -201,11 +202,13 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
 
 ---
 
-### 3.4 Effect & Parameter Metadata Catalogs (`lib/protocols/catalogs/`)
+### 3.4 Effect & Parameter Metadata Catalogs (`lib/protocols/catalogs/` & `lib/catalog/`)
 
-- `EffectDefinition`: Immutable specification of an effect type (`effectId`, `name`, `category`, `deviceFamily`, `List<ParameterDescriptor> parameters`).
-- `EffectCatalogRegistry`: Service resolving effect definitions by `DeviceFamily` and `effectId`, returning fallback definitions for unmapped DSP IDs and normalizing hex identifiers.
-- `ZoomMsPlusCatalog`: Core MS-60B+ and MS Plus effects across 11 categories (Dynamics, Filter/EQ, Drive, Preamp, Amp Model, Modulation, Pitch, Synth, SFX, Delay, Reverb) with complete parameter descriptors and discrete labels.
+- `EffectDefinition`: Immutable specification of an effect type (`effectId`, `name`, `category`, `deviceFamily`, `List<ParameterDescriptor> parameters`, `int? dspLoad`, and integer ID getter `intEffectId`).
+- `EffectCatalogRegistry`: Global lookup service resolving effect definitions by `DeviceFamily` and `effectId`, returning fallback definitions for unmapped DSP IDs and normalizing hex identifiers across Zoom and Line 6 pedal families.
+- `ZoomMsPlusCatalog`: Complete 98-effect MS-60B+ and MS Plus catalog extracted from `zoom-effect-mappings-ms60bp.json` via pure-Dart deterministic generator `tool/generate_zoom_catalog.dart` into `lib/catalog/zoom_ms_plus_catalog_data.dart`.
+  * Spans all 11 hardware categories: Dynamics, Filter / EQ, Drive / Distortion, Preamp, Amp Model, Modulation, Pitch / Octave, Bass Synth, Special / SFX, Delay, Reverb.
+  * Provides high-level browsing APIs: `getByIntId(int)`, `getById(String)`, `getByCategory(String)`, `categories`, and `search(query, {category})`.
 - `Line6BassPodProCatalog`: 16 Amp models, 8 Cabinet models, Compressor block, and 8 Modulation/Delay effects with exact CC/edit buffer parameter mappings.
 
 ---
@@ -265,6 +268,24 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
   }
   ```
 
+### 4.4 Hardware Memory Bank Models (`lib/models/bank_slot_descriptor.dart`)
+- `BankSlotDescriptor`:
+  ```dart
+  class BankSlotDescriptor {
+    final int index; // 0 to 99
+    final String name;
+    final DeviceFamily deviceFamily;
+    final bool isEmpty;
+    final bool isLoaded;
+    final Patch? patch;
+    final Map<String, dynamic> metadata;
+
+    String get formattedSlotIndex => index.toString().padLeft(2, '0');
+    String get bankAndProgramNumber => '${(index ~/ 10) + 1}-${(index % 10) + 1}';
+    String get slotLabel => '#$formattedSlotIndex ($bankAndProgramNumber)';
+  }
+  ```
+
 ---
 
 ## 5. Storage & Preset Library Layer (`lib/core/storage/`)
@@ -281,20 +302,62 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
 Implemented using Flutter's built-in `ChangeNotifier` and clean constructor dependency injection (`MidiTransport`, `PatchLibraryRepository`, `EffectCatalogRegistry`) for 100% offline `--no-pub` reliability and zero third-party package fragility.
 
 ### 6.1 Device Connection Module (`lib/features/connection/`)
-- `DeviceConnectionController`: Manages available MIDI ports, active connection state, active `DeviceFamily`, and resolved `DeviceProtocol` (`ZoomMsPlusProtocol` or `Line6BassPodProProtocol`). Performs Universal Identity Request handshake with port name fallback heuristics, executes hardware initialization sequences, and handles clean disconnection.
+- `DeviceConnectionController`: Manages available MIDI ports, active connection state, active `DeviceFamily`, and resolved `DeviceProtocol` (`ZoomMsPlusProtocol` or `Line6BassPodProProtocol`). Performs Universal Identity Request handshake with port name fallback heuristics, executes hardware initialization sequences (sending `0x53` to exit lock-screen PC Mode and `0x50` to enable live parameter edits on Zoom MS Plus pedals, never `0x52`), and handles clean disconnection.
+- Known Port Auto-Selection & Hot-Plug: Scans discovered port names on startup and `refreshPorts()` against known patterns (`ZOOM`, `MS Plus`, `MS-60B`, `MS-50G`, `MS-70CDR`, `MS-200D`, `Bass POD`, `Line 6`). Runs a periodic hot-plug poll every 2 seconds when disconnected from real hardware to auto-connect as soon as a matching device is plugged in, and cleanly disconnects when the active hardware device is unplugged.
+- Asynchronous Bank Synchronization (`syncDeviceBank`): Non-blocking fetch of all persistent memory bank slots (0–99), safely catching per-slot timeouts, reporting live progress percentage and status, and updating `bankSlots` incrementally without locking the UI. Incoming `0x45` slot dumps strictly update `bankSlots` using `extractSlotIndex` and never overwrite or cycle the active editor buffer.
 - `ConnectionBarWidget`: Top studio toolbar with status badge, port selector dropdown, device family picker, hardware sync actions ("Pull Patch" / "Push Patch"), and "Save to Library" button.
 
 ### 6.2 Patch Editor Module (`lib/features/editor/`)
 - `PatchEditorController`: Holds active `Patch?`, inspected `selectedSlotIndex`, dirty state tracking, and incoming MIDI message stream subscription.
 - Real-time parameter control: `updateParameter` immediately updates local state and dispatches `protocol.buildParameterEditMessage(...)` over `MidiTransport` when connected.
-- Bi-directional hardware sync: Listens to incoming MIDI messages; hardware parameter changes (`protocol.isParameterEdit`) and patch dumps (`protocol.isPatchDump`) update local state without echoing outbound messages.
-- Slot operations: Toggles effect slot bypass (`toggleSlotEnabled`) and hot-swaps DSP algorithms via `EffectCatalogRegistry` (`changeSlotEffect`).
-- `SignalChainStripWidget`: Horizontal pedalboard stompbox view with slot index, category badge, effect name, interactive Bypass/Enable LED switch, and selection highlight.
-- `SlotInspectorWidget`: Parameter inspector with algorithm dropdown populated from `EffectCatalogRegistry`, discrete label dropdowns, and continuous sliders.
+- Real-time patch metadata controls:
+  * `updatePatchName(String newName)`: Enforces hardware-specific character limits (10 chars for Zoom MS Plus, 16 for Line 6), converts unprintable and invalid ASCII characters to spaces, marks patch dirty, and synchronizes live to connected hardware.
+  * `updatePatchTempo(int bpm)`: Clamps BPM to 40–250 range, updates patch PRM2 metadata, marks patch dirty, and syncs live to connected hardware.
+  * `loadPatchFromDeviceSlot(int slotIndex)`: Single-click responsive slot loading into editor buffer: immediately loads cached patch if already available in `bankSlots` without redundant round-trips, switches pedal memory slot via `buildSlotSelectMessages` (CC0/CC32/PC), and never issues slot-write commands (`0x45`).
+  * `savePatchToDeviceSlot(int slotIndex, [Patch? patchToSave])`: Encodes and transmits memory slot dump SysEx to persist patch in hardware slot (0–99).
+- Bi-directional hardware sync: Listens to incoming MIDI messages; hardware parameter changes (`protocol.isParameterEdit`), active edit buffer dumps (`protocol.isCurrentPatchDump`), and program changes (`isProgramChange`) update local state via `applyExternalHardwareUpdate(...)` without echoing outbound messages back to hardware. Incoming memory slot dumps (`protocol.isSlotPatchDump`) are ignored by the editor buffer to prevent background sync cycling.
+- Signal chain slot operations:
+  * `addEffectSlot({int? index, required dynamic effectId})`: Inserts new effect slot respecting device max slot limits (e.g. 6 slots on Zoom MS Plus) and initializes default parameters from `EffectCatalogRegistry`.
+  * `insertEffectSlotAt(int index, EffectCatalogEntry entry)`: Inserts a new effect slot from catalog entry at designated index in the signal chain.
+  * `removeEffectSlot(int slotIndex)`: Safely deletes a slot, re-indexes remaining slots, and clamps `selectedSlotIndex`.
+  * `moveEffectSlot(int oldIndex, int newIndex)` / `reorderEffectSlots(int fromIndex, int toIndex)`: Reorders slots in the signal chain and adjusts selection.
+  * `changeSlotEffect(int slotIndex, dynamic newEffectId)`: Swaps algorithm in slot (accepting integer DSP ID or hex string) and populates default parameter descriptors.
+  * Automatically dispatches full edit buffer sync (`protocol.encodePatch`) to hardware when connected on structural chain modifications.
+- `PatchMetadataHeaderWidget`: Integrated editor header bar featuring:
+  * Real-time patch name `TextField` with device character limit and live updating.
+  * Unsaved dirty state badge (`* UNSAVED`).
+  * Tempo BPM display with decrement (`-1 BPM`), increment (`+1 BPM`), and continuous slider (40–250 BPM).
+  * "Write to Slot..." button opening `WriteToSlotDialog`.
+- `WriteToSlotDialog`: Modal slot selector dialog (0–99) displaying destination bank/slot numbers, existing slot names, and confirmation save dispatch.
+- `SignalChainStripWidget`: Horizontal pedalboard stompbox view featuring:
+  * Embedded `PatchMetadataHeaderWidget` and slot count subheader.
+  * Dedicated inter-slot `DragTarget` **insertion zones** before slot 0, between slot `i` and `i+1`, and after the last slot, expanding on hover with illuminated vertical insertion indicators.
+  * Dropping an `EffectDragPayload` or `EffectCatalogEntry` onto an insertion zone inserts the effect at that exact position via `insertEffectSlotAt`.
+  * Dropping a `SlotReorderPayload` onto an insertion zone moves the dragged slot to that position via `reorderEffectSlots`.
+  * Dropping directly onto an existing slot card swaps the effect or reorders slots.
+  * Slot index, category badge, and effect name.
+  * Move Left and Move Right controls on each slot for instant signal chain reordering.
+  * Direct "Swap" effect trigger opening `EffectPickerDialog`.
+  * Remove effect slot button (`IconButton`) when chain has more than 1 slot.
+  * "+ Add Effect" card when patch has fewer than device maximum allowed slots.
+  * Interactive Bypass/Enable LED switch with category glow.
+- `EffectBankPaletteWidget`: Studio dockable panel / bottom-right studio shelf featuring:
+  * Live search input by name, category, or ID.
+  * Category filter chips (`All`, `Dynamics`, `Filter`, `Drive`, `Amp`, `Cabinet`, `Modulation`, `SFX`, `Delay`, `Reverb`).
+  * Draggable effect cards (`Draggable<EffectDragPayload>`) with drag handle and category indicators.
+  * Accessible click-to-add / swap interaction.
+- `SlotInspectorWidget`: Parameter inspector with algorithm dropdown, search catalog button opening `EffectPickerDialog`, discrete label dropdowns, and continuous sliders.
+- `EffectPickerDialog`: Full modal browsing dialog supporting text search across names and categories, category filter chips (All, Dynamics, Filter / EQ, Drive / Distortion, Preamp, Amp Model, Modulation, Pitch / Octave, Bass Synth, Special / SFX, Delay, Reverb), and one-click effect algorithm selection.
 
-### 6.3 Preset Library Module (`lib/features/library/`)
+### 6.3 Preset Library & Hardware Bank Module (`lib/features/library/`)
 - `PatchLibraryController`: Wraps `PatchLibraryRepository` to manage preset indexing, search queries, `DeviceFamily` filter chips, and tag filtering. Supports CRUD operations, editor loading, and JSON/SysEx import/export.
-- `PatchLibraryDrawerOrPanel`: Responsive preset library browser (side panel on desktop >= 900px, drawer on compact screens).
+- `HardwareBankBrowserWidget`: Dedicated hardware memory slot browser:
+  * Displays scrollable list of all 100 persistent slots (0–99) with slot numbers (`#00`, `1-1`) and names.
+  * One-click "Load into Editor" action.
+  * Quick "Write Active Here" overwrite action.
+  * Search/filter bar by slot number or preset name.
+  * "Sync Bank" action with progress bar and cancellation.
+- `PatchLibraryDrawerOrPanel`: Unified side panel/drawer featuring segmented tab toggle between `Local Presets` and `Hardware Bank`.
 
 ---
 
@@ -316,4 +379,8 @@ Implemented using Flutter's built-in `ChangeNotifier` and clean constructor depe
 1. **Safety & Lints:** Enforce strict type safety with `flutter_lints` and avoid `dynamic` where typed models are possible.
 2. **Byte Buffer Hygiene:** Always use `Uint8List.fromList()` or subview slices rather than mutating shared memory across async boundaries.
 3. **No UI in Logic:** Keep widgets declarative and dumb. All business logic lives in controllers and protocol parsers.
+4. **Hardware Echo Prevention:** Incoming hardware updates (preset changes, knob turns, bypass toggles) are processed under `_isHandlingIncoming = true` and `notifyHardware: false` so that zero SysEx/CC messages are echoed back to the device, preventing feedback loops.
+5. **Zoom MS Plus Parameter Numbering:** Parameter 0 represents Effect Bypass (1 = ON, 0 = OFF), Parameter 1 represents Effect ID, and Parameter numbers 2+ map to effect knob parameters (knob index = `paramNumber - 2`).
+6. **Zoom MS Plus Slot Screen Focus:** SysEx `F0 52 00 6E 64 20 00 64 01 <slotIndex> 00 00 00 00 F7` synchronizes the active effect slot screen bidirectionally. Sent when selecting a slot in the app UI, and received when the user presses Left/Right cursor buttons on the physical pedal.
+7. **Device-Level SysEx Disambiguation:** SysEx with `data[4..6] == 64 20 00` and `data[7] == 0x64` (100 decimal) represent pedal global parameters (e.g. `64 01` = slot focus, `64 02` = tempo, `64 0F` = auto-save). Protocols must guard `isSlotBypass` and `isParameterEdit` to only match effect slots (`slotIndex < 6`), rejecting `0x64`.
 
