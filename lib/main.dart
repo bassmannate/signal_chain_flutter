@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'core/midi/composite_midi_transport.dart';
 import 'core/midi/linux_alsa_midi_transport.dart';
+import 'core/midi/android_midi_transport.dart';
 import 'core/midi/midi_message.dart';
 import 'core/midi/midi_port_descriptor.dart';
 import 'core/midi/midi_transport.dart';
@@ -80,7 +81,9 @@ class _SignalChainAppState extends State<SignalChainApp> {
         _transport = mock;
       } else {
         final childTransports = <MidiTransport>[];
-        if (Platform.isLinux) {
+        if (Platform.isAndroid) {
+          childTransports.add(AndroidMidiTransport());
+        } else if (Platform.isLinux) {
           childTransports.add(LinuxAlsaMidiTransport());
         }
         childTransports.add(mock);
