@@ -737,7 +737,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
 
             final effectName = (dspId != 0 && !effectDef.name.startsWith('Unknown'))
                 ? effectDef.name
-                : _lookupEffectName(dspId);
+                : _lookupEffectName(dspId, family: family);
 
             slots.add(EffectSlot(
               slotIndex: slotIdx,
@@ -863,7 +863,9 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   Uint8List encodePtcf(Patch patch) {
     final numEffects = patch.slots.isEmpty ? defaultMaxSlots : patch.slots.length;
     final target = (patch.metadata['target'] as int?) ??
-        (patch.deviceFamily == DeviceFamily.zoomMs50gPlus
+        ((patch.deviceFamily == DeviceFamily.zoomMs50gPlus ||
+                patch.deviceFamily == DeviceFamily.zoomMs70cdrPlus ||
+                patch.deviceFamily == DeviceFamily.zoomMs200dPlus)
             ? ptcfTargetMs50gPlus
             : ptcfTargetMs60bPlus);
     final version = (patch.metadata['version'] as int?) ?? 1;
@@ -1038,7 +1040,13 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   }
 
   DeviceFamily _resolveFamilyFromTarget(int target) {
-    if ((target & ptcfTargetMs50gPlus) != 0) return DeviceFamily.zoomMs50gPlus;
+    if ((target & ptcfTargetMs50gPlus) != 0) {
+      if (defaultFamily == DeviceFamily.zoomMs70cdrPlus ||
+          defaultFamily == DeviceFamily.zoomMs200dPlus) {
+        return defaultFamily;
+      }
+      return DeviceFamily.zoomMs50gPlus;
+    }
     if ((target & ptcfTargetMs60bPlus) != 0) return DeviceFamily.zoomMs60bPlus;
     return defaultFamily;
   }
@@ -1050,10 +1058,10 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     return int.tryParse(idStr) ?? 0;
   }
 
-  String _lookupEffectName(int dspId) {
+  String _lookupEffectName(int dspId, {DeviceFamily? family}) {
     if (dspId == 0) return 'Bypass';
     final hexId = '0x${dspId.toRadixString(16).padLeft(8, '0').toUpperCase()}';
-    final def = EffectCatalogRegistry.getDefinition(defaultFamily, hexId);
+    final def = EffectCatalogRegistry.getDefinition(family ?? defaultFamily, hexId);
     if (!def.name.startsWith('Unknown')) {
       return def.name;
     }

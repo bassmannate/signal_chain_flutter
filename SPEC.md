@@ -180,41 +180,52 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
 - Line 6 Bass Pod Pro (Rackmount Multi-FX Processor)
 
 #### Protocol Specifications
-1. **Manufacturer ID & Header:**
-   - Line 6 3-byte SysEx Header: `F0 00 01 0C` (Manufacturer `0x00 0x01 0x0C`).
-   - Family / Device Type byte: `0x01` (Bass Pod Pro).
-2. **Preset Recall & Control Changes:**
-   - Standard MIDI Program Change (PC `0`–`127`) for switching preset channel memories.
-   - Real-time Continuous Controller (CC) parameters:
-     * CC #4: Drive (0–127)
-     * CC #14: Bass (0–127)
-     * CC #15: Mid (0–127)
-     * CC #16: Treble (0–127)
-     * CC #17: Channel Volume (0–127)
-     * CC #12: Amp Model Select (0–15)
-     * CC #13: Cabinet Model Select (0–7)
-     * CC #19: Effect Tweak / Value (0–127)
-     * CC #7: Master Volume (0–127)
-     * CC #64: Compressor Ratio / Threshold (0–127)
-     * CC #11: Effect Select / Type (0–7)
-3. **Edit Buffer & SysEx Dumps:**
-   - Request Edit Buffer Dump: `F0 00 01 0C 01 00 F7`
-   - Request Program Slot Dump: `F0 00 01 0C 01 01 <program_number> F7`
-   - Edit Buffer Dump response: `F0 00 01 0C 01 00 <payload...> F7`
-     * 72-byte parameter payload encoded as 144 4-bit nibbles (low nibble first) or 72 raw bytes.
-     * Byte 0: Amp Model (0–15)
-     * Byte 1: Cabinet Model (0–7)
-     * Byte 2: Drive (0–127)
-     * Byte 3: Bass (0–127)
-     * Byte 4: Mid (0–127)
-     * Byte 5: Treble (0–127)
-     * Byte 6: Channel Volume (0–127)
-     * Byte 7: Compressor Ratio / Threshold (0–127)
-     * Byte 8: Effect Type (0–7)
-     * Byte 9: Effect Tweak (0–127)
-     * Byte 10: Master Volume (0–127)
-     * Byte 11: Compressor Enable toggle (0 / 1)
-     * Bytes 56..71: Preset Name (16 ASCII characters, space-padded)
+1. **Manufacturer ID & Identity Handshake:**
+   - Line 6 3-byte SysEx Header: `F0 00 01 0C` (Manufacturer `0x00 01 0C`, USB Vendor `0x0E41`).
+   - Family / Device Type byte: `0x02` (Bass POD / Bass POD Pro).
+   - Universal SysEx Identity Request (`F0 7E 7F 06 01 F7`) matches Reply containing manufacturer `00 01 0C` and LSB-first family code `02 00` (`0x0002`, e.g., firmware 1.40 `F0 7E 7F 06 02 00 01 0C 02 00 01 00 30 31 34 30 F7`).
+2. **Preset Recall & Verified Control Changes:**
+   - Standard MIDI Program Change (PC `1`–`36` for slots `0`–`35` / `1A`–`9D`; PC `0` = Manual, PC `37` = Tuner).
+   - Verified Continuous Controller (CC) parameters (6-bit scaled params step by 2 from `0..126`):
+     * CC #1: Effect Tweak (`0–126`)
+     * CC #4: Wah Pedal (`0–127`)
+     * CC #7: Volume / Master Level (`0–127`)
+     * CC #12: Amp Model Select (`0–15`)
+     * CC #13: Drive (`0–126`)
+     * CC #14: Bass (`0–126`)
+     * CC #15: Mid (`0–126`)
+     * CC #16: Treble (`0–126`)
+     * CC #17: Channel Volume (`0–126`)
+     * CC #18: Compress (`0–126`)
+     * CC #19: Effect Select (`0–15`, index `10` = Bypass)
+     * CC #21: FX Lo Cut (`0–126`)
+     * CC #22: Noise Gate (`0` / `127`)
+     * CC #60: Effect On/Off (`0` / `127`)
+     * CC #64: Apply FX to DI (`0` / `127`)
+     * CC #71: Cabinet Model Select (`0–15`, index `10` = Bypass)
+     * CC #72: A.I.R. Level (`0–126`)
+3. **Edit Buffer & SysEx Dumps (`opcode 0x00 = request`, `0x01 = dump`, `version = 0x01`):**
+   - Request Edit Buffer Dump: `F0 00 01 0C 02 00 01 F7`
+   - Request Program Slot Dump: `F0 00 01 0C 02 00 00 <program_number> F7` (`0x00..0x23`)
+   - Request All Programs Dump: `F0 00 01 0C 02 00 02 F7`
+   - Edit Buffer Dump Response (169 bytes): `F0 00 01 0C 02 01 01 01 <160 MSB-first nibbles> F7`
+   - Program Slot Dump Response (170 bytes): `F0 00 01 0C 02 01 00 <program_number> 01 <160 MSB-first nibbles> F7`
+   - Unpacked 80-byte program layout:
+     * Byte 0 `[bit 0]`: Noise Gate enable (`0`/`1`)
+     * Byte 3 `[3:0]`: Amp Model (`0–15`)
+     * Byte 4 `[5:0]`: Drive (stored `0–63`, scaled `x2`)
+     * Byte 6 `[5:0]`: Bass (stored `0–63`, scaled `x2`)
+     * Byte 7 `[5:0]`: Middle (stored `0–63`, scaled `x2`)
+     * Byte 8 `[5:0]`: Treble (stored `0–63`, scaled `x2`)
+     * Byte 10 `[5:0]`: Channel Volume (stored `0–63`, scaled `x2`)
+     * Byte 11 `[5:0]`: Compress (stored `0–63`, scaled `x2`)
+     * Byte 31 `[3:0]`: Cabinet Model (`0–15`, index `10` = Bypass)
+     * Byte 32 `[5:0]`: A.I.R. Level (stored `0–63`, scaled `x2`)
+     * Byte 49 `[3:0]`: Effect Select (`0–15`, index `10` = Bypass)
+     * Byte 50 `[5:0]`: Effect Tweak (stored `0–63`, scaled `x2`)
+     * Byte 51 `[5:0]`: FX Lo Cut (stored `0–63`, scaled `x2`)
+     * Byte 52 `[bit 0]`: Effect On/Off (`0`/`1`)
+     * Bytes 64..79: Preset Name (16 ASCII characters, space-padded)
 
 ---
 
@@ -222,7 +233,12 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
 
 - `EffectDefinition`: Immutable specification of an effect type (`effectId`, `name`, `category`, `deviceFamily`, `List<ParameterDescriptor> parameters`, `int? dspLoad`, and integer ID getter `intEffectId`).
 - `EffectCatalogRegistry`: Global lookup service resolving effect definitions by `DeviceFamily` and `effectId`, returning fallback definitions for unmapped DSP IDs and normalizing hex identifiers across Zoom and Line 6 pedal families.
-- `ZoomMsPlusCatalog`: Complete 98-effect MS-60B+ and MS Plus catalog extracted from `zoom-effect-mappings-ms60bp.json` via pure-Dart deterministic generator `tool/generate_zoom_catalog.dart` into `lib/catalog/zoom_ms_plus_catalog_data.dart`.
+- `ZoomMsPlusCatalog`: Complete multi-pedal catalogs generated by standalone pure-Dart `tool/generate_zoom_catalog.dart` from `tool/reference/` CSV/JSON/JS definitions into `lib/catalog/`:
+  * **Zoom MS-60B+:** 98 effects (`zoom_ms60b_plus_catalog_data.dart`)
+  * **Zoom MS-50G+:** 106 effects (`zoom_ms50g_plus_catalog_data.dart`)
+  * **Zoom MS-70CDR+:** 150 effects (`zoom_ms70cdr_plus_catalog_data.dart`)
+  * **Zoom MS-200D+:** 224 effects with full-name overlay (`zoom_ms200d_plus_catalog_data.dart`)
+- `Line6BassPodProCatalog`: Complete 16 Amp models, 16 Cabinet models, Compressor/Noise Gate, and 16 built-in Effects matching hardware tables.
   * Spans all 11 hardware categories: Dynamics, Filter / EQ, Drive / Distortion, Preamp, Amp Model, Modulation, Pitch / Octave, Bass Synth, Special / SFX, Delay, Reverb.
   * Provides high-level browsing APIs: `getByIntId(int)`, `getById(String)`, `getByCategory(String)`, `categories`, and `search(query, {category})`.
 - `Line6BassPodProCatalog`: 16 Amp models, 8 Cabinet models, Compressor block, and 8 Modulation/Delay effects with exact CC/edit buffer parameter mappings.
@@ -415,6 +431,7 @@ Implemented using Flutter's built-in `ChangeNotifier` and clean constructor depe
 ### 9.2 Android USB Host & MIDI Capabilities
 - **Permissions & Features:** Declares `android.hardware.usb.host` and `android.software.midi` in `AndroidManifest.xml`.
 - **USB Device Filters (`android/app/src/main/res/xml/device_filter.xml`):** Matches Zoom Corporation (`vendor-id="5766"` / `0x1686`) and Line 6 (`vendor-id="3649"` / `0x0E41`) for automatic device attachment triggering.
+- **Native USB MIDI Transport (`MainActivity.kt` & `AndroidMidiTransport`):** Implements `android.media.midi.MidiManager` `MethodChannel` / `EventChannel` streaming with 256-byte outgoing SysEx chunking and `_rxBuffer` incoming SysEx stitching + 2/3-byte MIDI channel framing (`lib/src/transport/android_midi_transport.dart`, `lib/core/midi/android_midi_transport.dart`), wired into `lib/main.dart` and physically verified over USB OTG on a Fire HD 10 tablet and Pixel 10 Pro XL with a Zoom MS-60B+.
 
 ### 9.3 Windows Distribution
 - **Metadata:** Clean application metadata in `windows/runner/Runner.rc` ("Signal Chain", "Signal Chain Contributors").

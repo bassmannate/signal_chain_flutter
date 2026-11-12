@@ -182,7 +182,7 @@ class _SignalChainAppState extends State<SignalChainApp> {
       (req) {
         if (mock.connectedPort?.id == 'sim_line6') {
           return MidiMessage.sysEx([
-            0x7E, 0x00, 0x06, 0x02, 0x00, 0x01, 0x0C, 0x01, 0x00, 0x03, 0x00,
+            0x7E, 0x00, 0x06, 0x02, 0x00, 0x01, 0x0C, 0x02, 0x00, 0x01, 0x00, 0x30, 0x31, 0x34, 0x30,
           ]);
         }
         // Default: Zoom MS-60B+
@@ -239,19 +239,7 @@ class _SignalChainAppState extends State<SignalChainApp> {
       },
     );
 
-    // Auto-responder for Line 6 Edit Buffer Dump Request (F0 00 01 0C 01 00 F7)
-    mock.registerResponder(
-      (req) =>
-          req.isSysEx &&
-          req.data.length >= 6 &&
-          req.data[1] == 0x00 &&
-          req.data[2] == 0x01 &&
-          req.data[3] == 0x0C &&
-          req.data[5] == 0x00,
-      (req) => const Line6BassPodProProtocol().encodePatch(line6Sample),
-    );
-
-    // Auto-responder for Line 6 Program Dump Request (F0 00 01 0C 01 01 <prog> F7)
+    // Auto-responder for Line 6 Edit Buffer Dump Request (F0 00 01 0C 02 00 01 F7)
     mock.registerResponder(
       (req) =>
           req.isSysEx &&
@@ -259,9 +247,25 @@ class _SignalChainAppState extends State<SignalChainApp> {
           req.data[1] == 0x00 &&
           req.data[2] == 0x01 &&
           req.data[3] == 0x0C &&
-          req.data[5] == 0x01,
+          req.data[4] == 0x02 &&
+          req.data[5] == 0x00 &&
+          req.data[6] == 0x01,
+      (req) => const Line6BassPodProProtocol().encodePatch(line6Sample),
+    );
+
+    // Auto-responder for Line 6 Program Dump Request (F0 00 01 0C 02 00 00 <prog> F7)
+    mock.registerResponder(
+      (req) =>
+          req.isSysEx &&
+          req.data.length >= 8 &&
+          req.data[1] == 0x00 &&
+          req.data[2] == 0x01 &&
+          req.data[3] == 0x0C &&
+          req.data[4] == 0x02 &&
+          req.data[5] == 0x00 &&
+          req.data[6] == 0x00,
       (req) {
-        final prog = req.data[6] & 0x7F;
+        final prog = req.data[7] & 0x7F;
         return const Line6BassPodProProtocol().buildSavePatchToSlotMessage(
           line6Sample.copyWith(
             name: 'POD ${prog.toString().padLeft(2, '0')}',
@@ -588,8 +592,8 @@ class _SignalChainAppState extends State<SignalChainApp> {
       slots: [
         EffectSlot(
           slotIndex: 0,
-          effectId: 'line6_amp_1',
-          effectName: 'Classic (SVT)',
+          effectId: 'line6_amp_8',
+          effectName: 'Rock Classic',
           isEnabled: true,
           parameters: [
             ParameterValue(
@@ -598,17 +602,18 @@ class _SignalChainAppState extends State<SignalChainApp> {
                 name: 'Amp Model',
                 min: 0,
                 max: 15,
-                defaultValue: 1,
+                defaultValue: 8,
               ),
-              currentValue: 1.0,
+              currentValue: 8.0,
             ),
             ParameterValue(
               descriptor: ParameterDescriptor(
                 id: 'drive',
                 name: 'Drive',
                 min: 0,
-                max: 127,
+                max: 126,
                 defaultValue: 64,
+                step: 2,
               ),
               currentValue: 72.0,
             ),
@@ -617,8 +622,9 @@ class _SignalChainAppState extends State<SignalChainApp> {
                 id: 'bass',
                 name: 'Bass',
                 min: 0,
-                max: 127,
+                max: 126,
                 defaultValue: 64,
+                step: 2,
               ),
               currentValue: 68.0,
             ),
@@ -626,8 +632,8 @@ class _SignalChainAppState extends State<SignalChainApp> {
         ),
         EffectSlot(
           slotIndex: 1,
-          effectId: 'line6_cab_6',
-          effectName: '8x10 1974 Classic',
+          effectId: 'line6_cab_11',
+          effectName: '8x10 Ampeg SVT',
           isEnabled: true,
           parameters: [
             ParameterValue(
@@ -635,10 +641,10 @@ class _SignalChainAppState extends State<SignalChainApp> {
                 id: 'cab_model',
                 name: 'Cabinet Model',
                 min: 0,
-                max: 7,
-                defaultValue: 6,
+                max: 15,
+                defaultValue: 11,
               ),
-              currentValue: 6.0,
+              currentValue: 11.0,
             ),
           ],
         ),

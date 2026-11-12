@@ -99,16 +99,11 @@ class EffectCatalogRegistry {
     if (_initialized) return;
     _initialized = true;
 
-    // Register Zoom MS Plus effects across supported Zoom families
-    for (final def in ZoomMsPlusCatalog.builtInEffects) {
-      register(def);
-      // Also register for other Zoom MS Plus models if it belongs to Zoom MS-60B+
-      if (def.deviceFamily == DeviceFamily.zoomMs60bPlus) {
-        register(def.copyWith(deviceFamily: DeviceFamily.zoomMs50gPlus));
-        register(def.copyWith(deviceFamily: DeviceFamily.zoomMs70cdrPlus));
-        register(def.copyWith(deviceFamily: DeviceFamily.zoomMs200dPlus));
-      }
-    }
+    // Register dedicated catalogs for each Zoom MS Plus pedal model
+    registerAll(ZoomMsPlusCatalog.effectsForFamily(DeviceFamily.zoomMs60bPlus));
+    registerAll(ZoomMsPlusCatalog.effectsForFamily(DeviceFamily.zoomMs50gPlus));
+    registerAll(ZoomMsPlusCatalog.effectsForFamily(DeviceFamily.zoomMs70cdrPlus));
+    registerAll(ZoomMsPlusCatalog.effectsForFamily(DeviceFamily.zoomMs200dPlus));
 
     // Register Line 6 Bass Pod Pro effects
     registerAll(Line6BassPodProCatalog.builtInEffects);

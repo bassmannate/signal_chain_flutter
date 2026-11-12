@@ -5,12 +5,14 @@ import 'package:signal_chain_flutter/protocols/catalogs/zoom_ms_plus_catalog.dar
 
 void main() {
   setUpAll(() {
+    EffectCatalogRegistry.reset();
     EffectCatalogRegistry.ensureInitialized();
   });
 
   group('Zoom MS-60B+ Full Effect Catalog Tests', () {
-    test('contains full count of 98 effects', () {
+    test('contains full count of 98 effects and preserves backward compatibility', () {
       expect(ZoomMsPlusCatalog.builtInEffects.length, equals(98));
+      expect(ZoomMsPlusCatalog.allEffects.length, equals(98));
       final registered = EffectCatalogRegistry.getEffectsForFamily(DeviceFamily.zoomMs60bPlus);
       expect(registered.length, equals(98));
     });
@@ -92,17 +94,95 @@ void main() {
       final delayInDelay = ZoomMsPlusCatalog.search('Delay', category: 'Delay');
       expect(delayInDelay.isNotEmpty, isTrue);
     });
+  });
 
-    test('populates catalog for all Zoom MS Plus family models', () {
-      final ms50gEffects = EffectCatalogRegistry.getEffectsForFamily(DeviceFamily.zoomMs50gPlus);
-      expect(ms50gEffects.length, equals(98));
+  group('Multi-Pedal Zoom MS Plus Catalogs (MS-60B+, MS-50G+, MS-70CDR+, MS-200D+)', () {
+    test('populates exact effect counts across all four MS Plus pedals', () {
+      expect(EffectCatalogRegistry.getEffectsForFamily(DeviceFamily.zoomMs60bPlus).length, equals(98));
+      expect(EffectCatalogRegistry.getEffectsForFamily(DeviceFamily.zoomMs50gPlus).length, equals(106));
+      expect(EffectCatalogRegistry.getEffectsForFamily(DeviceFamily.zoomMs70cdrPlus).length, equals(150));
+      expect(EffectCatalogRegistry.getEffectsForFamily(DeviceFamily.zoomMs200dPlus).length, equals(224));
 
-      final ms70cdrEffects = EffectCatalogRegistry.getEffectsForFamily(DeviceFamily.zoomMs70cdrPlus);
-      expect(ms70cdrEffects.length, equals(98));
+      expect(ZoomMsPlusCatalog.effectsForFamily(DeviceFamily.zoomMs60bPlus).length, equals(98));
+      expect(ZoomMsPlusCatalog.effectsForFamily(DeviceFamily.zoomMs50gPlus).length, equals(106));
+      expect(ZoomMsPlusCatalog.effectsForFamily(DeviceFamily.zoomMs70cdrPlus).length, equals(150));
+      expect(ZoomMsPlusCatalog.effectsForFamily(DeviceFamily.zoomMs200dPlus).length, equals(224));
+    });
 
-      final ms200dEffects = EffectCatalogRegistry.getEffectsForFamily(DeviceFamily.zoomMs200dPlus);
-      expect(ms200dEffects.length, equals(98));
+    test('resolves MS-50G+ effects, categories, displayOffset, and discrete labels', () {
+      final comp = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs50gPlus, '0x01000010');
+      expect(comp.name, equals('Comp'));
+      expect(comp.category, equals('Dynamics'));
+      expect(comp.deviceFamily, equals(DeviceFamily.zoomMs50gPlus));
+      final attack = comp.parameters.firstWhere((p) => p.name == 'ATTCK');
+      expect(attack.isDiscrete, isTrue);
+      expect(attack.labels, equals(['SLOW', 'FAST']));
+
+      final rackComp = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs50gPlus, '0x01000020');
+      expect(rackComp.name, equals('RackComp'));
+      final ratio = rackComp.parameters.firstWhere((p) => p.name == 'Ratio');
+      expect(ratio.displayOffset, equals(1));
+      expect(ratio.formatValue(0), equals('1'));
+      expect(ratio.formatValue(5), equals('6'));
+
+      final ms800 = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs50gPlus, '0x04000031');
+      expect(ms800.name, equals('MS 800'));
+      expect(ms800.category, equals('Amp Model'));
+
+      final delay = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs50gPlus, '0x08000010');
+      expect(delay.name, equals('Delay'));
+      expect(delay.category, equals('Delay'));
+    });
+
+    test('resolves MS-70CDR+ effects and categories cleanly', () {
+      final rackComp = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs70cdrPlus, '0x01000020');
+      expect(rackComp.name, equals('RackComp'));
+      expect(rackComp.deviceFamily, equals(DeviceFamily.zoomMs70cdrPlus));
+      final ratio = rackComp.parameters.firstWhere((p) => p.name == 'Ratio');
+      expect(ratio.displayOffset, equals(1));
+
+      final coronaCho = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs70cdrPlus, '0x06000038');
+      expect(coronaCho.name, equals('CoronaCho'));
+      expect(coronaCho.category, equals('Modulation'));
+
+      final fdSpring = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs70cdrPlus, '0x09000040');
+      expect(fdSpring.name, equals('FD Spring'));
+      expect(fdSpring.category, equals('Reverb'));
+    });
+
+    test('resolves MS-200D+ overlaid full names and categories cleanly', () {
+      final fatBoost = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs200dPlus, '0x01000010');
+      expect(fatBoost.name, equals('FAT BOOST'));
+      expect(fatBoost.category, equals('Boost / Drive'));
+      expect(fatBoost.deviceFamily, equals(DeviceFamily.zoomMs200dPlus));
+
+      final desertDrive = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs200dPlus, '0x02000010');
+      expect(desertDrive.name, equals('DESERT DRIVE'));
+      expect(desertDrive.category, equals('Overdrive'));
+
+      final shakerFuzz = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs200dPlus, '0x04000010');
+      expect(shakerFuzz.name, equals('SHAKER FUZZ'));
+      expect(shakerFuzz.category, equals('Fuzz'));
+
+      final gtGeq = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs200dPlus, '0x06000030');
+      expect(gtGeq.name, equals('GUITAR GRAPHIC EQ'));
+      expect(gtGeq.category, equals('Filter / EQ'));
+
+      final noiseGate = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs200dPlus, '0x06000010');
+      expect(noiseGate.name, equals('NOISE GATE'));
+      expect(noiseGate.category, equals('Dynamics'));
+
+      final bpm = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs200dPlus, '0x07000ff0');
+      expect(bpm.name, equals('BPM'));
+      expect(bpm.category, equals('Special / SFX'));
+
+      final plusDist = EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs200dPlus, '0x1d000e00');
+      expect(plusDist.name, equals('PLUS DIST'));
+      expect(plusDist.category, equals('Drive / Distortion'));
+
+      // Verify zero unreplaced "CMN 0" placeholders remain
+      final all200d = ZoomMsPlusCatalog.effectsForFamily(DeviceFamily.zoomMs200dPlus);
+      expect(all200d.any((e) => e.name.startsWith('CMN ')), isFalse);
     });
   });
 }
-

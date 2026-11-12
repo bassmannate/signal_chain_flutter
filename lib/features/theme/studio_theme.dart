@@ -29,7 +29,10 @@ class StudioTheme {
   /// Resolves an accent color based on effect category name.
   static Color getCategoryColor(String category) {
     final cat = category.toLowerCase().trim();
-    if (cat.contains('dyn') || cat.contains('comp') || cat.contains('limit')) {
+    if (cat.contains('dyn') ||
+        cat.contains('comp') ||
+        cat.contains('limit') ||
+        cat.contains('tool')) {
       return colorDynamics;
     }
     if (cat.contains('filt') || cat.contains('eq') || cat.contains('wah')) {
@@ -38,7 +41,8 @@ class StudioTheme {
     if (cat.contains('drive') ||
         cat.contains('dist') ||
         cat.contains('fuzz') ||
-        cat.contains('overdrive')) {
+        cat.contains('overdrive') ||
+        cat.contains('boost')) {
       return colorDrive;
     }
     if (cat.contains('amp') ||

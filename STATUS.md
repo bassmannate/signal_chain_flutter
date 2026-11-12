@@ -1,12 +1,32 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 9 Complete (Platform Packaging & Release Distribution)  
-**Active Milestone:** Milestone 9 Complete / Post-Release Enhancements  
+**Current Status:** Milestone 10 Complete (Platform Expansion & Multi-Device Support)  
+**Active Milestone:** Milestone 10 Complete / Hardware & Multi-Pedal Ready  
 **Last Updated:** 2026-11-12
 
 ---
 
 ## 1. Milestone Roadmap
+
+### 🟢 Milestone 10: Platform Expansion & Multi-Device Support
+*Status:* **Completed**
+- [x] **Step 1: Native Android USB MIDI Transport (Hardware-Verified):**
+  * Implemented Kotlin `android.media.midi.MidiManager` bridge in `MainActivity.kt` with 256-byte outgoing SysEx chunking paired with `AndroidMidiTransport` (`lib/src/transport/android_midi_transport.dart` & `lib/core/midi/android_midi_transport.dart`) providing `_rxBuffer` incoming SysEx stitching and MIDI framing, wired into `lib/main.dart`.
+  * Covered by unit tests in `test/core/midi/android_midi_transport_test.dart` (5 tests covering port discovery, connect, send, 989-byte chunked SysEx reassembly, and 2/3-byte PC/CC extraction).
+  * Physically tested and verified over USB OTG on a **Fire HD 10** tablet and a **Pixel 10 Pro XL** phone connected to a physical **Zoom MS-60B+**.
+- [x] **Step 2: Expanded Zoom MS Plus Catalogs (All 4 Pedals):**
+  * Vendored Zoom MS Plus reference JSON/JS definitions into `tool/reference/` (`MS-50G+`, `MS-60B+`, `MS-70CDR+`, `MS-200D+` including `zoom-effect-ids-full-names-ms200dp.js`).
+  * Refactored pure-Dart `tool/generate_zoom_catalog.dart` (no `package:flutter` dependency) to ingest both CSV and JSON/JS definitions and generate typed catalogs for **MS-60B+ (98 effects)**, **MS-50G+ (106 effects)**, **MS-70CDR+ (150 effects)**, and **MS-200D+ (224 effects)**.
+  * Wired per-pedal resolution into `ZoomMsPlusCatalog`, `EffectCatalogRegistry`, `ZoomMsPlusProtocol`, and `StudioTheme` while keeping MS-60B+ lookups backward-compatible.
+  * Expanded `test/zoom_full_catalog_test.dart` to verify exact effect counts (98, 106, 150, 224) and parameter lookup integrity across all four pedals.
+- [x] **Step 3: Line 6 Bass POD Pro Hardware Spec Baseline:**
+  * Aligned `Line6BassPodProProtocol`, `Line6BassPodProCatalog`, `DeviceFamily.line6BassPodPro` (`totalMemorySlots = 36`, 1A–9D), and mock responders in `lib/main.dart` with verified firmware 1.40 hardware captures: Universal Identity Reply (`00 01 0C` manufacturer / USB Vendor `0x0E41`, `02 00` family code), `0x02` SysEx family byte, 80-byte MSB-first nibble-packed program/edit dumps (169/170 bytes), 16 amp models, 16 cabinet models, Compressor/Noise Gate, 16 effects, and verified hardware CCs.
+  * Updated and expanded `test/protocols/line6_bass_pod_pro_protocol_test.dart`, `test/protocol_bank_test.dart`, `test/protocols/catalogs/effect_catalog_test.dart`, and `test/features/patch_editor_controller_test.dart` including decoding the verbatim firmware 1.40 `"Eighties"` edit-buffer capture.
+- [x] **Static Analysis & Targeted Verification:**
+  * `flutter analyze --no-pub`: **0 issues found**.
+  * Targeted test suites (`zoom_full_catalog_test.dart`, `effect_catalog_test.dart`, `line6_bass_pod_pro_protocol_test.dart`, `protocol_bank_test.dart`, `patch_editor_controller_test.dart`, `android_midi_transport_test.dart`, `patch_library_repository_test.dart`, `widget_test.dart`): **84 tests passing (100%)**.
+
+---
 
 ### 🟢 Milestone 9: Platform Packaging & Release Distribution
 *Status:* **Completed**
@@ -474,10 +494,10 @@
 | **Workspace Repository** | Clean Flutter Project | Flutter 3.47.9 / Dart 3.13.7 baseline |
 | **Legacy Source Code** | Audited | Reference mappings in `tool/reference/zoom-effect-mappings-ms60bp.json` |
 | **Directory Scaffolding** | Complete | Clean architecture layers maintained |
-| **Core MIDI Transport** | Complete | `MidiTransport`, `MidiMessage`, `MockMidiTransport`, `LinuxAlsaMidiTransport`, `CompositeMidiTransport` |
+| **Core MIDI Transport** | Complete | `MidiTransport`, `MidiMessage`, `MockMidiTransport`, `LinuxAlsaMidiTransport`, `AndroidMidiTransport`, `CompositeMidiTransport` |
 | **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch`, `BankSlotDescriptor` |
-| **SysEx & Protocol Engine** | Complete | `SysexCodec`, `ZoomMsPlusProtocol` (Memory slots 0–99 read/write), `Line6BassPodProProtocol` (Program dumps) |
-| **Effect Catalogs** | Complete (98 effects) | `EffectDefinition`, `EffectCatalogRegistry`, `ZoomMsPlusCatalog` (98 effects), `Line6BassPodProCatalog` |
+| **SysEx & Protocol Engine** | Complete | `SysexCodec`, `ZoomMsPlusProtocol` (Memory slots 0–99 read/write), `Line6BassPodProProtocol` (`0x02` family byte, 80-byte MSB-first nibbles, 36 slots) |
+| **Effect Catalogs** | Complete (578 Zoom + 50 Line 6) | `EffectDefinition`, `EffectCatalogRegistry`, `ZoomMsPlusCatalog` (MS-60B+ 98, MS-50G+ 106, MS-70CDR+ 150, MS-200D+ 224), `Line6BassPodProCatalog` |
 | **Catalog Generator** | Complete | Deterministic pure-Dart script `tool/generate_zoom_catalog.dart` |
 | **Persistence Repositories** | Complete | `PatchLibraryRepository`, `InMemoryPatchLibraryRepository`, `FileSystemPatchLibraryRepository` |
 | **State Controllers** | Complete | `DeviceConnectionController` (Bank sync), `PatchEditorController` (Name/Tempo/Slots), `PatchLibraryController` |

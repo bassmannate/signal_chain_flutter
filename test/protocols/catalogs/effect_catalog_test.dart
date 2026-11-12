@@ -94,12 +94,12 @@ void main() {
       );
       final svt = EffectCatalogRegistry.getDefinition(
         DeviceFamily.line6BassPodPro,
-        'line6_amp_1',
+        'line6_amp_8',
       );
 
       expect(tubePre.name, equals('Tube Preamp'));
       expect(tubePre.category, equals('Amp Model'));
-      expect(svt.name, equals('Classic (SVT)'));
+      expect(svt.name, equals('Rock Classic'));
 
       // Check Amp parameters: Drive, Bass, Mid, Treble, Channel Volume
       expect(svt.parameters.length, equals(5));
@@ -113,14 +113,15 @@ void main() {
     test('resolves Cabinet models and discrete selection parameters', () {
       final cab = EffectCatalogRegistry.getDefinition(
         DeviceFamily.line6BassPodPro,
-        'line6_cab_6',
+        'line6_cab_11',
       );
 
-      expect(cab.name, equals('8x10 1974 Classic'));
+      expect(cab.name, equals('8x10 Ampeg SVT'));
       expect(cab.category, equals('Cabinet'));
-      expect(cab.parameters.length, equals(1));
+      expect(cab.parameters.length, equals(2));
       expect(cab.parameters.first.isDiscrete, isTrue);
-      expect(cab.parameters.first.labels, contains('8x10 1974 Classic'));
+      expect(cab.parameters.first.labels, contains('8x10 Ampeg SVT'));
+      expect(cab.parameters[1].name, equals('A.I.R. Level'));
     });
 
     test('resolves Compressor block and parameters', () {
@@ -132,24 +133,30 @@ void main() {
       expect(comp.name, equals('Compressor'));
       expect(comp.category, equals('Dynamics'));
       expect(comp.parameters.length, equals(2));
-      expect(comp.parameters[0].name, equals('Threshold / Ratio'));
-      expect(comp.parameters[1].name, equals('Compressor State'));
+      expect(comp.parameters[0].name, equals('Compress'));
+      expect(comp.parameters[1].name, equals('Noise Gate'));
     });
 
-    test('resolves Modulation / Delay FX blocks', () {
+    test('resolves Modulation / Pitch / Bypass FX blocks', () {
       final chorus = EffectCatalogRegistry.getDefinition(
         DeviceFamily.line6BassPodPro,
-        'line6_fx_1',
+        'line6_fx_9',
       );
-      final delay = EffectCatalogRegistry.getDefinition(
+      final bypass = EffectCatalogRegistry.getDefinition(
         DeviceFamily.line6BassPodPro,
-        'line6_fx_6',
+        'line6_fx_10',
+      );
+      final octave = EffectCatalogRegistry.getDefinition(
+        DeviceFamily.line6BassPodPro,
+        'line6_fx_11',
       );
 
-      expect(chorus.name, equals('Chorus'));
+      expect(chorus.name, equals('Analog Chorus'));
       expect(chorus.category, equals('Modulation'));
-      expect(delay.name, equals('Delay'));
-      expect(delay.category, equals('Delay'));
+      expect(bypass.name, equals('Bypass'));
+      expect(bypass.category, equals('Bypass'));
+      expect(octave.name, equals('Octave Down'));
+      expect(octave.category, equals('Pitch'));
     });
 
     test('returns clean fallback for unmapped Line 6 ID', () {

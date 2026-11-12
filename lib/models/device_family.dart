@@ -66,7 +66,7 @@ enum DeviceFamily {
   /// Zoom MS Plus features 100 slots (00 to 99 across 10 banks).
   int get totalMemorySlots {
     if (isZoomMsPlus) return 100;
-    if (isLine6BassPodPro) return 64;
+    if (isLine6BassPodPro) return 36;
     return 100;
   }
 

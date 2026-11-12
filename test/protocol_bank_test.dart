@@ -279,13 +279,13 @@ void main() {
 
     test('buildProgramDumpRequest encodes correct SysEx for arbitrary slots', () {
       final req0 = protocol.buildProgramDumpRequest(0);
-      expect(req0.data, equals([0xF0, 0x00, 0x01, 0x0C, 0x01, 0x01, 0x00, 0xF7]));
+      expect(req0.data, equals([0xF0, 0x00, 0x01, 0x0C, 0x02, 0x00, 0x00, 0x00, 0xF7]));
 
       final req15 = protocol.buildProgramDumpRequest(15);
-      expect(req15.data, equals([0xF0, 0x00, 0x01, 0x0C, 0x01, 0x01, 0x0F, 0xF7]));
+      expect(req15.data, equals([0xF0, 0x00, 0x01, 0x0C, 0x02, 0x00, 0x00, 0x0F, 0xF7]));
 
-      final req63 = protocol.buildProgramDumpRequest(63);
-      expect(req63.data, equals([0xF0, 0x00, 0x01, 0x0C, 0x01, 0x01, 0x3F, 0xF7]));
+      final req35 = protocol.buildProgramDumpRequest(35);
+      expect(req35.data, equals([0xF0, 0x00, 0x01, 0x0C, 0x02, 0x00, 0x00, 0x23, 0xF7]));
     });
 
     test('buildSavePatchToSlotMessage encodes Program Dump SysEx with program number and round-trips', () {
@@ -296,8 +296,8 @@ void main() {
         slots: [
           EffectSlot(
             slotIndex: 0,
-            effectId: 'line6_amp_1',
-            effectName: 'Classic (SVT)',
+            effectId: 'line6_amp_8',
+            effectName: 'Rock Classic',
             isEnabled: true,
             parameters: [
               ParameterValue(
@@ -305,8 +305,9 @@ void main() {
                   id: 'drive',
                   name: 'Drive',
                   min: 0,
-                  max: 127,
+                  max: 126,
                   defaultValue: 64,
+                  step: 2,
                 ),
                 currentValue: 88,
               ),
@@ -317,12 +318,15 @@ void main() {
 
       final saveMsg = protocol.buildSavePatchToSlotMessage(patch, 12);
       expect(saveMsg.isSysEx, isTrue);
+      expect(saveMsg.data.length, equals(170));
       expect(saveMsg.data[1], equals(0x00));
       expect(saveMsg.data[2], equals(0x01));
       expect(saveMsg.data[3], equals(0x0C));
-      expect(saveMsg.data[4], equals(0x01));
-      expect(saveMsg.data[5], equals(0x01)); // Program dump opcode
-      expect(saveMsg.data[6], equals(12)); // Program number
+      expect(saveMsg.data[4], equals(0x02));
+      expect(saveMsg.data[5], equals(0x01)); // Dump opcode
+      expect(saveMsg.data[6], equals(0x00)); // Program dump type
+      expect(saveMsg.data[7], equals(12)); // Program number
+      expect(saveMsg.data[8], equals(0x01)); // Format version
 
       expect(protocol.isPatchDump(saveMsg), isTrue);
 

@@ -26,6 +26,7 @@ The goal of this Flutter rewrite is to replace the heavier Electron desktop foot
 - **Milestone 8.10:** Zoom MS Plus Initial Active Slot Identification (Opcode 0x33 & Deterministic Bank Signature Fallback) — **Completed**
 - **Milestone 8.11:** Linux ALSA Warm-Restart Reliability & Handshake Pacing (`amidi` Cleanup, Port Drain, Init Pacing & Retry Guards) — **Completed**
 - **Milestone 9:** Platform Packaging & Release Distribution (Linux .deb/AppImage/.desktop, Android USB Host OTG, Windows Portable ZIP, AppImageHub / AppStream compliance) — **Completed**
+- **Milestone 10:** Platform Expansion & Multi-Device Support (Native Android USB MIDI Transport hardware-verified on Fire HD 10 & Pixel 10 Pro XL with Zoom MS-60B+; Multi-Pedal Zoom MS Plus Catalogs: MS-60B+ 98, MS-50G+ 106, MS-70CDR+ 150, MS-200D+ 224; Hardware-Aligned Line 6 Bass POD Pro Baseline) — **Completed**
 
 ---
 
@@ -92,7 +93,7 @@ The project adheres strictly to Clean Architecture separation of concerns:
 
 - **Hardware Memory Bank Protocol (0–99 Slots):**
   - Bidirectional memory slot commands for Zoom MS Plus (`46 00 00` read request, `45 00 00` slot dump/write).
-  - Program dump request and write for Line 6 Bass Pod Pro (`0x01`).
+  - Program dump request and write for Line 6 Bass Pod Pro (`0x02` family byte, 36 internal slots `0..35` / 1A–9D).
   - `BankSlotDescriptor` model representing remote hardware patch indices, synchronization state, and bank/slot formatting (`#42 (5-3)`).
   - Hardware Memory Slot Saving (`savePatchToDeviceSlot`): Encodes active or target preset via `protocol.encodePatch(target, programNumber: slotIndex)` and transmits binary memory slot dump SysEx over `MidiTransport.sendSysEx(...)` / `send(...)`. Updates `programNumber`, resets dirty flag, and updates local `bankSlots` cache.
   - Added `MidiTransport.sendSysEx(MidiMessage message)` convenience contract across all transport implementations.
@@ -221,7 +222,20 @@ The project adheres strictly to Clean Architecture separation of concerns:
 
 ---
 
-## 13. Terminal Sandbox Execution Guidelines
+## 13. Platform Expansion & Multi-Device Support (Milestone 10)
+
+- **Native Android USB MIDI Transport (Hardware-Verified):**
+  - Implemented Android native bridge in `MainActivity.kt` (`android.media.midi.MidiManager`, outgoing 256-byte chunking) paired with `AndroidMidiTransport` (`lib/src/transport/android_midi_transport.dart` / `lib/core/midi/android_midi_transport.dart`) featuring `_rxBuffer` incoming SysEx stitching and MIDI framing, wired into `lib/main.dart` and covered by `test/core/midi/android_midi_transport_test.dart`.
+  - Physically tested and verified over USB OTG on both a **Fire HD 10** tablet and a **Pixel 10 Pro XL** phone connected to a physical **Zoom MS-60B+**.
+- **Multi-Pedal Zoom MS Plus Catalogs (578 Total Definitions):**
+  - Refactored `tool/generate_zoom_catalog.dart` (standalone pure-Dart CLI) to ingest vendored CSV, JSON, and JS reference definitions in `tool/reference/` and generate typed catalogs for all four pedals: **MS-60B+ (98 effects)**, **MS-50G+ (106 effects)**, **MS-70CDR+ (150 effects)**, and **MS-200D+ (224 effects, with full-name overlay from `zoom-effect-ids-full-names-ms200dp.js`)**.
+  - Wired per-family effect lookup, category assignment, `displayOffset`, and discrete `labels` resolution through `ZoomMsPlusCatalog`, `EffectCatalogRegistry`, `ZoomMsPlusProtocol`, and `StudioTheme` while preserving full backward compatibility for MS-60B+.
+- **Hardware-Aligned Line 6 Bass POD Pro Baseline:**
+  - Aligned `Line6BassPodProProtocol`, `Line6BassPodProCatalog`, and `DeviceFamily.line6BassPodPro` (`totalMemorySlots = 36`, 1A–9D) with verified firmware 1.40 hardware SysEx captures: Universal Identity Reply (`00 01 0C` manufacturer, `02 00` family code LSB-first), `0x02` SysEx family byte, 80-byte MSB-first nibble-packed program dumps (169-byte edit buffer / 170-byte program dump), 16 amps, 16 cabinets, Compressor/Noise Gate, 16 effects, and verified hardware CCs.
+
+---
+
+## 14. Terminal Sandbox Execution Guidelines
 
 When running `flutter` or `dart` commands in sandboxed environments:
 1. **Binary Location:** Flutter is installed at `/home/nreynolds/.local/share/flutter/bin/flutter` and Dart at `/home/nreynolds/.local/share/flutter/bin/dart`. Ensure the path is prefixed or exported:

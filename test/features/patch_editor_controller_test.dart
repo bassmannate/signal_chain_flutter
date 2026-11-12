@@ -225,7 +225,7 @@ void main() {
       expect(transport.sentMessages.length, equals(1));
       final sent = transport.sentMessages.first;
       expect(sent.isControlChange, isTrue);
-      expect(sent.data[1], equals(Line6BassPodProProtocol.ccDrive)); // CC#4
+      expect(sent.data[1], equals(Line6BassPodProProtocol.ccDrive)); // CC#13
       expect(sent.data[2], equals(85)); // Value 85
     });
 
