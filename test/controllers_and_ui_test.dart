@@ -232,8 +232,8 @@ void main() {
       expect(find.byKey(const Key('delete_slot_0')), findsOneWidget);
       expect(find.byKey(const Key('add_effect_slot_button')), findsOneWidget);
 
-      // Tap move right on slot 0
-      await tester.tap(find.byKey(const Key('move_slot_right_0')));
+      // Tap move left on slot 0 (moves towards output/slot 1 in RTL)
+      await tester.tap(find.byKey(const Key('move_slot_left_0')));
       await tester.pumpAndSettle();
 
       // Now slot 0 is AMPG SVT and slot 1 is DYN Comp

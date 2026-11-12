@@ -122,16 +122,19 @@ class _EffectBankPaletteWidgetState extends State<EffectBankPaletteWidget> {
                   children: [
                     const Icon(Icons.widgets, size: 16, color: StudioTheme.colorModulation),
                     const SizedBox(width: 8),
-                    const Text(
-                      'EFFECT PALETTE',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.0,
-                        color: Colors.white,
+                    const Flexible(
+                      child: Text(
+                        'EFFECT PALETTE',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.0,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(

@@ -41,7 +41,6 @@ class SignalChainStripWidget extends StatelessWidget {
         }
 
         final canAdd = controller.canAddEffectSlot;
-        final totalElements = 1 + (patch.slots.length * 2) + (canAdd ? 1 : 0);
 
         return Container(
           height: 255,
@@ -61,7 +60,7 @@ class SignalChainStripWidget extends StatelessWidget {
                 padding: const EdgeInsets.only(left: 14, right: 14, top: 6, bottom: 2),
                 child: Row(
                   children: [
-                    const Icon(Icons.linear_scale, size: 14, color: Colors.grey),
+                    const Icon(Icons.arrow_back, size: 14, color: Colors.grey),
                     const SizedBox(width: 6),
                     Text(
                       'SIGNAL CHAIN (${patch.slots.length} SLOTS)',
@@ -70,6 +69,15 @@ class SignalChainStripWidget extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.0,
                         color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      '• OUT ← IN',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: StudioTheme.colorFilterEq,
                       ),
                     ),
                     const Spacer(),
@@ -86,32 +94,137 @@ class SignalChainStripWidget extends StatelessWidget {
                 ),
               ),
 
-              // Slot Cards, Insertion Zones, & Add Card
+              // Slot Cards, Insertion Zones, & Add Card (Right-to-Left pedalboard order)
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  itemCount: totalElements,
-                  itemBuilder: (context, index) {
-                    if (index == totalElements - 1 && canAdd) {
-                      return _buildAddEffectCard(context);
-                    }
-                    if (index.isEven) {
-                      final insertIndex = index ~/ 2;
-                      return _buildInsertionZone(insertIndex);
-                    } else {
-                      final slotIndex = index ~/ 2;
-                      final slot = patch.slots[slotIndex];
-                      final isSelected = controller.selectedSlotIndex == slotIndex;
-                      return _buildStompboxSlot(context, slot, slotIndex, isSelected, patch.slots.length);
-                    }
-                  },
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  child: Row(
+                    children: _buildRtlSignalChainElements(context, patch.slots, canAdd),
+                  ),
                 ),
               ),
             ],
           ),
         );
       },
+    );
+  }
+
+  List<Widget> _buildRtlSignalChainElements(
+    BuildContext context,
+    List<EffectSlot> slots,
+    bool canAdd,
+  ) {
+    final elements = <Widget>[];
+    final numSlots = slots.length;
+
+    // 1. Output Jack / Badge (Far Left)
+    elements.add(_buildOutBadge());
+
+    // 2. Connector & Add Slot Card (if canAdd)
+    if (canAdd) {
+      elements.add(_buildCableConnector());
+      elements.add(_buildAddEffectCard(context));
+    }
+
+    // 3. Stompbox slots in RTL order (from slot N-1 down to slot 0) with insertion zones
+    for (int i = numSlots - 1; i >= 0; i--) {
+      // Insertion zone to the left of slot i (i.e. insertIndex = i + 1)
+      elements.add(_buildInsertionZone(i + 1));
+
+      // Stompbox slot i
+      final slot = slots[i];
+      final isSelected = controller.selectedSlotIndex == i;
+      elements.add(_buildStompboxSlot(context, slot, i, isSelected, numSlots));
+    }
+
+    // 4. Insertion zone 0 (between slot 0 and IN)
+    elements.add(_buildInsertionZone(0));
+
+    // 5. Input Jack / Badge (Far Right)
+    elements.add(_buildInBadge());
+
+    return elements;
+  }
+
+  Widget _buildInBadge() {
+    return Center(
+      child: Container(
+        width: 56,
+        height: 140,
+        margin: const EdgeInsets.only(left: 4),
+        decoration: BoxDecoration(
+          color: StudioTheme.surfaceElevated.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: StudioTheme.surfaceBorder),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.arrow_back, size: 18, color: StudioTheme.colorModulation),
+            const SizedBox(height: 8),
+            const Text(
+              'IN',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+                color: StudioTheme.colorModulation,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'INPUT',
+              style: TextStyle(
+                fontSize: 8.5,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOutBadge() {
+    return Center(
+      child: Container(
+        width: 56,
+        height: 140,
+        margin: const EdgeInsets.only(right: 4),
+        decoration: BoxDecoration(
+          color: StudioTheme.surfaceElevated.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: StudioTheme.surfaceBorder),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.arrow_back, size: 18, color: StudioTheme.colorAmpCab),
+            const SizedBox(height: 8),
+            const Text(
+              'OUT',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+                color: StudioTheme.colorAmpCab,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'OUTPUT',
+              style: TextStyle(
+                fontSize: 8.5,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -172,15 +285,11 @@ class SignalChainStripWidget extends StatelessWidget {
   }
 
   Widget _buildCableConnector() {
-    return Center(
-      child: Container(
-        width: 14,
-        height: 6,
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(
-          color: StudioTheme.surfaceBorderFocused,
-          borderRadius: BorderRadius.circular(3),
-        ),
+    return const Center(
+      child: Icon(
+        Icons.arrow_back,
+        size: 11,
+        color: StudioTheme.surfaceBorderFocused,
       ),
     );
   }
@@ -389,21 +498,21 @@ class SignalChainStripWidget extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Move Left
+                // Move Left (towards Output in RTL)
                 Tooltip(
                   message: 'Move Left',
                   child: InkWell(
                     key: Key('move_slot_left_$index'),
                     borderRadius: BorderRadius.circular(3),
-                    onTap: index > 0 && controller.canReorderSlots
-                        ? () => controller.moveEffectSlot(index, index - 1)
+                    onTap: index < totalSlots - 1 && controller.canReorderSlots
+                        ? () => controller.moveEffectSlot(index, index + 1)
                         : null,
                     child: Padding(
                       padding: const EdgeInsets.all(3),
                       child: Icon(
                         Icons.arrow_back,
                         size: 15,
-                        color: index > 0 && controller.canReorderSlots
+                        color: index < totalSlots - 1 && controller.canReorderSlots
                             ? Colors.white70
                             : Colors.white24,
                       ),
@@ -449,21 +558,21 @@ class SignalChainStripWidget extends StatelessWidget {
                   ),
                 ),
 
-                // Move Right
+                // Move Right (towards Input in RTL)
                 Tooltip(
                   message: 'Move Right',
                   child: InkWell(
                     key: Key('move_slot_right_$index'),
                     borderRadius: BorderRadius.circular(3),
-                    onTap: index < totalSlots - 1 && controller.canReorderSlots
-                        ? () => controller.moveEffectSlot(index, index + 1)
+                    onTap: index > 0 && controller.canReorderSlots
+                        ? () => controller.moveEffectSlot(index, index - 1)
                         : null,
                     child: Padding(
                       padding: const EdgeInsets.all(3),
                       child: Icon(
                         Icons.arrow_forward,
                         size: 15,
-                        color: index < totalSlots - 1 && controller.canReorderSlots
+                        color: index > 0 && controller.canReorderSlots
                             ? Colors.white70
                             : Colors.white24,
                       ),

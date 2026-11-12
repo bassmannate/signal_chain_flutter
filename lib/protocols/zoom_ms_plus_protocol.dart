@@ -608,8 +608,12 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
             final effectDef = EffectCatalogRegistry.getDefinition(family, hexId);
 
             final parameters = <ParameterValue>[];
-            for (int p = 0; p < rawValues.length; p++) {
-              final val = rawValues[p];
+            final int exposedCount = effectDef.parameters.isNotEmpty
+                ? effectDef.parameters.length
+                : rawValues.length;
+
+            for (int p = 0; p < exposedCount; p++) {
+              final val = p < rawValues.length ? rawValues[p] : 0.0;
               final ParameterDescriptor desc;
               if (p < effectDef.parameters.length) {
                 desc = effectDef.parameters[p];
@@ -629,6 +633,10 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
               ));
             }
 
+            final List<double>? rawTrailing = (rawValues.length > exposedCount)
+                ? rawValues.sublist(exposedCount)
+                : null;
+
             final effectName = (dspId != 0 && !effectDef.name.startsWith('Unknown'))
                 ? effectDef.name
                 : _lookupEffectName(dspId);
@@ -639,6 +647,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
               effectName: effectName,
               isEnabled: isEnabled,
               parameters: parameters,
+              rawTrailingValues: rawTrailing,
             ));
           }
           break;
@@ -772,18 +781,31 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
       bitpos -= 29;
 
       if (slot != null) {
+        int getParamVal(int p) {
+          if (p < slot.parameters.length) {
+            return slot.parameters[p].currentValue.round();
+          }
+          if (slot.rawTrailingValues != null) {
+            final tIdx = p - slot.parameters.length;
+            if (tIdx >= 0 && tIdx < slot.rawTrailingValues!.length) {
+              return slot.rawTrailingValues![tIdx].round();
+            }
+          }
+          return 0;
+        }
+
         for (int p = 0; p < 5 && bitpos - 11 >= 0; p++) {
-          final val = p < slot.parameters.length ? slot.parameters[p].currentValue.round() : 0;
+          final val = getParamVal(p);
           SysexCodec.setBits(reversed, bitpos - 11, bitpos, val);
           bitpos -= 12;
         }
         for (int p = 5; p < 8 && bitpos - 7 >= 0; p++) {
-          final val = p < slot.parameters.length ? slot.parameters[p].currentValue.round() : 0;
+          final val = getParamVal(p);
           SysexCodec.setBits(reversed, bitpos - 7, bitpos, val);
           bitpos -= 8;
         }
         for (int p = 8; p < 12 && bitpos - 11 >= 0; p++) {
-          final val = p < slot.parameters.length ? slot.parameters[p].currentValue.round() : 0;
+          final val = getParamVal(p);
           SysexCodec.setBits(reversed, bitpos - 11, bitpos, val);
           bitpos -= 12;
         }

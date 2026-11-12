@@ -57,11 +57,31 @@ void main(List<String> args) {
       final defaultVal = (pMap['default'] as num?)?.toDouble() ?? 0.0;
       final rawVals = (pMap['values'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList();
 
-      final hasDiscreteLabels = rawVals != null &&
-          rawVals.isNotEmpty &&
-          rawVals.length <= 32 &&
-          !rawVals.every((s) => double.tryParse(s) != null) &&
-          !rawVals.any((s) => s.contains('&#'));
+      List<String>? cleanedVals;
+      int detectedOffset = 0;
+      bool hasCustomLabels = false;
+
+      if (rawVals != null && rawVals.isNotEmpty) {
+        cleanedVals = rawVals.map(_cleanValueString).toList();
+        try {
+          final ints = cleanedVals.map((s) => int.parse(s)).toList();
+          final firstDiff = ints[0] - 0;
+          bool allMatch = true;
+          for (int i = 0; i < ints.length; i++) {
+            if (ints[i] - i != firstDiff) {
+              allMatch = false;
+              break;
+            }
+          }
+          if (allMatch) {
+            detectedOffset = firstDiff;
+          } else {
+            hasCustomLabels = true;
+          }
+        } catch (_) {
+          hasCustomLabels = true;
+        }
+      }
 
       buffer.writeln('      ParameterDescriptor(');
       buffer.writeln('        id: "$pId",');
@@ -69,9 +89,13 @@ void main(List<String> args) {
       buffer.writeln('        min: 0,');
       buffer.writeln('        max: ${_formatDouble(maxVal)},');
       buffer.writeln('        defaultValue: ${_formatDouble(defaultVal)},');
-      if (hasDiscreteLabels) {
-        final labelItems = rawVals.map((s) => _escapeString(s)).join(', ');
+      if (detectedOffset != 0) {
+        buffer.writeln('        displayOffset: $detectedOffset,');
+      }
+      if (hasCustomLabels && cleanedVals != null && cleanedVals.isNotEmpty) {
+        final labelItems = cleanedVals.map((s) => _escapeString(s)).join(', ');
         buffer.writeln('        labels: [$labelItems],');
+        buffer.writeln('        valueLabels: [$labelItems],');
       }
       buffer.writeln('      ),');
     }
@@ -145,6 +169,16 @@ String _formatDouble(double val) {
     return '${val.toInt()}.0';
   }
   return val.toString();
+}
+
+String _cleanValueString(String s) {
+  var str = s.trim();
+  str = str.replaceAll('&#119138;', '𝅚');
+  str = str.replaceAll('&#119137;', '𝅙');
+  str = str.replaceAll('&#119136;', '𝅘');
+  str = str.replaceAll('&#119135;', '♩');
+  str = str.replaceAll('&#119134;', '𝅗');
+  return str;
 }
 
 String _escapeString(String str) {

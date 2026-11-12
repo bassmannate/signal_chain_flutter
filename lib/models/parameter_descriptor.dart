@@ -11,6 +11,8 @@ class ParameterDescriptor {
   final double step;
   final String? unit;
   final List<String>? labels;
+  final int displayOffset;
+  final List<String>? valueLabels;
 
   const ParameterDescriptor({
     required this.id,
@@ -21,10 +23,37 @@ class ParameterDescriptor {
     this.step = 1.0,
     this.unit,
     this.labels,
+    this.displayOffset = 0,
+    this.valueLabels,
   });
 
+  /// Effective list of discrete labels (checking [valueLabels] then [labels]).
+  List<String>? get effectiveLabels => valueLabels ?? labels;
+
   /// True if this parameter selects between discrete named states or models.
-  bool get isDiscrete => labels != null && labels!.isNotEmpty;
+  bool get isDiscrete => effectiveLabels != null && effectiveLabels!.isNotEmpty;
+
+  /// Formats a raw zero-based parameter value (`0..max`) into the exact human-readable
+  /// string matching physical pedal screens, applying discrete label lookups, display offsets,
+  /// or step decimals.
+  String formatValue(num rawValue) {
+    final labelsList = effectiveLabels;
+    if (labelsList != null && labelsList.isNotEmpty) {
+      final index = rawValue.round();
+      if (index >= 0 && index < labelsList.length) {
+        return labelsList[index];
+      }
+    }
+
+    final num displayNum = rawValue + displayOffset;
+    final formatted = step < 1.0
+        ? displayNum.toStringAsFixed(1)
+        : (displayNum == displayNum.roundToDouble()
+            ? displayNum.round().toString()
+            : displayNum.toString());
+
+    return unit != null ? '$formatted $unit' : formatted;
+  }
 
   /// Serializes this descriptor into a JSON map.
   Map<String, dynamic> toJson() => {
@@ -36,6 +65,8 @@ class ParameterDescriptor {
         'step': step,
         if (unit != null) 'unit': unit,
         if (labels != null) 'labels': labels,
+        if (displayOffset != 0) 'displayOffset': displayOffset,
+        if (valueLabels != null) 'valueLabels': valueLabels,
       };
 
   /// Deserializes a [ParameterDescriptor] from a JSON map.
@@ -49,6 +80,8 @@ class ParameterDescriptor {
       step: (json['step'] as num?)?.toDouble() ?? 1.0,
       unit: json['unit'] as String?,
       labels: (json['labels'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
+      displayOffset: (json['displayOffset'] as num?)?.toInt() ?? 0,
+      valueLabels: (json['valueLabels'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
     );
   }
 
@@ -64,7 +97,9 @@ class ParameterDescriptor {
           defaultValue == other.defaultValue &&
           step == other.step &&
           unit == other.unit &&
-          listEquals(labels, other.labels);
+          displayOffset == other.displayOffset &&
+          listEquals(labels, other.labels) &&
+          listEquals(valueLabels, other.valueLabels);
 
   @override
   int get hashCode => Object.hash(
@@ -75,12 +110,14 @@ class ParameterDescriptor {
         defaultValue,
         step,
         unit,
+        displayOffset,
         labels == null ? null : Object.hashAll(labels!),
+        valueLabels == null ? null : Object.hashAll(valueLabels!),
       );
 
   @override
   String toString() =>
-      'ParameterDescriptor(id: $id, name: $name, range: $min..$max, default: $defaultValue)';
+      'ParameterDescriptor(id: $id, name: $name, range: $min..$max, offset: $displayOffset, default: $defaultValue)';
 }
 
 /// Immutable state holding the active value for a given [ParameterDescriptor].
@@ -101,17 +138,8 @@ class ParameterValue {
     return ((currentValue - descriptor.min) / range).clamp(0.0, 1.0);
   }
 
-  /// Human-readable representation of the current value, resolving discrete labels if available.
-  String get displayValue {
-    if (descriptor.labels != null && descriptor.labels!.isNotEmpty) {
-      final index = currentValue.round();
-      if (index >= 0 && index < descriptor.labels!.length) {
-        return descriptor.labels![index];
-      }
-    }
-    final formatted = currentValue.toStringAsFixed(descriptor.step < 1.0 ? 1 : 0);
-    return descriptor.unit != null ? '$formatted ${descriptor.unit}' : formatted;
-  }
+  /// Human-readable representation of the current value, resolving discrete labels or offsets.
+  String get displayValue => descriptor.formatValue(currentValue);
 
   ParameterValue copyWith({double? currentValue}) {
     return ParameterValue(

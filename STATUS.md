@@ -1,6 +1,6 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 8 Complete (Zoom MS-60B+ Live Hardware Testing Protocol & UX Bug Fixes)  
+**Current Status:** Milestone 8.7 Complete (Right-to-Left Pedalboard Signal Chain, Rotary Knob Inspector & Parameter Accuracy)  
 **Active Milestone:** Milestone 9 (Platform Packaging & Release Distribution)  
 **Last Updated:** 2026-11-11
 
@@ -289,6 +289,43 @@
 
 ---
 
+### 🟢 Milestone 8.7: Right-to-Left Pedalboard Signal Chain, Rotary Knob Inspector & Parameter Accuracy
+*Status:* **Completed**
+- [x] **Objective 1: Right-to-Left Pedalboard Signal Chain Order (`SignalChainStripWidget`):**
+  * Reordered horizontal signal chain layout to match physical pedalboard flow: `[OUT] <-- [Add Slot] <-- [Slot N] ... <-- [Slot 1] <-- [IN]`.
+  * Added dedicated `[IN]` badge (right) and `[OUT]` badge (left) with `Icons.arrow_back` / `←` leftward flow arrows.
+  * Realigned all inter-slot `DragTarget` insertion zones (`Key('insertion_zone_$insertIndex')`) in exact RTL order.
+  * Updated reorder nudge buttons: Move Left (`Icons.arrow_back`) shifts towards output (`index + 1`); Move Right (`Icons.arrow_forward`) shifts towards input (`index - 1`).
+  * Subheader displays `SIGNAL CHAIN (X SLOTS) • OUT ← IN`.
+- [x] **Objective 2: Unmapped Parameter Elimination & Lossless PTCF Preservation:**
+  * Updated `EffectSlot` with `final List<double>? rawTrailingValues;` for trailing bytes.
+  * `ZoomMsPlusProtocol.decodePtcf`: When effect catalog definition is present, only exposes valid mapped parameters in `EffectSlot.parameters`, cleanly stashing trailing EDTB parameter bytes in `rawTrailingValues`.
+  * `ZoomMsPlusProtocol.encodePtcf`: Symmetrically pulls from `parameters[p]` if `p < parameters.length`, else from `rawTrailingValues[p - parameters.length]`, guaranteeing 100% binary round-trip fidelity.
+- [x] **Objective 3: Accurate Parameter Ranges, Display Offsets & Value Labels:**
+  * Added `displayOffset` and `valueLabels` to `ParameterDescriptor` along with `formatValue(num rawValue)` handling discrete label lookups, display offsets, and decimal formatting.
+  * Updated `ParameterValue.displayValue` to delegate directly to `descriptor.formatValue(currentValue)`.
+  * Enhanced `tool/generate_zoom_catalog.dart` to auto-detect integer offsets, convert discrete label tables, and clean up HTML musical note entities (`&#119138;` -> `𝅚`, `&#119137;` -> `𝅙`, `&#119136;` -> `𝅘`, `&#119135;` -> `♩`, `&#119134;` -> `𝅗`).
+  * Regenerated all 98 effects in `lib/catalog/zoom_ms_plus_catalog_data.dart`.
+- [x] **Objective 4: Studio Rotary Knob Component & Adaptive Inspector:**
+  * Created `RotaryKnobWidget`: Custom-painted dark studio dial (`_KnobPainter`) sweeping 270° (135° to 405°).
+  * Implemented bidirectional mouse scroll wheel adjustment via `PointerScrollEvent` (`< 0` increments, `> 0` decrements, Shift for coarse adjust).
+  * Implemented vertical touch/mouse drag gesture adjustment.
+  * Implemented double-tap to reset to default parameter value.
+  * Implemented discrete parameter selection via `PopupMenuButton`.
+  * Converted `SlotInspectorWidget` to render an adaptive `Wrap` grid of rotary knobs with a collapsible hidden parameters toggle (`_showHidden`).
+- [x] **Targeted Unit & Widget Test Suites (100% passing):**
+  * `test/features/ui_accuracy_and_knob_test.dart` (5 tests verifying RTL layout, unmapped parameter omission, PTCF round-trip preservation, and rotary knob gestures).
+  * `test/widget_test.dart` (3 tests).
+  * `test/controllers_and_ui_test.dart` (6 tests).
+  * `test/drag_drop_editor_test.dart` (10 tests).
+  * `test/hardware_bank_widget_test.dart` (9 tests).
+  * `test/protocols/zoom_ms_plus_protocol_test.dart` (19 tests).
+  * `test/protocol_bank_test.dart` (13 tests).
+  * `test/zoom_full_catalog_test.dart` (7 tests).
+  * Static analysis: Zero errors, zero warnings (`flutter analyze --no-pub`).
+
+---
+
 ### 🟡 Milestone 9: Platform Packaging & Release Distribution
 *Status:* **Ready / Next**
 - [ ] Linux AppImage / Debian packaging and desktop launcher entries (`.desktop`, icons).
@@ -311,7 +348,7 @@
 | **Catalog Generator** | Complete | Deterministic pure-Dart script `tool/generate_zoom_catalog.dart` |
 | **Persistence Repositories** | Complete | `PatchLibraryRepository`, `InMemoryPatchLibraryRepository`, `FileSystemPatchLibraryRepository` |
 | **State Controllers** | Complete | `DeviceConnectionController` (Bank sync), `PatchEditorController` (Name/Tempo/Slots), `PatchLibraryController` |
-| **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget`, `PatchMetadataHeaderWidget`, `HardwareBankBrowserWidget`, `WriteToSlotDialog`, `PatchLibraryDrawerOrPanel` |
+| **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget` (RTL order), `RotaryKnobWidget`, `SlotInspectorWidget`, `HardwareBankBrowserWidget`, `WriteToSlotDialog`, `PatchLibraryDrawerOrPanel` |
 | **Static Analysis** | Passing (0 issues) | Verified via `flutter analyze --no-pub` |
-| **Unit & Widget Tests** | 100% Passing | 143 tests passing across 17 targeted test suites |
+| **Unit & Widget Tests** | 100% Passing | 148 tests passing across 18 targeted test suites |
 

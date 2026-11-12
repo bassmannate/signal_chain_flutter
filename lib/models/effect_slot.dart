@@ -9,6 +9,7 @@ class EffectSlot {
   final String effectName;
   final bool isEnabled;
   final List<ParameterValue> parameters;
+  final List<double>? rawTrailingValues;
 
   const EffectSlot({
     required this.slotIndex,
@@ -16,6 +17,7 @@ class EffectSlot {
     required this.effectName,
     this.isEnabled = true,
     this.parameters = const [],
+    this.rawTrailingValues,
   });
 
   EffectSlot copyWith({
@@ -24,6 +26,7 @@ class EffectSlot {
     String? effectName,
     bool? isEnabled,
     List<ParameterValue>? parameters,
+    List<double>? rawTrailingValues,
   }) {
     return EffectSlot(
       slotIndex: slotIndex ?? this.slotIndex,
@@ -31,6 +34,7 @@ class EffectSlot {
       effectName: effectName ?? this.effectName,
       isEnabled: isEnabled ?? this.isEnabled,
       parameters: parameters ?? this.parameters,
+      rawTrailingValues: rawTrailingValues ?? this.rawTrailingValues,
     );
   }
 
@@ -41,6 +45,7 @@ class EffectSlot {
         'effectName': effectName,
         'isEnabled': isEnabled,
         'parameters': parameters.map((p) => p.toJson()).toList(),
+        if (rawTrailingValues != null) 'rawTrailingValues': rawTrailingValues,
       };
 
   /// Deserializes an [EffectSlot] from a JSON map.
@@ -54,6 +59,9 @@ class EffectSlot {
               ?.map((e) => ParameterValue.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
+      rawTrailingValues: (json['rawTrailingValues'] as List<dynamic>?)
+          ?.map((e) => (e as num).toDouble())
+          .toList(),
     );
   }
 
@@ -66,7 +74,8 @@ class EffectSlot {
           effectId == other.effectId &&
           effectName == other.effectName &&
           isEnabled == other.isEnabled &&
-          listEquals(parameters, other.parameters);
+          listEquals(parameters, other.parameters) &&
+          listEquals(rawTrailingValues, other.rawTrailingValues);
 
   @override
   int get hashCode => Object.hash(
@@ -75,6 +84,7 @@ class EffectSlot {
         effectName,
         isEnabled,
         Object.hashAll(parameters),
+        rawTrailingValues == null ? null : Object.hashAll(rawTrailingValues!),
       );
 
   @override

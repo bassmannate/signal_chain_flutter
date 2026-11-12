@@ -329,14 +329,15 @@ Implemented using Flutter's built-in `ChangeNotifier` and clean constructor depe
   * Tempo BPM display with decrement (`-1 BPM`), increment (`+1 BPM`), and continuous slider (40–250 BPM).
   * "Write to Slot..." button opening `WriteToSlotDialog`.
 - `WriteToSlotDialog`: Modal slot selector dialog (0–99) displaying destination bank/slot numbers, existing slot names, and confirmation save dispatch.
-- `SignalChainStripWidget`: Horizontal pedalboard stompbox view featuring:
-  * Embedded `PatchMetadataHeaderWidget` and slot count subheader.
-  * Dedicated inter-slot `DragTarget` **insertion zones** before slot 0, between slot `i` and `i+1`, and after the last slot, expanding on hover with illuminated vertical insertion indicators.
+- `SignalChainStripWidget`: Horizontal pedalboard stompbox view rendered in **Right-to-Left pedalboard order** (`[OUT] (Left) <-- [Add Slot] <-- [Slot N] ... <-- [Slot 1] <-- [IN] (Right)`):
+  * Embedded `PatchMetadataHeaderWidget` and slot count subheader with `OUT ← IN` flow direction.
+  * Rightmost `[IN]` badge and leftmost `[OUT]` badge with leftward audio flow indicators (`←`).
+  * Dedicated inter-slot `DragTarget` **insertion zones** between every slot in RTL order (before slot 0 next to IN, between `i` and `i+1`, and after slot N), expanding on hover with illuminated vertical insertion indicators.
   * Dropping an `EffectDragPayload` or `EffectCatalogEntry` onto an insertion zone inserts the effect at that exact position via `insertEffectSlotAt`.
   * Dropping a `SlotReorderPayload` onto an insertion zone moves the dragged slot to that position via `reorderEffectSlots`.
   * Dropping directly onto an existing slot card swaps the effect or reorders slots.
   * Slot index, category badge, and effect name.
-  * Move Left and Move Right controls on each slot for instant signal chain reordering.
+  * Move Left (towards Output, index + 1) and Move Right (towards Input, index - 1) controls on each slot for instant signal chain reordering.
   * Direct "Swap" effect trigger opening `EffectPickerDialog`.
   * Remove effect slot button (`IconButton`) when chain has more than 1 slot.
   * "+ Add Effect" card when patch has fewer than device maximum allowed slots.
@@ -346,7 +347,17 @@ Implemented using Flutter's built-in `ChangeNotifier` and clean constructor depe
   * Category filter chips (`All`, `Dynamics`, `Filter`, `Drive`, `Amp`, `Cabinet`, `Modulation`, `SFX`, `Delay`, `Reverb`).
   * Draggable effect cards (`Draggable<EffectDragPayload>`) with drag handle and category indicators.
   * Accessible click-to-add / swap interaction.
-- `SlotInspectorWidget`: Parameter inspector with algorithm dropdown, search catalog button opening `EffectPickerDialog`, discrete label dropdowns, and continuous sliders.
+- `RotaryKnobWidget`: Dark studio circular rotary dial widget representing adjustable DSP parameters:
+  * Custom painted dial with a 270° radial value sweep (from 7 o'clock to 5 o'clock), bevel border, active angular arc, and indicator needle.
+  * Mouse scroll wheel interaction via `PointerScrollEvent` to increment/decrement parameter value cleanly without page scroll.
+  * Vertical touch & mouse drag smoothly increments (upward) or decrements (downward) value.
+  * Double-tap resets value to parameter default.
+  * Accessible popup menu for discrete choice selection.
+  * Monospace formatted value display matching pedal hardware screens.
+- `SlotInspectorWidget`: Parameter inspector displaying an adaptive grid (`Wrap`) of `RotaryKnobWidget`s for known/defined catalog parameters:
+  * Shows only true parameters defined in the catalog for each effect (eliminating unmapped/dummy parameters up to 12).
+  * Filter toggle for internal/hidden parameters (`Hidden-1`), hidden by default.
+  * Algorithm dropdown and search catalog button opening `EffectPickerDialog`.
 - `EffectPickerDialog`: Full modal browsing dialog supporting text search across names and categories, category filter chips (All, Dynamics, Filter / EQ, Drive / Distortion, Preamp, Amp Model, Modulation, Pitch / Octave, Bass Synth, Special / SFX, Delay, Reverb), and one-click effect algorithm selection.
 
 ### 6.3 Preset Library & Hardware Bank Module (`lib/features/library/`)

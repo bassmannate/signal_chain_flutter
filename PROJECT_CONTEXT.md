@@ -20,6 +20,7 @@ The goal of this Flutter rewrite is to replace the heavier Electron desktop foot
 - **Milestone 8:** Zoom MS-60B+ Live Hardware Testing Protocol & UX Bug Fixes (0x50/0x53 Handshake, Bank Sync Isolation, Single-Click Slot Loading, Inter-Slot Insertion Zones) — **Completed**
 - **Milestone 8.5:** Zoom MS-60B+ Hardware Patch Switch Feedback Loop Elimination & Bidirectional Knob/Bypass Sync — **Completed**
 - **Milestone 8.6:** Physical Footswitch Bypass Real-Time Fix & Bidirectional Effect Slot Focus Synchronization — **Completed**
+- **Milestone 8.7:** Right-to-Left Pedalboard Signal Chain, Rotary Knob Inspector & Parameter Accuracy — **Completed**
 
 ---
 
@@ -113,7 +114,31 @@ The project adheres strictly to Clean Architecture separation of concerns:
 
 ---
 
-## 8. Terminal Sandbox Execution Guidelines
+## 8. UI & Catalog Accuracy Improvements (Milestone 8.7)
+
+- **Right-to-Left Pedalboard Signal Chain Order (`SignalChainStripWidget`):**
+  - Renders the pedalboard strip in physical audio gear order: `[OUT] (Left) <-- [Add Slot] <-- [Slot N] ... <-- [Slot 2] <-- [Slot 1] <-- [IN] (Right)`.
+  - Leftward flow indicators (`←`) connect stompboxes.
+  - Inter-slot insertion zones and drag-and-drop targets align with RTL positions (Slot 1 is rightmost, next to IN).
+  - Slot card reordering arrows move towards Output (Left, index + 1) or towards Input (Right, index - 1).
+- **Adaptive Grid of Rotary Knobs (`RotaryKnobWidget` & `SlotInspectorWidget`):**
+  - Replaced horizontal slider list with a custom-painted rotary knob dial featuring a 270° radial sweep (7 o'clock to 5 o'clock), bevel border, active angular arc, and indicator needle.
+  - Interactive controls:
+    - Mouse scroll wheel adjusts value up/down cleanly without scrolling the page (with coarse adjustment via Shift).
+    - Vertical touch & mouse drag smoothly increments/decrements value.
+    - Double-tap resets value to default.
+    - Accessible discrete popup menu for parameters with discrete labels.
+- **Accurate Parameter Values & Display Offsets:**
+  - `ParameterDescriptor` supports `displayOffset`, `valueLabels`, and `formatValue(num rawValue)` returning pedal-exact strings (e.g., Sequence Filter Step displays 2..8 from raw 0..6, Pattern displays 1..8 from raw 0..7, Speed displays 1..50 + tempo notes).
+  - Cleaned up musical note symbols (`𝅚`, `𝅙`, `𝅘`, `♩`, `𝅗`) for tempo-synced parameters.
+- **Unmapped Parameter Elimination & Lossless PTCF Round-Tripping:**
+  - Removed trailing dummy parameters (up to 12) from `SlotInspectorWidget`, displaying only the true parameters defined in the catalog for each effect.
+  - Internal/hidden parameters (`Hidden-1`) filtered by default with an optional "Show Internal" toggle.
+  - Preserved trailing raw bytes in `EffectSlot.rawTrailingValues` so binary PTCF encode/decode remains 100% byte-for-byte lossless.
+
+---
+
+## 9. Terminal Sandbox Execution Guidelines
 
 When running `flutter` or `dart` commands in sandboxed environments:
 1. **Binary Location:** Flutter is installed at `/home/nreynolds/.local/share/flutter/bin/flutter` and Dart at `/home/nreynolds/.local/share/flutter/bin/dart`. Ensure the path is prefixed or exported:

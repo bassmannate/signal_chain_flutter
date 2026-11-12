@@ -5,10 +5,11 @@ import '../../protocols/catalogs/effect_catalog.dart';
 import '../theme/studio_theme.dart';
 import 'effect_picker_dialog.dart';
 import 'patch_editor_controller.dart';
+import 'rotary_knob_widget.dart';
 
-/// Detailed parameter inspector for the currently selected [EffectSlot], allowing
-/// algorithm swapping from [EffectCatalogRegistry] and real-time parameter tweaking.
-class SlotInspectorWidget extends StatelessWidget {
+/// Detailed parameter inspector for the currently selected [EffectSlot], displaying
+/// an adaptive grid of rotary knobs for known effect parameters and algorithm swapping.
+class SlotInspectorWidget extends StatefulWidget {
   final PatchEditorController controller;
 
   const SlotInspectorWidget({
@@ -17,11 +18,18 @@ class SlotInspectorWidget extends StatelessWidget {
   });
 
   @override
+  State<SlotInspectorWidget> createState() => _SlotInspectorWidgetState();
+}
+
+class _SlotInspectorWidgetState extends State<SlotInspectorWidget> {
+  bool _showHidden = false;
+
+  @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: controller,
+      listenable: widget.controller,
       builder: (context, _) {
-        final slot = controller.selectedSlot;
+        final slot = widget.controller.selectedSlot;
         if (slot == null) {
           return Container(
             padding: const EdgeInsets.all(24),
@@ -38,10 +46,24 @@ class SlotInspectorWidget extends StatelessWidget {
           );
         }
 
-        final family = controller.connectionController.activeFamily;
+        final family = widget.controller.connectionController.activeFamily;
         final currentDef = EffectCatalogRegistry.getDefinition(family, slot.effectId);
         final availableEffects = EffectCatalogRegistry.getEffectsForFamily(family);
         final categoryColor = StudioTheme.getCategoryColor(currentDef.category);
+
+        final hasHiddenParams = slot.parameters.any(
+          (p) => p.descriptor.name.toLowerCase().startsWith('hidden'),
+        );
+
+        // Filter parameters: by default hide internal "Hidden" parameters
+        final List<MapEntry<int, ParameterValue>> indexedParams = [];
+        for (int i = 0; i < slot.parameters.length; i++) {
+          final p = slot.parameters[i];
+          final isHidden = p.descriptor.name.toLowerCase().startsWith('hidden');
+          if (!isHidden || _showHidden) {
+            indexedParams.add(MapEntry(i, p));
+          }
+        }
 
         return Container(
           padding: const EdgeInsets.all(16),
@@ -53,7 +75,7 @@ class SlotInspectorWidget extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Top Bar: Slot index, Algorithm Picker, Category Badge
+              // Top Bar: Slot index, Algorithm Picker, Category Badge, Show Hidden Toggle
               Wrap(
                 spacing: 12,
                 runSpacing: 8,
@@ -89,7 +111,7 @@ class SlotInspectorWidget extends StatelessWidget {
                         title: 'Change Slot #${slot.slotIndex + 1} Effect',
                       );
                       if (selected != null) {
-                        controller.changeSlotEffect(slot.slotIndex, selected.effectId);
+                        widget.controller.changeSlotEffect(slot.slotIndex, selected.effectId);
                       }
                     },
                   ),
@@ -109,14 +131,43 @@ class SlotInspectorWidget extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (hasHiddenParams)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(4),
+                      onTap: () => setState(() => _showHidden = !_showHidden),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _showHidden
+                              ? StudioTheme.colorModulation.withValues(alpha: 0.2)
+                              : StudioTheme.surfaceElevated,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: _showHidden
+                                ? StudioTheme.colorModulation
+                                : StudioTheme.surfaceBorder,
+                          ),
+                        ),
+                        child: Text(
+                          _showHidden ? 'Hide Internal' : 'Show Internal',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _showHidden
+                                ? StudioTheme.colorModulation
+                                : Colors.grey.shade400,
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 16),
               const Divider(color: StudioTheme.surfaceBorder, height: 1),
               const SizedBox(height: 16),
 
-              // Parameter Controls Grid or Column
-              if (slot.parameters.isEmpty)
+              // Parameter Controls: Adaptive Grid of Rotary Knobs
+              if (indexedParams.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Center(
@@ -128,19 +179,31 @@ class SlotInspectorWidget extends StatelessWidget {
                 )
               else
                 Expanded(
-                  child: ListView.separated(
-                    itemCount: slot.parameters.length,
-                    separatorBuilder: (context, index) => const SizedBox(height: 12),
-                    itemBuilder: (context, paramIndex) {
-                      final param = slot.parameters[paramIndex];
-                      return _buildParameterControl(
-                        context,
-                        slot.slotIndex,
-                        paramIndex,
-                        param,
-                        categoryColor,
-                      );
-                    },
+                  child: SingleChildScrollView(
+                    child: Wrap(
+                      spacing: 16,
+                      runSpacing: 16,
+                      alignment: WrapAlignment.start,
+                      children: indexedParams.map((entry) {
+                        final originalIdx = entry.key;
+                        final param = entry.value;
+
+                        return RotaryKnobWidget(
+                          key: Key('param_knob_${slot.slotIndex}_$originalIdx'),
+                          param: param,
+                          paramIndex: originalIdx,
+                          slotIndex: slot.slotIndex,
+                          accentColor: categoryColor,
+                          onChanged: (newVal) {
+                            widget.controller.updateParameter(
+                              slot.slotIndex,
+                              originalIdx,
+                              newVal,
+                            );
+                          },
+                        );
+                      }).toList(),
+                    ),
                   ),
                 ),
             ],
@@ -156,7 +219,6 @@ class SlotInspectorWidget extends StatelessWidget {
     String currentEffectId,
     List<EffectDefinition> availableEffects,
   ) {
-    // Normalization check so dropdown matches currentEffectId
     final cleanId = currentEffectId.trim().toLowerCase();
     final matchedDef = availableEffects.firstWhere(
       (def) =>
@@ -164,156 +226,40 @@ class SlotInspectorWidget extends StatelessWidget {
           '0x${def.effectId.toLowerCase()}' == cleanId ||
           def.effectId.toLowerCase() == cleanId.replaceFirst('0x', ''),
       orElse: () => EffectCatalogRegistry.getDefinition(
-        controller.connectionController.activeFamily,
+        widget.controller.connectionController.activeFamily,
         currentEffectId,
       ),
     );
 
-    return DropdownButton<String>(
-      key: const Key('effect_model_selector'),
-      value: availableEffects.any((e) => e.effectId == matchedDef.effectId)
-          ? matchedDef.effectId
-          : null,
-      hint: Text(matchedDef.name, style: const TextStyle(color: Colors.white)),
-      dropdownColor: StudioTheme.surfaceElevated,
-      underline: const SizedBox.shrink(),
-      style: const TextStyle(
-        fontSize: 15,
-        fontWeight: FontWeight.bold,
-        color: Colors.white,
-      ),
-      items: availableEffects.map((def) {
-        return DropdownMenuItem<String>(
-          value: def.effectId,
-          child: Text('${def.name} (${def.category})'),
-        );
-      }).toList(),
-      onChanged: (newId) {
-        if (newId != null) {
-          controller.changeSlotEffect(slotIndex, newId);
-        }
-      },
-    );
-  }
-
-  Widget _buildParameterControl(
-    BuildContext context,
-    int slotIndex,
-    int paramIndex,
-    ParameterValue param,
-    Color accentColor,
-  ) {
-    final descriptor = param.descriptor;
-    final isDiscrete = descriptor.isDiscrete;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: StudioTheme.surfaceElevated,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: StudioTheme.surfaceBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Parameter Label & Value Text
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                descriptor.name,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: StudioTheme.surface,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: StudioTheme.surfaceBorder),
-                ),
-                child: Text(
-                  param.displayValue,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: accentColor,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-
-          // Control: Dropdown for discrete, Slider for continuous
-          if (isDiscrete && descriptor.labels != null)
-            _buildDiscreteDropdown(slotIndex, paramIndex, param, descriptor.labels!)
-          else
-            _buildContinuousSlider(context, slotIndex, paramIndex, param, descriptor, accentColor),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDiscreteDropdown(
-    int slotIndex,
-    int paramIndex,
-    ParameterValue param,
-    List<String> labels,
-  ) {
-    final currentIdx = param.currentValue.round().clamp(0, labels.length - 1);
-
-    return DropdownButton<int>(
-      key: Key('discrete_param_${slotIndex}_$paramIndex'),
-      isExpanded: true,
-      value: currentIdx,
-      dropdownColor: StudioTheme.surfaceElevated,
-      items: List.generate(labels.length, (idx) {
-        return DropdownMenuItem<int>(
-          value: idx,
-          child: Text(
-            labels[idx],
-            style: const TextStyle(fontSize: 13, color: Colors.white),
-          ),
-        );
-      }),
-      onChanged: (newVal) {
-        if (newVal != null) {
-          controller.updateParameter(slotIndex, paramIndex, newVal);
-        }
-      },
-    );
-  }
-
-  Widget _buildContinuousSlider(
-    BuildContext context,
-    int slotIndex,
-    int paramIndex,
-    ParameterValue param,
-    ParameterDescriptor descriptor,
-    Color accentColor,
-  ) {
-    final min = descriptor.min.toDouble();
-    final max = descriptor.max.toDouble();
-    final value = param.currentValue.clamp(min, max);
-    final divisions = (max - min).round();
-
-    return SliderTheme(
-      data: SliderTheme.of(context).copyWith(
-        activeTrackColor: accentColor,
-        thumbColor: accentColor,
-      ),
-      child: Slider(
-        key: Key('param_slider_${slotIndex}_$paramIndex'),
-        value: value,
-        min: min,
-        max: max,
-        divisions: divisions > 0 ? divisions : null,
-        onChanged: (newValue) {
-          controller.updateParameter(slotIndex, paramIndex, newValue.round());
+    return SizedBox(
+      width: 170,
+      child: DropdownButton<String>(
+        key: const Key('effect_model_selector'),
+        isExpanded: true,
+        value: availableEffects.any((e) => e.effectId == matchedDef.effectId)
+            ? matchedDef.effectId
+            : null,
+        hint: Text(matchedDef.name, style: const TextStyle(color: Colors.white)),
+        dropdownColor: StudioTheme.surfaceElevated,
+        underline: const SizedBox.shrink(),
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+        items: availableEffects.map((def) {
+          return DropdownMenuItem<String>(
+            value: def.effectId,
+            child: Text(
+              '${def.name} (${def.category})',
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }).toList(),
+        onChanged: (newId) {
+          if (newId != null) {
+            widget.controller.changeSlotEffect(slotIndex, newId);
+          }
         },
       ),
     );
