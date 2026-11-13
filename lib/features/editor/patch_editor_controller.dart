@@ -340,6 +340,36 @@ class PatchEditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Activates [targetPatch] in the editor and immediately dispatches live
+  /// hardware delta updates (used by Live Performance Setlist Mode).
+  ///
+  /// On Zoom MS Plus (`0x6E`), transmits targeted `64 20 00` slot/parameter/bypass
+  /// deltas (never `64 12 01` or `0x45`). On Line 6 Bass POD Pro (`0x0E41`),
+  /// transmits `encodePatch`.
+  void activatePatchLive(Patch targetPatch, {bool syncHardware = true}) {
+    final previous = _patch;
+    _patch = targetPatch;
+    _isDirty = false;
+    _selectedSlotIndex = 0;
+    _errorMessage = null;
+    _resetSessionBaseline(targetPatch);
+
+    if (syncHardware && transport.isConnected && !_isHandlingIncoming) {
+      if (previous != null) {
+        _syncPatchTransitionToDevice(previous, targetPatch);
+      } else if (connectionController.activeFamily.isLine6BassPodPro) {
+        try {
+          unawaited(transport.send(protocol.encodePatch(targetPatch)));
+        } catch (e) {
+          _errorMessage = 'Failed to sync patch to device: $e';
+        }
+      } else {
+        _syncStructureToDevice();
+      }
+    }
+    notifyListeners();
+  }
+
   /// Sets the hardware memory slot index on the active patch without marking it dirty.
   void setHardwareSlotIndex(int slotIndex) {
     if (_patch != null && _patch!.programNumber != slotIndex) {

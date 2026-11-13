@@ -4,6 +4,7 @@ import '../../core/midi/midi_port_descriptor.dart';
 import '../../models/device_family.dart';
 import '../editor/patch_editor_controller.dart';
 import '../library/patch_library_controller.dart';
+import '../setlist/setlist_controller.dart';
 import '../theme/studio_theme.dart';
 import 'device_connection_controller.dart';
 
@@ -13,6 +14,7 @@ class ConnectionBarWidget extends StatelessWidget {
   final DeviceConnectionController connectionController;
   final PatchEditorController editorController;
   final PatchLibraryController libraryController;
+  final SetlistController? setlistController;
   final VoidCallback? onToggleLibrary;
 
   const ConnectionBarWidget({
@@ -20,13 +22,18 @@ class ConnectionBarWidget extends StatelessWidget {
     required this.connectionController,
     required this.editorController,
     required this.libraryController,
+    this.setlistController,
     this.onToggleLibrary,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([connectionController, editorController]),
+      listenable: Listenable.merge([
+        connectionController,
+        editorController,
+        ?setlistController,
+      ]),
       builder: (context, _) {
         final isConnected = connectionController.isConnected;
         final selectedPort = connectionController.connectedPort;
@@ -190,6 +197,32 @@ class ConnectionBarWidget extends StatelessWidget {
                     ? () => _saveCurrentToLibrary(context)
                     : null,
               ),
+
+              if (setlistController != null)
+                OutlinedButton.icon(
+                  key: const Key('toggle_performance_mode_button'),
+                  icon: Icon(
+                    setlistController!.isPerformanceModeActive
+                        ? Icons.tune
+                        : Icons.queue_music,
+                    size: 16,
+                  ),
+                  label: Text(
+                    setlistController!.isPerformanceModeActive
+                        ? 'Studio Editor'
+                        : 'Stage Mode',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: StudioTheme.colorDynamics,
+                    backgroundColor: setlistController!.isPerformanceModeActive
+                        ? StudioTheme.colorDynamics.withValues(alpha: 0.16)
+                        : null,
+                    side: const BorderSide(color: StudioTheme.colorDynamics),
+                    padding: buttonPadding,
+                    visualDensity: isCompact ? VisualDensity.compact : VisualDensity.standard,
+                  ),
+                  onPressed: () => setlistController!.togglePerformanceMode(),
+                ),
             ];
 
             return Container(

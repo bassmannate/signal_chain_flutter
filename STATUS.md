@@ -1,12 +1,28 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 14 Complete (Undo/Redo History, A/B Tone Compare & Patch Diff Preview)  
-**Active Milestone:** Milestone 14 Complete / Ready for Local Verification  
-**Last Updated:** 2026-11-12
+**Current Status:** Milestone 15 Complete (Android Release Polish, F-Droid Readiness & Live Performance Setlist Mode)  
+**Active Milestone:** Milestone 15 Complete / Ready for Local Verification  
+**Last Updated:** 2026-11-13
 
 ---
 
 ## 1. Milestone Roadmap
+
+### 🟢 Milestone 15: Android Release Polish, F-Droid Readiness & Live Performance Setlist Mode
+*Status:* **Completed**
+- [x] **Android Branding, Adaptive Icons & Dark Launch Background (`android/app/src/main/` & `tool/generate_android_icons.py`):**
+  * Updated `AndroidManifest.xml` to `android:label="Signal Chain"` and `android:roundIcon="@mipmap/ic_launcher_round"`.
+  * Generated `mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}/ic_launcher.png` & `ic_launcher_round.png` (`48/72/96/144/192` px) and `fastlane/metadata/android/en-US/images/icon.png` (`512×512` px) via `tool/generate_android_icons.py`, plus `mipmap-anydpi-v26/ic_launcher*.xml` adaptive/monochrome layers, `drawable/ic_launcher_foreground.xml`, `values/colors.xml` (`#121318`), and dark `launch_background.xml`.
+- [x] **Android Release Signing, F-Droid Reproducible Builds & CI Artifact Naming (`android/app/build.gradle.kts`, `.github/workflows/release.yml`, `fastlane/metadata/android/en-US/`):**
+  * Added env/property-driven release signing with safe debug fallback and `dependenciesInfo { includeInApk = false; includeInBundle = false }`.
+  * Added optional `ANDROID_KEYSTORE_BASE64` decoding/cleanup in `.github/workflows/release.yml` outputting `dist/signal-chain-${VERSION}-android.apk`, and created `fastlane/metadata/android/en-US/` listings & changelogs.
+- [x] **Live Performance Setlist Mode (`lib/models/setlist.dart`, `lib/core/storage/`, `lib/features/setlist/`):**
+  * Implemented `Setlist` & `SetlistEntry` models, `SetlistRepository` (`InMemorySetlistRepository` & atomic `FileSystemSetlistRepository`), `PatchEditorController.activatePatchLive`, and `SetlistController` (live `64 20 00` / `encodePatch` dispatch, missing-preset & device-mismatch guards, and debounced incoming MIDI PC/CC foot-controller stepping).
+  * Built `SetlistBrowserWidget` (`Setlists` tab + `"Add to Setlist"` in `PatchLibraryDrawerOrPanel`) and high-contrast `SetlistPerformanceView` Stage Mode (`Stage Mode` toggle in `ConnectionBarWidget`, `◄ PREVIOUS` / `NEXT ►` stepping, live stompbox bypasses, and desktop arrow shortcuts).
+- [x] **Unit & `FakeAsync`-Safe Widget Tests (13 new tests, 296 total):**
+  * Expanded `test/packaging_config_test.dart` (+2 tests) and added `test/models/setlist_test.dart` (2 tests), `test/core/storage/setlist_repository_test.dart` (2 tests), `test/features/setlist/setlist_controller_test.dart` (4 tests), and `test/features/setlist/setlist_ui_test.dart` (3 tests).
+
+---
 
 ### 🟢 Milestone 14: Editor Power-User Ergonomics (Undo/Redo, A/B Compare & Patch Diff Preview)
 *Status:* **Completed**

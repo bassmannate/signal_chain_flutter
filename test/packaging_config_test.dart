@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -97,6 +98,98 @@ void main() {
       final rcContent = rcFile.readAsStringSync();
       expect(rcContent, contains('Signal Chain'));
       expect(rcContent, contains('Signal Chain Contributors'));
+    });
+
+    test('Android launcher branding, adaptive icons, and mipmap PNGs are configured', () {
+      final manifestFile = File('$projectRoot/android/app/src/main/AndroidManifest.xml');
+      final manifestContent = manifestFile.readAsStringSync();
+      expect(manifestContent, contains('android:label="Signal Chain"'));
+      expect(manifestContent, contains('android:icon="@mipmap/ic_launcher"'));
+      expect(manifestContent, contains('android:roundIcon="@mipmap/ic_launcher_round"'));
+
+      final colorsFile = File('$projectRoot/android/app/src/main/res/values/colors.xml');
+      expect(colorsFile.existsSync(), isTrue);
+      expect(colorsFile.readAsStringSync(), contains('#121318'));
+
+      final fgFile = File('$projectRoot/android/app/src/main/res/drawable/ic_launcher_foreground.xml');
+      expect(fgFile.existsSync(), isTrue);
+      expect(fgFile.readAsStringSync(), contains('<vector'));
+
+      for (final xmlName in ['ic_launcher.xml', 'ic_launcher_round.xml']) {
+        final adaptiveFile = File('$projectRoot/android/app/src/main/res/mipmap-anydpi-v26/$xmlName');
+        expect(adaptiveFile.existsSync(), isTrue, reason: '$xmlName must exist');
+        final content = adaptiveFile.readAsStringSync();
+        expect(content, contains('<adaptive-icon'));
+        expect(content, contains('@color/ic_launcher_background'));
+        expect(content, contains('@drawable/ic_launcher_foreground'));
+      }
+
+      const expectedSizes = {
+        'mdpi': 48,
+        'hdpi': 72,
+        'xhdpi': 96,
+        'xxhdpi': 144,
+        'xxxhdpi': 192,
+      };
+      for (final entry in expectedSizes.entries) {
+        for (final iconName in ['ic_launcher.png', 'ic_launcher_round.png']) {
+          final pngFile = File(
+            '$projectRoot/android/app/src/main/res/mipmap-${entry.key}/$iconName',
+          );
+          expect(pngFile.existsSync(), isTrue, reason: '${entry.key}/$iconName must exist');
+          final bytes = pngFile.readAsBytesSync();
+          expect(bytes.length, greaterThan(24));
+          // Verify PNG signature
+          expect(
+            bytes.sublist(0, 8),
+            equals([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+          );
+          // Verify IHDR pixel dimensions
+          final data = ByteData.sublistView(bytes);
+          final width = data.getUint32(16);
+          final height = data.getUint32(20);
+          expect(width, equals(entry.value), reason: '${entry.key}/$iconName width');
+          expect(height, equals(entry.value), reason: '${entry.key}/$iconName height');
+        }
+      }
+    });
+
+    test('Android Gradle signing, F-Droid metadata, and release APK naming are configured', () {
+      final gradleFile = File('$projectRoot/android/app/build.gradle.kts');
+      final gradleContent = gradleFile.readAsStringSync();
+      expect(gradleContent, contains('dependenciesInfo'));
+      expect(gradleContent, contains('includeInApk = false'));
+      expect(gradleContent, contains('includeInBundle = false'));
+      expect(gradleContent, contains('ANDROID_KEYSTORE_PATH'));
+      expect(gradleContent, contains('signingConfigs.getByName("debug")'));
+
+      final releaseYml = File('$projectRoot/.github/workflows/release.yml');
+      final releaseContent = releaseYml.readAsStringSync();
+      expect(releaseContent, contains('signal-chain-\${VERSION}-android.apk'));
+      expect(releaseContent, contains('ANDROID_KEYSTORE_BASE64'));
+
+      final fastlaneDir = '$projectRoot/fastlane/metadata/android/en-US';
+      final titleFile = File('$fastlaneDir/title.txt');
+      expect(titleFile.existsSync(), isTrue);
+      expect(titleFile.readAsStringSync().trim(), equals('Signal Chain'));
+      expect(titleFile.readAsStringSync().trim().length, lessThanOrEqualTo(30));
+
+      final shortDescFile = File('$fastlaneDir/short_description.txt');
+      expect(shortDescFile.existsSync(), isTrue);
+      expect(shortDescFile.readAsStringSync().trim().length, lessThanOrEqualTo(80));
+
+      final fullDescFile = File('$fastlaneDir/full_description.txt');
+      expect(fullDescFile.existsSync(), isTrue);
+      expect(fullDescFile.readAsStringSync().trim().length, lessThanOrEqualTo(4000));
+
+      expect(File('$fastlaneDir/changelogs/1.txt').existsSync(), isTrue);
+      expect(File('$fastlaneDir/changelogs/2.txt').existsSync(), isTrue);
+
+      final fastlaneIcon = File('$fastlaneDir/images/icon.png');
+      expect(fastlaneIcon.existsSync(), isTrue);
+      final iconData = ByteData.sublistView(fastlaneIcon.readAsBytesSync());
+      expect(iconData.getUint32(16), equals(512));
+      expect(iconData.getUint32(20), equals(512));
     });
   });
 }

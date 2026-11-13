@@ -1,0 +1,10 @@
+Signal Chain is a pure Dart/Flutter patch editor, preset librarian, and live stage performance tool for guitar and bass multi-effects processors, supporting Zoom MS Plus series pedals (MS-60B+, MS-50G+, MS-70CDR+, MS-200D+) and the Line 6 Bass POD Pro over USB OTG MIDI.
+
+Features:
+* Real-time bidirectional parameter editing, rotary knob controls, and physical footswitch bypass synchronization.
+* Right-to-left (OUT <- IN) pedalboard signal chain reordering, effect insertion, swapping, and removal.
+* 100-slot hardware memory bank browsing, incremental sync, and direct slot writing.
+* Live Performance Setlist Mode with ordered gig lists, high-contrast stage view, and optional MIDI foot-controller stepping.
+* Local preset library with Undo/Redo history, A/B tone compare, structured patch diff preview, and multi-format import/export (.json, .zptc, Symbiosis, .syx).
+* 100% offline-capable with zero third-party pub.dev dependencies.
+

@@ -5,6 +5,8 @@ import '../../models/patch.dart';
 import '../../models/patch_diff.dart';
 import '../editor/patch_diff_dialog.dart';
 import '../editor/patch_editor_controller.dart';
+import '../setlist/setlist_browser_widget.dart';
+import '../setlist/setlist_controller.dart';
 import '../theme/studio_theme.dart';
 import 'hardware_bank_browser_widget.dart';
 import 'patch_export_dialog.dart';
@@ -16,6 +18,7 @@ import 'patch_library_controller.dart';
 class PatchLibraryDrawerOrPanel extends StatefulWidget {
   final PatchLibraryController libraryController;
   final PatchEditorController editorController;
+  final SetlistController? setlistController;
   final bool isPanel; // true if side panel, false if in drawer / bottom sheet
   final int initialTabIndex;
   final double panelWidth;
@@ -24,6 +27,7 @@ class PatchLibraryDrawerOrPanel extends StatefulWidget {
     super.key,
     required this.libraryController,
     required this.editorController,
+    this.setlistController,
     this.isPanel = true,
     this.initialTabIndex = 0,
     this.panelWidth = 340,
@@ -66,7 +70,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Segmented Tab Toggle: [Local Presets] | [Hardware Bank]
+              // Segmented Tab Toggle: [Local Presets] | [Hardware Bank] | [Setlists]
               Container(
                 margin: const EdgeInsets.fromLTRB(14, 10, 14, 4),
                 padding: const EdgeInsets.all(2),
@@ -83,7 +87,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                         borderRadius: BorderRadius.circular(6),
                         onTap: () => setState(() => _selectedTabIndex = 0),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             color: _selectedTabIndex == 0 ? StudioTheme.surface : Colors.transparent,
@@ -106,7 +110,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  'Local Presets',
+                                  'Presets',
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
@@ -125,7 +129,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                         borderRadius: BorderRadius.circular(6),
                         onTap: () => setState(() => _selectedTabIndex = 1),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             color: _selectedTabIndex == 1 ? StudioTheme.surface : Colors.transparent,
@@ -148,7 +152,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  'Hardware Bank',
+                                  'HW Bank',
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
@@ -161,6 +165,49 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                         ),
                       ),
                     ),
+                    if (widget.setlistController != null)
+                      Expanded(
+                        child: InkWell(
+                          key: const Key('library_tab_setlists'),
+                          borderRadius: BorderRadius.circular(6),
+                          onTap: () => setState(() => _selectedTabIndex = 2),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: _selectedTabIndex == 2 ? StudioTheme.surface : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                              border: _selectedTabIndex == 2
+                                  ? Border.all(color: StudioTheme.surfaceBorder)
+                                  : null,
+                            ),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.queue_music,
+                                    size: 14,
+                                    color: _selectedTabIndex == 2
+                                        ? StudioTheme.colorDynamics
+                                        : Colors.grey,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Setlists',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: _selectedTabIndex == 2 ? Colors.white : Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -174,7 +221,11 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                         libraryController: widget.libraryController,
                         isPanel: false,
                       )
-                    : _buildLocalLibraryContent(context, patches, selectedFamily),
+                    : (_selectedTabIndex == 2 && widget.setlistController != null)
+                        ? SetlistBrowserWidget(
+                            setlistController: widget.setlistController!,
+                          )
+                        : _buildLocalLibraryContent(context, patches, selectedFamily),
               ),
             ],
           ),
@@ -433,6 +484,21 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
               spacing: 4,
               runSpacing: 4,
               children: [
+                // Add to Setlist
+                if (widget.setlistController != null)
+                  IconButton(
+                    key: Key('add_to_setlist_${patch.id}_button'),
+                    icon: const Icon(Icons.playlist_add, size: 17, color: StudioTheme.colorDynamics),
+                    tooltip: 'Add to Setlist',
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    style: IconButton.styleFrom(
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () => _addToActiveSetlist(context, patch),
+                  ),
+
                 // Compare with Active Editor
                 if (editorController.patch != null)
                   IconButton(
@@ -511,6 +577,22 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
         ],
       ),
     );
+  }
+
+  Future<void> _addToActiveSetlist(BuildContext context, Patch patch) async {
+    final setlistCtrl = widget.setlistController;
+    if (setlistCtrl == null) return;
+    var active = setlistCtrl.activeSetlist;
+    active ??= await setlistCtrl.createSetlist('Gig Setlist');
+    await setlistCtrl.addPatchToSetlist(active.id, patch);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Added "${patch.name}" to ${active.name}'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
   }
 
   Future<void> _showImportDialog(BuildContext context) async {

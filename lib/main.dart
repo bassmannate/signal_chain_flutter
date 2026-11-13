@@ -14,8 +14,10 @@ import 'core/midi/mock_midi_transport.dart';
 import 'core/storage/app_preferences_repository.dart';
 import 'core/storage/file_system_patch_library_repository.dart';
 import 'core/storage/file_system_preferences_repository.dart';
+import 'core/storage/file_system_setlist_repository.dart';
 import 'core/storage/in_memory_patch_library_repository.dart';
 import 'core/storage/patch_library_repository.dart';
+import 'core/storage/setlist_repository.dart';
 import 'features/connection/connection_bar_widget.dart';
 import 'features/connection/device_connection_controller.dart';
 import 'features/editor/effect_bank_palette_widget.dart';
@@ -24,6 +26,8 @@ import 'features/editor/signal_chain_strip_widget.dart';
 import 'features/editor/slot_inspector_widget.dart';
 import 'features/library/patch_library_controller.dart';
 import 'features/library/patch_library_drawer_or_panel.dart';
+import 'features/setlist/setlist_controller.dart';
+import 'features/setlist/setlist_performance_view.dart';
 import 'features/theme/responsive_layout.dart';
 import 'features/theme/studio_theme.dart';
 import 'models/device_family.dart';
@@ -43,17 +47,21 @@ void main() {
 class SignalChainApp extends StatefulWidget {
   final MidiTransport? transport;
   final PatchLibraryRepository? libraryRepository;
+  final SetlistRepository? setlistRepository;
   final DeviceConnectionController? connectionController;
   final PatchEditorController? editorController;
   final PatchLibraryController? libraryController;
+  final SetlistController? setlistController;
 
   const SignalChainApp({
     super.key,
     this.transport,
     this.libraryRepository,
+    this.setlistRepository,
     this.connectionController,
     this.editorController,
     this.libraryController,
+    this.setlistController,
   });
 
   @override
@@ -63,9 +71,11 @@ class SignalChainApp extends StatefulWidget {
 class _SignalChainAppState extends State<SignalChainApp> {
   late final MidiTransport _transport;
   late final PatchLibraryRepository _libraryRepo;
+  late final SetlistRepository _setlistRepo;
   late final DeviceConnectionController _connectionController;
   late final PatchEditorController _editorController;
   late final PatchLibraryController _libraryController;
+  late final SetlistController _setlistController;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _activeEditorTabIndex = 0;
@@ -132,10 +142,25 @@ class _SignalChainAppState extends State<SignalChainApp> {
               : const LocalImportFileSystem(),
         );
 
+    _setlistRepo = widget.setlistRepository ??
+        (_isRunningInWidgetTest
+            ? InMemorySetlistRepository()
+            : _createDefaultSetlistRepository());
+
+    _setlistController = widget.setlistController ??
+        SetlistController(
+          repository: _setlistRepo,
+          libraryController: _libraryController,
+          editorController: _editorController,
+          connectionController: _connectionController,
+          transport: _transport,
+        );
+
     // Initial async setup
     _connectionController.refreshPorts();
     _libraryController.refresh();
     _libraryController.loadPreferences();
+    _setlistController.refresh();
 
     // Seed filesystem repository if empty (at runtime outside widget tests)
     if (!_isRunningInWidgetTest && widget.libraryRepository == null) {
@@ -156,6 +181,9 @@ class _SignalChainAppState extends State<SignalChainApp> {
     }
     if (widget.libraryController == null) {
       _libraryController.dispose();
+    }
+    if (widget.setlistController == null) {
+      _setlistController.dispose();
     }
     super.dispose();
   }
@@ -344,6 +372,19 @@ class _SignalChainAppState extends State<SignalChainApp> {
     }
   }
 
+  static SetlistRepository _createDefaultSetlistRepository() {
+    try {
+      final presetsDir = _resolvePresetsDirectory();
+      final setlistsDir = Directory('${presetsDir.parent.path}/setlists');
+      if (!setlistsDir.existsSync()) {
+        setlistsDir.createSync(recursive: true);
+      }
+      return FileSystemSetlistRepository(storageDir: setlistsDir);
+    } catch (_) {
+      return InMemorySetlistRepository();
+    }
+  }
+
   static PatchLibraryRepository _createDefaultLibraryRepository(
     Patch zoomSample,
     Patch line6Sample,
@@ -413,6 +454,30 @@ class _SignalChainAppState extends State<SignalChainApp> {
           ): () {
             if (!_isEditableTextFocused) _editorController.redo();
           },
+          const SingleActivator(LogicalKeyboardKey.arrowRight): () {
+            if (!_isEditableTextFocused &&
+                _setlistController.isPerformanceModeActive) {
+              _setlistController.nextEntry();
+            }
+          },
+          const SingleActivator(LogicalKeyboardKey.pageDown): () {
+            if (!_isEditableTextFocused &&
+                _setlistController.isPerformanceModeActive) {
+              _setlistController.nextEntry();
+            }
+          },
+          const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
+            if (!_isEditableTextFocused &&
+                _setlistController.isPerformanceModeActive) {
+              _setlistController.previousEntry();
+            }
+          },
+          const SingleActivator(LogicalKeyboardKey.pageUp): () {
+            if (!_isEditableTextFocused &&
+                _setlistController.isPerformanceModeActive) {
+              _setlistController.previousEntry();
+            }
+          },
         },
         child: Focus(
           autofocus: true,
@@ -432,6 +497,7 @@ class _SignalChainAppState extends State<SignalChainApp> {
                 child: PatchLibraryDrawerOrPanel(
                   libraryController: _libraryController,
                   editorController: _editorController,
+                  setlistController: _setlistController,
                   isPanel: false,
                 ),
               ),
@@ -533,32 +599,46 @@ class _SignalChainAppState extends State<SignalChainApp> {
                 },
               );
 
-              return Column(
-                children: [
-                  ConnectionBarWidget(
-                    connectionController: _connectionController,
-                    editorController: _editorController,
-                    libraryController: _libraryController,
-                    onToggleLibrary: showLibraryPanel
-                        ? null
-                        : () => _scaffoldKey.currentState?.openEndDrawer(),
-                  ),
-                  Expanded(
-                    child: showLibraryPanel
-                        ? Row(
-                            children: [
-                              Expanded(child: editorWorkspace),
-                              PatchLibraryDrawerOrPanel(
-                                libraryController: _libraryController,
-                                editorController: _editorController,
-                                isPanel: true,
-                                panelWidth: metrics.libraryPanelWidth,
-                              ),
-                            ],
-                          )
-                        : editorWorkspace,
-                  ),
-                ],
+              return ListenableBuilder(
+                listenable: _setlistController,
+                builder: (context, _) {
+                  final mainContent = _setlistController.isPerformanceModeActive
+                      ? SetlistPerformanceView(
+                          setlistController: _setlistController,
+                          editorController: _editorController,
+                        )
+                      : editorWorkspace;
+
+                  return Column(
+                    children: [
+                      ConnectionBarWidget(
+                        connectionController: _connectionController,
+                        editorController: _editorController,
+                        libraryController: _libraryController,
+                        setlistController: _setlistController,
+                        onToggleLibrary: showLibraryPanel
+                            ? null
+                            : () => _scaffoldKey.currentState?.openEndDrawer(),
+                      ),
+                      Expanded(
+                        child: showLibraryPanel
+                            ? Row(
+                                children: [
+                                  Expanded(child: mainContent),
+                                  PatchLibraryDrawerOrPanel(
+                                    libraryController: _libraryController,
+                                    editorController: _editorController,
+                                    setlistController: _setlistController,
+                                    isPanel: true,
+                                    panelWidth: metrics.libraryPanelWidth,
+                                  ),
+                                ],
+                              )
+                            : mainContent,
+                      ),
+                    ],
+                  );
+                },
               );
             },
           ),

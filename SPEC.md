@@ -442,6 +442,7 @@ Implemented using Flutter's built-in `ChangeNotifier` and clean constructor depe
 - **Permissions & Features:** Declares `android.hardware.usb.host` and `android.software.midi` in `AndroidManifest.xml`.
 - **USB Device Filters (`android/app/src/main/res/xml/device_filter.xml`):** Matches Zoom Corporation (`vendor-id="5766"` / `0x1686`) and Line 6 (`vendor-id="3649"` / `0x0E41`) for automatic device attachment triggering.
 - **Native USB MIDI Transport (`MainActivity.kt` & `AndroidMidiTransport`):** Implements `android.media.midi.MidiManager` `MethodChannel` / `EventChannel` streaming with 256-byte outgoing SysEx chunking and `_rxBuffer` incoming SysEx stitching + 2/3-byte MIDI channel framing (`lib/src/transport/android_midi_transport.dart`, `lib/core/midi/android_midi_transport.dart`), wired into `lib/main.dart` and physically verified over USB OTG on a Fire HD 10 tablet and Pixel 10 Pro XL with a Zoom MS-60B+.
+- **Branding, Adaptive Icons, Signing & F-Droid Readiness:** `AndroidManifest.xml` declares `android:label="Signal Chain"` and `android:roundIcon="@mipmap/ic_launcher_round"`, with `mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}/ic_launcher*.png` and `mipmap-anydpi-v26/ic_launcher*.xml` adaptive/monochrome icons generated via `tool/generate_android_icons.py`, dark `#121318` splash (`launch_background.xml`), `dependenciesInfo` disabled in `android/app/build.gradle.kts`, optional release keystore signing via `ANDROID_KEYSTORE_*` / `android/key.properties` (safe debug fallback), and `fastlane/metadata/android/en-US/` store metadata.
 
 ### 9.3 Windows Distribution
 - **Metadata:** Clean application metadata in `windows/runner/Runner.rc` ("Signal Chain", "Signal Chain Contributors").
@@ -452,7 +453,7 @@ Implemented using Flutter's built-in `ChangeNotifier` and clean constructor depe
 - **Verification Gate (`verify`):** Runs `flutter analyze --no-pub` and `flutter test --no-pub` on `ubuntu-latest`.
 - **Platform Build Jobs:**
   - `build-linux`: Builds `flutter build linux --release --no-pub`, downloads `appimagetool`, runs `./tool/package_linux_deb.sh "${VERSION}"` and `./tool/package_linux_appimage.sh "${VERSION}"` (with `APPIMAGE_EXTRACT_AND_RUN=1`), and uploads `dist/*.deb` and `dist/*.AppImage`.
-  - `build-android`: Builds `flutter build apk --release --no-pub` and uploads `build/app/outputs/flutter-apk/app-release.apk`.
+  - `build-android`: Optionally decodes `ANDROID_KEYSTORE_BASE64`, builds `flutter build apk --release --no-pub --android-skip-build-dependency-validation`, and uploads `dist/signal-chain-${VERSION}-android.apk`.
   - `build-windows`: Builds `flutter build windows --release --no-pub`, runs `pwsh -File tool/package_windows_zip.ps1 -Version $version`, and uploads `dist/*.zip`.
 - **Release Publishing (`publish-release`):** Downloads all artifacts, generates `SHA256SUMS.txt`, and publishes via `softprops/action-gh-release@v3`.
 

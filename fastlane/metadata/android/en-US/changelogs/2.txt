@@ -1,0 +1,4 @@
+- Official "Signal Chain" Android launcher branding, adaptive & monochrome icons, and dark studio launch background.
+- Release keystore signing support and F-Droid reproducible build configuration.
+- Live Performance Setlist Mode with ordered gig lists, high-contrast stage view, and optional MIDI Program Change / CC foot-controller triggers.
+

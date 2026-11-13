@@ -70,7 +70,10 @@ tool/appimagetool
 android/.gradle/
 android/app/build/
 android/local.properties
+android/key.properties
 *.aab
+*.jks
+*.keystore
 
 # OS specific files
 Thumbs.db

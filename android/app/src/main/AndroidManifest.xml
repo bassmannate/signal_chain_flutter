@@ -4,9 +4,10 @@
     <uses-feature android:name="android.software.midi" android:required="false" />
 
     <application
-        android:label="signal_chain_flutter"
+        android:label="Signal Chain"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
         <activity
             android:name=".MainActivity"
             android:exported="true"

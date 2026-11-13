@@ -26,8 +26,9 @@ Total Zoom MS Plus catalog coverage: **578** typed effect definitions across all
 
 ---
 
-## Key Features (Through Milestone 14)
+## Key Features (Through Milestone 15)
 
+- **Live Performance Setlist Mode:** Ordered gig/rehearsal setlists referencing saved library patches with BPM overrides, cue notes, a high-contrast Stage Mode view (`◄ PREVIOUS` / `NEXT ►` stepping, live stompbox bypass toggles, and desktop arrow shortcuts), immediate hardware dispatch (`64 20 00` deltas on Zoom MS Plus, `encodePatch` on Line 6), and optional incoming MIDI Program Change / CC foot-controller triggers.
 - **Right-to-Left Pedalboard Signal Chain:** Physical audio-flow strip (`OUT ← ... ← IN`) with drag-and-drop reordering (`LongPressDraggable` on mobile touchscreens, immediate drag on desktop), inter-slot insertion zones, and custom scroll/drag rotary knobs (`RotaryKnobWidget`).
 - **Undo/Redo History, A/B Tone Compare & Patch Diff Preview:** Bounded 50-step Undo/Redo history with rotary-knob drag coalescing and desktop keyboard shortcuts (`Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z`), instant `A | B` tone comparison with live hardware delta sync (`64 20 00` on Zoom MS Plus, `encodePatch` on Line 6), and structured `PatchDiffDialog` previews for A/B compare, pre-write slot diffing, library preset comparison, and import preview.
 - **Live Bidirectional Hardware Sync:** Real-time knob, bypass, and active-slot focus synchronization with Zoom MS Plus hardware, plus 100-slot hardware bank browsing and slot writing.
@@ -62,7 +63,7 @@ Because the project uses **zero external `pub.dev` packages**, all Flutter comma
 - **Windows portable ZIP packaging:**
   - `./tool/package_windows_zip.ps1`
 - **Automated GitHub Releases:**
-  - Pushing a `v*.*.*` tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which runs `flutter analyze --no-pub` and `flutter test --no-pub`, builds Linux (`.deb` and `.AppImage`), Android (`app-release.apk`), and Windows (`.zip`) artifacts, generates `SHA256SUMS.txt`, and publishes the GitHub Release via `softprops/action-gh-release@v3`.
+  - Pushing a `v*.*.*` tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which runs `flutter analyze --no-pub` and `flutter test --no-pub`, builds Linux (`.deb` and `.AppImage`), Android (`signal-chain-<version>-android.apk`, with optional release keystore signing and F-Droid reproducible build configuration), and Windows (`.zip`) artifacts, generates `SHA256SUMS.txt`, and publishes the GitHub Release via `softprops/action-gh-release@v3`.
 - **Static analysis & tests:**
   ```bash
   flutter analyze --no-pub
