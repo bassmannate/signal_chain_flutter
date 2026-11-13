@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-VERSION="${1:-1.0.0}"
+VERSION="${1:-1.1.0}"
 PACKAGE_NAME="signal-chain"
 BUILD_OUTPUT="${PROJECT_ROOT}/build/linux/x64/release/bundle"
 DIST_DIR="${PROJECT_ROOT}/dist"

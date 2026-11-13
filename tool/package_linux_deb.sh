@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-VERSION="${1:-1.0.0}"
+VERSION="${1:-1.1.0}"
 ARCH="amd64"
 PACKAGE_NAME="signal-chain"
 DEB_DIR_NAME="${PACKAGE_NAME}_${VERSION}_${ARCH}"
