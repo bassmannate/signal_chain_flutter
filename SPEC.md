@@ -244,7 +244,6 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
 - `Line6BassPodProCatalog`: Complete 16 Amp models, 16 Cabinet models, Compressor/Noise Gate, and 16 built-in Effects matching hardware tables.
   * Spans all 11 hardware categories: Dynamics, Filter / EQ, Drive / Distortion, Preamp, Amp Model, Modulation, Pitch / Octave, Bass Synth, Special / SFX, Delay, Reverb.
   * Provides high-level browsing APIs: `getByIntId(int)`, `getById(String)`, `getByCategory(String)`, `categories`, and `search(query, {category})`.
-- `Line6BassPodProCatalog`: 16 Amp models, 8 Cabinet models, Compressor block, and 8 Modulation/Delay effects with exact CC/edit buffer parameter mappings.
 
 ---
 
@@ -343,7 +342,10 @@ Implemented using Flutter's built-in `ChangeNotifier` and clean constructor depe
 - `ConnectionBarWidget`: Top studio toolbar with status badge, port selector dropdown, device family picker, hardware sync actions ("Pull Patch" / "Push Patch"), and "Save to Library" button.
 
 ### 6.2 Patch Editor Module (`lib/features/editor/`)
-- `PatchEditorController`: Holds active `Patch?`, inspected `selectedSlotIndex`, dirty state tracking, and incoming MIDI message stream subscription.
+- `PatchEditorController`: Holds active `Patch?`, inspected `selectedSlotIndex`, dirty state tracking, bounded 50-step `PatchEditHistory` (Undo/Redo with gesture & time-window coalescing), `CompareSlot` (`A`/`B`) tone comparison state, and incoming MIDI message stream subscription.
+- Undo/Redo & A/B Hardware Sync: `undo()`, `redo()`, and `toggleCompareSlot()` synchronize transitions to connected hardware via `_syncPatchTransitionToDevice`—dispatching targeted `64 20 00` slot/parameter/bypass/clear deltas on Zoom MS Plus (never `64 12 01`) and `encodePatch` on Line 6 Bass POD Pro. Hardware-originated edits via `applyExternalHardwareUpdate` are excluded from the app Undo stack.
+- Structured Patch Diffing (`lib/models/patch_diff.dart` & `PatchDiffDialog`): Computes name, tempo, slot (`added`, `removed`, `replaced`, `modified`, `unchanged`), bypass, and formatted parameter deltas; integrated into `PatchMetadataHeaderWidget` (A vs. B), `WriteToSlotDialog` (pre-write slot diff), `PatchLibraryDrawerOrPanel` (library preset vs. editor), and `PatchImportDialog` (import entry vs. editor).
+- Desktop Keyboard Shortcuts (`lib/main.dart`): `Ctrl+Z` / `Cmd+Z` (Undo) and `Ctrl+Y` / `Ctrl+Shift+Z` / `Cmd+Shift+Z` (Redo), guarded to yield when an `EditableText` has focus.
 - Real-time parameter control: `updateParameter` immediately updates local state and dispatches `protocol.buildParameterEditMessage(...)` over `MidiTransport` when connected.
 - Real-time patch metadata controls:
   * `updatePatchName(String newName)`: Enforces hardware-specific character limits (10 chars for Zoom MS Plus, 16 for Line 6), converts unprintable and invalid ASCII characters to spaces, marks patch dirty, and synchronizes live to connected hardware.

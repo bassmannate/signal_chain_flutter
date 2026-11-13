@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'core/import/import_file_system.dart';
 import 'core/midi/composite_midi_transport.dart';
@@ -374,13 +375,48 @@ class _SignalChainAppState extends State<SignalChainApp> {
     }
   }
 
+  bool get _isEditableTextFocused {
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    if (focusContext == null) return false;
+    return focusContext.widget is EditableText ||
+        focusContext.findAncestorWidgetOfExactType<EditableText>() != null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Signal Chain Studio',
       debugShowCheckedModeBanner: false,
       theme: StudioTheme.darkTheme,
-      home: Scaffold(
+      home: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () {
+            if (!_isEditableTextFocused) _editorController.undo();
+          },
+          const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () {
+            if (!_isEditableTextFocused) _editorController.undo();
+          },
+          const SingleActivator(LogicalKeyboardKey.keyY, control: true): () {
+            if (!_isEditableTextFocused) _editorController.redo();
+          },
+          const SingleActivator(
+            LogicalKeyboardKey.keyZ,
+            control: true,
+            shift: true,
+          ): () {
+            if (!_isEditableTextFocused) _editorController.redo();
+          },
+          const SingleActivator(
+            LogicalKeyboardKey.keyZ,
+            meta: true,
+            shift: true,
+          ): () {
+            if (!_isEditableTextFocused) _editorController.redo();
+          },
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
         key: _scaffoldKey,
         endDrawer: Builder(
           builder: (context) {
@@ -527,7 +563,9 @@ class _SignalChainAppState extends State<SignalChainApp> {
             },
           ),
         ),
+        ),
       ),
+    ),
     );
   }
 

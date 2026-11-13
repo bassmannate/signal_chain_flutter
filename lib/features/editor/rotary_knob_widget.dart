@@ -21,6 +21,8 @@ class RotaryKnobWidget extends StatefulWidget {
   final int slotIndex;
   final Color accentColor;
   final ValueChanged<int> onChanged;
+  final VoidCallback? onDragStart;
+  final VoidCallback? onDragEnd;
   final double dialSize;
 
   const RotaryKnobWidget({
@@ -30,6 +32,8 @@ class RotaryKnobWidget extends StatefulWidget {
     required this.slotIndex,
     required this.accentColor,
     required this.onChanged,
+    this.onDragStart,
+    this.onDragEnd,
     this.dialSize = 52.0,
   });
 
@@ -80,6 +84,7 @@ class _RotaryKnobWidgetState extends State<RotaryKnobWidget> {
   void _onVerticalDragStart(DragStartDetails details) {
     _dragStartValue = currentValue;
     _accumulatedDelta = 0.0;
+    widget.onDragStart?.call();
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails details) {
@@ -98,6 +103,13 @@ class _RotaryKnobWidgetState extends State<RotaryKnobWidget> {
   void _onVerticalDragEnd(DragEndDetails details) {
     _dragStartValue = null;
     _accumulatedDelta = 0.0;
+    widget.onDragEnd?.call();
+  }
+
+  void _onVerticalDragCancel() {
+    _dragStartValue = null;
+    _accumulatedDelta = 0.0;
+    widget.onDragEnd?.call();
   }
 
   void _onDoubleTap() {
@@ -122,6 +134,7 @@ class _RotaryKnobWidgetState extends State<RotaryKnobWidget> {
           onVerticalDragStart: _onVerticalDragStart,
           onVerticalDragUpdate: _onVerticalDragUpdate,
           onVerticalDragEnd: _onVerticalDragEnd,
+          onVerticalDragCancel: _onVerticalDragCancel,
           onDoubleTap: _onDoubleTap,
           behavior: HitTestBehavior.opaque,
           child: Container(

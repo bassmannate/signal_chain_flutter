@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../models/device_family.dart';
 import '../../models/patch.dart';
+import '../../models/patch_diff.dart';
+import '../editor/patch_diff_dialog.dart';
 import '../editor/patch_editor_controller.dart';
 import '../theme/studio_theme.dart';
 import 'hardware_bank_browser_widget.dart';
@@ -422,55 +424,89 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
           ],
           const SizedBox(height: 8),
 
-          // Actions: Load, Export, Delete
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              // Export JSON / SysEx
-              IconButton(
-                key: Key('export_patch_${patch.id}_button'),
-                icon: const Icon(Icons.share, size: 16, color: Colors.grey),
-                tooltip: 'Export JSON / SysEx',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () => _exportPatch(context, patch),
-              ),
-              const SizedBox(width: 12),
-
-              // Delete
-              IconButton(
-                key: Key('delete_patch_${patch.id}_button'),
-                icon: const Icon(Icons.delete_outline, size: 16, color: Colors.redAccent),
-                tooltip: 'Delete Preset',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () => _confirmDelete(context, patch),
-              ),
-              const SizedBox(width: 12),
-
-              // Load into Editor
-              ElevatedButton(
-                key: Key('load_patch_${patch.id}_button'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: StudioTheme.colorModulation.withValues(alpha: 0.2),
-                  foregroundColor: StudioTheme.colorModulation,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                onPressed: () {
-                  libraryController.loadIntoEditor(patch, editorController);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Loaded "${patch.name}" into editor'),
-                      duration: const Duration(seconds: 1),
+          // Actions: Compare, Export, Delete, Load
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                // Compare with Active Editor
+                if (editorController.patch != null)
+                  IconButton(
+                    key: Key('compare_patch_${patch.id}_button'),
+                    icon: const Icon(Icons.compare_arrows, size: 16, color: Colors.grey),
+                    tooltip: 'Compare with Editor',
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    style: IconButton.styleFrom(
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                  );
-                },
-                child: const Text('Load', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              ),
-            ],
+                    onPressed: () {
+                      PatchDiffDialog.show(
+                        context,
+                        baseLabel: 'Active Editor',
+                        targetLabel: 'Library Preset',
+                        diff: PatchDiff.compute(editorController.patch!, patch),
+                      );
+                    },
+                  ),
+
+                // Export JSON / SysEx
+                IconButton(
+                  key: Key('export_patch_${patch.id}_button'),
+                  icon: const Icon(Icons.share, size: 16, color: Colors.grey),
+                  tooltip: 'Export JSON / SysEx',
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => _exportPatch(context, patch),
+                ),
+
+                // Delete
+                IconButton(
+                  key: Key('delete_patch_${patch.id}_button'),
+                  icon: const Icon(Icons.delete_outline, size: 16, color: Colors.redAccent),
+                  tooltip: 'Delete Preset',
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => _confirmDelete(context, patch),
+                ),
+
+                // Load into Editor
+                ElevatedButton(
+                  key: Key('load_patch_${patch.id}_button'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: StudioTheme.colorModulation.withValues(alpha: 0.2),
+                    foregroundColor: StudioTheme.colorModulation,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () {
+                    libraryController.loadIntoEditor(patch, editorController);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Loaded "${patch.name}" into editor'),
+                        duration: const Duration(seconds: 1),
+                      ),
+                    );
+                  },
+                  child: const Text('Load', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
           ),
         ],
       ),

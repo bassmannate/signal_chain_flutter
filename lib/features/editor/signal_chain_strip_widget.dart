@@ -23,7 +23,9 @@ class SignalChainStripWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final viewportSize = MediaQuery.sizeOf(context);
     final isCompactOrShort = viewportSize.width < 600 || viewportSize.height < 640;
-    final double stripHeight = isCompactOrShort ? 156.0 : 172.0;
+    final double stripHeight = viewportSize.height <= 600
+        ? 148.0
+        : (isCompactOrShort ? 156.0 : 172.0);
     final double badgeHeight = stripHeight - 20.0;
 
     return ListenableBuilder(

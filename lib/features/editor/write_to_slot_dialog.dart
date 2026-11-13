@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../models/patch_diff.dart';
 import '../connection/device_connection_controller.dart';
 import '../theme/studio_theme.dart';
+import 'patch_diff_dialog.dart';
 import 'patch_editor_controller.dart';
 
 /// Modal dialog allowing the user to select a hardware persistent memory slot (0–99)
@@ -165,6 +167,64 @@ class _WriteToSlotDialogState extends State<WriteToSlotDialog> {
                   ),
                 ),
               ),
+              if (patch != null &&
+                  _selectedSlot >= 0 &&
+                  _selectedSlot < bankSlots.length &&
+                  bankSlots[_selectedSlot].patch != null) ...[
+                const SizedBox(height: 10),
+                Builder(
+                  builder: (context) {
+                    final destPatch = bankSlots[_selectedSlot].patch!;
+                    final diff = PatchDiff.compute(destPatch, patch);
+                    return Container(
+                      key: const Key('write_slot_diff_banner'),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: StudioTheme.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: diff.hasChanges
+                              ? StudioTheme.colorFilterEq.withValues(alpha: 0.5)
+                              : StudioTheme.surfaceBorder,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.compare_arrows,
+                            size: 16,
+                            color: diff.hasChanges
+                                ? StudioTheme.colorFilterEq
+                                : StudioTheme.colorDynamics,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Vs. Slot ${_selectedSlot.toString().padLeft(2, '0')}: ${diff.summaryLabel}',
+                              style: const TextStyle(fontSize: 11, color: Colors.white70),
+                            ),
+                          ),
+                          TextButton(
+                            key: const Key('write_slot_view_diff_button'),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () => PatchDiffDialog.show(
+                              context,
+                              baseLabel: 'Slot #${_selectedSlot.toString().padLeft(2, '0')}',
+                              targetLabel: 'Editor',
+                              diff: diff,
+                            ),
+                            child: const Text('View Diff', style: TextStyle(fontSize: 11)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
               if (_statusMessage != null) ...[
                 const SizedBox(height: 12),
                 Text(

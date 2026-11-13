@@ -26,9 +26,10 @@ Total Zoom MS Plus catalog coverage: **578** typed effect definitions across all
 
 ---
 
-## Key Features (Through Milestone 13)
+## Key Features (Through Milestone 14)
 
 - **Right-to-Left Pedalboard Signal Chain:** Physical audio-flow strip (`OUT ← ... ← IN`) with drag-and-drop reordering (`LongPressDraggable` on mobile touchscreens, immediate drag on desktop), inter-slot insertion zones, and custom scroll/drag rotary knobs (`RotaryKnobWidget`).
+- **Undo/Redo History, A/B Tone Compare & Patch Diff Preview:** Bounded 50-step Undo/Redo history with rotary-knob drag coalescing and desktop keyboard shortcuts (`Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z`), instant `A | B` tone comparison with live hardware delta sync (`64 20 00` on Zoom MS Plus, `encodePatch` on Line 6), and structured `PatchDiffDialog` previews for A/B compare, pre-write slot diffing, library preset comparison, and import preview.
 - **Live Bidirectional Hardware Sync:** Real-time knob, bypass, and active-slot focus synchronization with Zoom MS Plus hardware, plus 100-slot hardware bank browsing and slot writing.
 - **Responsive & Adaptive UI:** Three-tier breakpoints (`compact`, `medium`, `expanded`) across phone portrait/landscape, tablets, and resized desktop windows, with unified vertical scrolling on short viewports and keyboard-safe dialogs.
 - **Local Patch Library & Multi-Format Export / Import:** Manage offline preset libraries and export or import/restore single patches, full libraries, or hardware banks in:

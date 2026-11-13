@@ -30,6 +30,7 @@ The goal of this Flutter rewrite is to replace the heavier Electron desktop foot
 - **Milestone 11:** Responsive & Adaptive UI Polish (Three-tier `compact`/`medium`/`expanded` breakpoints in `ResponsiveLayoutMetrics`, wrapping toolbars & metadata header, short-viewport unified vertical scrolling, `LongPressDraggable` on Android/iOS touchscreens, and keyboard-safe scrollable dialogs) — **Completed**
 - **Milestone 12:** External Format Export & Interoperability (`ExportAdapter` registry for Native JSON, Zoom PTCF `.zptc`, Symbiosis model-suffixed `.zptc` / batch folders, Zoom MultiStomp Studio, and Raw SysEx `.syx`; pure `dart:io` XDG preferences persistence & `ExportFileWriter`; responsive `PatchExportDialog` wired into `PatchLibraryDrawerOrPanel` and `HardwareBankBrowserWidget`) — **Completed**
 - **Milestone 13:** External File Import & Round-Trip Restore (Symmetric `lib/core/import/` layer with `ImportFormat`, `ImportedPatchEntry`, `ImportBatchResult`, `ImportAdapter`s, and `PatchImporter` auto-detection; testable `ImportFileSystem` (`LocalImportFileSystem` / `InMemoryImportFileSystem`); responsive `PatchImportDialog` with file/folder browser, batch Symbiosis folder import, clipboard paste, selective library restore, and device-mismatch handling) — **Completed**
+- **Milestone 14:** Editor Power-User Ergonomics — Undo/Redo History, A/B Tone Compare & Patch Diff Preview (`PatchDiff` pure-Dart diff model, bounded 50-step `PatchEditHistory` with gesture/time-window coalescing, `A | B` compare slots with live hardware delta sync via Zoom `64 20 00` / Line 6 `encodePatch`, `PatchDiffDialog` integrated across A/B compare, `WriteToSlotDialog`, `PatchImportDialog`, and `PatchLibraryDrawerOrPanel`, plus desktop `Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z` shortcuts) — **Completed**
 
 ---
 
@@ -47,10 +48,10 @@ The goal of this Flutter rewrite is to replace the heavier Electron desktop foot
 
 - **Language & Runtime:** Dart SDK `^3.13.7` (Flutter 3.47.x+).
 - **UI Framework:** Flutter (Material 3 with responsive layout adapters for desktop and mobile).
-- **State Management & DI:** `flutter_riverpod` for reactive, testable state management and dependency injection.
+- **State Management & DI:** Built-in Flutter `ChangeNotifier` with clean constructor dependency injection (`MidiTransport`, `PatchLibraryRepository`, `AppPreferencesRepository`) and zero external `pub.dev` dependencies.
 - **Binary & Protocol Processing:** Pure `dart:typed_data` (`Uint8List`, `ByteData`, `Endian`). No native plugins or C-bindings in the protocol layer—SysEx serialization, deserialization, bit-packing, and checksum calculations are 100% pure Dart.
 - **Hardware Abstraction Layer:** Platform-abstracted MIDI transport (`MidiTransport`) sitting between native platform channels and domain protocol handlers.
-- **Persistence:** Local JSON / SQLite / Hive-compatible storage layer for offline preset libraries and pedal backups.
+- **Persistence:** Pure `dart:io` atomic JSON persistence (`FileSystemPatchLibraryRepository` & `FileSystemPreferencesRepository`) for offline preset libraries and user preferences.
 
 ---
 

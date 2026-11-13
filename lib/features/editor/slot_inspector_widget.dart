@@ -84,6 +84,10 @@ class _SlotInspectorWidgetState extends State<SlotInspectorWidget> {
                   paramIndex: originalIdx,
                   slotIndex: slot.slotIndex,
                   accentColor: categoryColor,
+                  onDragStart: () => widget.controller.beginEditGesture(
+                    label: 'Adjust ${param.descriptor.name}',
+                  ),
+                  onDragEnd: () => widget.controller.endEditGesture(),
                   onChanged: (newVal) {
                     widget.controller.updateParameter(
                       slot.slotIndex,

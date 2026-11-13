@@ -9,6 +9,8 @@ import '../../core/import/import_format.dart';
 import '../../core/import/imported_patch_entry.dart';
 import '../../core/import/patch_importer.dart';
 import '../../models/device_family.dart';
+import '../../models/patch_diff.dart';
+import '../editor/patch_diff_dialog.dart';
 import '../editor/patch_editor_controller.dart';
 import '../theme/studio_theme.dart';
 import 'patch_library_controller.dart';
@@ -973,6 +975,23 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
                               size: 14,
                               color: Colors.amberAccent,
                             ),
+                          ),
+                        if (widget.editorController.patch != null)
+                          IconButton(
+                            key: Key('import_entry_diff_$index'),
+                            icon: const Icon(Icons.compare_arrows, size: 15, color: Colors.grey),
+                            tooltip: 'Compare with Active Editor',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                            onPressed: () {
+                              final current = widget.editorController.patch!;
+                              PatchDiffDialog.show(
+                                context,
+                                baseLabel: 'Active Editor',
+                                targetLabel: 'Imported',
+                                diff: PatchDiff.compute(current, entry.patch),
+                              );
+                            },
                           ),
                       ],
                     ),

@@ -8,9 +8,11 @@ import '../../core/midi/mock_midi_transport.dart';
 import '../../models/effect_slot.dart';
 import '../../models/parameter_descriptor.dart';
 import '../../models/patch.dart';
+import '../../models/patch_diff.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
 import '../../protocols/device_protocol.dart';
 import '../connection/device_connection_controller.dart';
+import 'patch_edit_history.dart';
 
 /// Controller managing active patch editing, slot inspection, and bidirectional
 /// real-time parameter synchronization with connected hardware.
@@ -28,11 +30,19 @@ class PatchEditorController extends ChangeNotifier {
   bool _isHandlingIncoming = false;
   bool _isSyncingStructure = false;
 
+  final PatchEditHistory _history;
+  CompareSlot _activeCompareSlot = CompareSlot.a;
+  Patch? _compareSlotA;
+  Patch? _compareSlotB;
+
   PatchEditorController({
     required this.transport,
     required this.connectionController,
     Patch? initialPatch,
-  }) : _patch = initialPatch {
+    PatchEditHistory? history,
+  })  : _patch = initialPatch,
+        _history = history ?? PatchEditHistory(),
+        _compareSlotA = initialPatch {
     connectionController.setEditorController(this);
   }
 
@@ -81,12 +91,249 @@ class PatchEditorController extends ChangeNotifier {
   bool get canReorderSlots =>
       connectionController.activeFamily.isZoomMsPlus;
 
-  /// Replaces the active editor patch and resets the dirty flag.
+  /// Undo/Redo availability and descriptive labels.
+  bool get canUndo => _history.canUndo;
+  bool get canRedo => _history.canRedo;
+  String? get undoLabel => _history.undoLabel;
+  String? get redoLabel => _history.redoLabel;
+
+  /// Active A/B comparison slot and snapshots.
+  CompareSlot get activeCompareSlot => _activeCompareSlot;
+  Patch? get comparePatchA => _compareSlotA;
+  Patch? get comparePatchB => _compareSlotB;
+  bool get hasCompareSnapshotB => _compareSlotB != null;
+
+  /// True when both A and B snapshots exist and differ from each other.
+  bool get hasABDifference {
+    final a = _compareSlotA;
+    final b = _compareSlotB;
+    if (a == null || b == null) return false;
+    return PatchDiff.compute(a, b).hasChanges;
+  }
+
+  void _resetSessionBaseline(Patch patch) {
+    _history.reset();
+    _activeCompareSlot = CompareSlot.a;
+    _compareSlotA = patch;
+    _compareSlotB = null;
+  }
+
+  void _syncActiveCompareSnapshot() {
+    final current = _patch;
+    if (current == null) return;
+    if (_activeCompareSlot == CompareSlot.a) {
+      if (_compareSlotB == null) {
+        // First edit after loading: keep A as baseline and fork into B.
+        _activeCompareSlot = CompareSlot.b;
+        _compareSlotB = current;
+      } else {
+        _compareSlotA = current;
+      }
+    } else {
+      _compareSlotB = current;
+    }
+  }
+
+  void _recordUserEdit({
+    required Patch previousPatch,
+    required int previousSelectedSlot,
+    required bool previousDirty,
+    required String label,
+    String? coalesceKey,
+  }) {
+    _history.recordEdit(
+      previousPatch: previousPatch,
+      previousSelectedSlot: previousSelectedSlot,
+      previousDirty: previousDirty,
+      label: label,
+      coalesceKey: coalesceKey,
+    );
+    _syncActiveCompareSnapshot();
+  }
+
+  /// Begins an explicit edit gesture (e.g. continuous rotary knob drag),
+  /// coalescing all intermediate parameter updates into a single Undo step.
+  void beginEditGesture({String label = 'Adjust Parameter'}) {
+    final current = _patch;
+    if (current == null) return;
+    _history.beginGesture(
+      preGesturePatch: current,
+      selectedSlotIndex: _selectedSlotIndex,
+      isDirty: _isDirty,
+      label: label,
+    );
+  }
+
+  /// Ends an explicit edit gesture, committing a single Undo entry if changed.
+  void endEditGesture() {
+    if (_history.commitGesture(_patch)) {
+      notifyListeners();
+    }
+  }
+
+  /// Reverts the active patch to the previous Undo snapshot and syncs hardware.
+  bool undo() {
+    final current = _patch;
+    if (current == null) return false;
+
+    final entry = _history.undo(
+      currentPatch: current,
+      currentSelectedSlot: _selectedSlotIndex,
+      currentDirty: _isDirty,
+    );
+    if (entry == null) return false;
+
+    _applyRestoredPatch(
+      fromPatch: current,
+      targetPatch: entry.patch,
+      targetSlotIndex: entry.selectedSlotIndex,
+      targetDirty: entry.isDirty,
+    );
+    return true;
+  }
+
+  /// Re-applies the next Redo snapshot and syncs hardware.
+  bool redo() {
+    final current = _patch;
+    if (current == null) return false;
+
+    final entry = _history.redo(
+      currentPatch: current,
+      currentSelectedSlot: _selectedSlotIndex,
+      currentDirty: _isDirty,
+    );
+    if (entry == null) return false;
+
+    _applyRestoredPatch(
+      fromPatch: current,
+      targetPatch: entry.patch,
+      targetSlotIndex: entry.selectedSlotIndex,
+      targetDirty: entry.isDirty,
+    );
+    return true;
+  }
+
+  void _applyRestoredPatch({
+    required Patch fromPatch,
+    required Patch targetPatch,
+    required int targetSlotIndex,
+    required bool targetDirty,
+  }) {
+    _patch = targetPatch;
+    _isDirty = targetDirty;
+    if (targetPatch.slots.isNotEmpty) {
+      _selectedSlotIndex = targetSlotIndex.clamp(0, targetPatch.slots.length - 1);
+    } else {
+      _selectedSlotIndex = 0;
+    }
+
+    if (_activeCompareSlot == CompareSlot.a) {
+      _compareSlotA = targetPatch;
+    } else {
+      _compareSlotB = targetPatch;
+    }
+
+    _syncPatchTransitionToDevice(fromPatch, targetPatch);
+    notifyListeners();
+  }
+
+  /// Stores the current patch into Compare Slot A.
+  void captureCompareA() {
+    final current = _patch;
+    if (current == null) return;
+    _compareSlotA = current;
+    notifyListeners();
+  }
+
+  /// Toggles the active editor between Compare Slot A and Compare Slot B,
+  /// dispatching targeted hardware deltas so the pedal updates live.
+  void toggleCompareSlot() {
+    final current = _patch;
+    if (current == null) return;
+
+    _compareSlotA ??= current;
+    _compareSlotB ??= current;
+
+    final targetSlot =
+        _activeCompareSlot == CompareSlot.a ? CompareSlot.b : CompareSlot.a;
+    final targetPatch =
+        targetSlot == CompareSlot.a ? _compareSlotA! : _compareSlotB!;
+
+    _activeCompareSlot = targetSlot;
+    _patch = targetPatch;
+    if (targetPatch.slots.isNotEmpty) {
+      _selectedSlotIndex = _selectedSlotIndex.clamp(0, targetPatch.slots.length - 1);
+    } else {
+      _selectedSlotIndex = 0;
+    }
+    _isDirty = true;
+
+    _syncPatchTransitionToDevice(current, targetPatch);
+    notifyListeners();
+  }
+
+  /// Copies Compare Slot A into B (or B into A) and updates the active view if needed.
+  void copyCompareSlot({required CompareSlot from, required CompareSlot to}) {
+    if (from == to) return;
+    final source = from == CompareSlot.a ? _compareSlotA : _compareSlotB;
+    if (source == null) return;
+
+    final previous = _patch;
+    if (to == CompareSlot.a) {
+      _compareSlotA = source;
+    } else {
+      _compareSlotB = source;
+    }
+
+    if (_activeCompareSlot == to && previous != null) {
+      _history.recordEdit(
+        previousPatch: previous,
+        previousSelectedSlot: _selectedSlotIndex,
+        previousDirty: _isDirty,
+        label: from == CompareSlot.a ? 'Copy A to B' : 'Copy B to A',
+      );
+      _patch = source;
+      _isDirty = true;
+      _syncPatchTransitionToDevice(previous, source);
+    }
+    notifyListeners();
+  }
+
+  /// Swaps the contents of Compare Slot A and Compare Slot B.
+  void swapCompareSlots() {
+    final a = _compareSlotA;
+    final b = _compareSlotB;
+    if (a == null || b == null) return;
+
+    final previous = _patch;
+    _compareSlotA = b;
+    _compareSlotB = a;
+
+    final nextActive =
+        _activeCompareSlot == CompareSlot.a ? _compareSlotA! : _compareSlotB!;
+    if (previous != null) {
+      _patch = nextActive;
+      _syncPatchTransitionToDevice(previous, nextActive);
+    }
+    notifyListeners();
+  }
+
+  /// Computes a structured [PatchDiff] between Compare Slot A and Compare Slot B
+  /// (falling back to the current patch if B is not yet initialized).
+  PatchDiff? diffAB() {
+    final a = _compareSlotA;
+    final b = _compareSlotB ?? _patch;
+    if (a == null || b == null) return null;
+    return PatchDiff.compute(a, b);
+  }
+
+  /// Replaces the active editor patch and resets the dirty flag and edit history.
   void loadPatch(Patch patch) {
     _patch = patch;
     _isDirty = false;
     _selectedSlotIndex = 0;
     _errorMessage = null;
+    _resetSessionBaseline(patch);
     if (patch.programNumber != null) {
       connectionController.setActiveHardwareSlotIndex(patch.programNumber);
     }
@@ -147,6 +394,7 @@ class PatchEditorController extends ChangeNotifier {
       _patch = decoded;
       _isDirty = false;
       _selectedSlotIndex = 0;
+      _resetSessionBaseline(decoded);
     } catch (e) {
       _errorMessage = 'Failed to pull patch from device: $e';
     } finally {
@@ -348,9 +596,18 @@ class PatchEditorController extends ChangeNotifier {
       }
     }
     final sanitized = buffer.toString();
+    if (sanitized == current.name) return;
 
+    final previousDirty = _isDirty;
     _patch = current.copyWith(name: sanitized);
     _isDirty = true;
+    _recordUserEdit(
+      previousPatch: current,
+      previousSelectedSlot: _selectedSlotIndex,
+      previousDirty: previousDirty,
+      label: 'Rename Patch',
+      coalesceKey: 'patch_name',
+    );
     _syncStructureToDevice();
     notifyListeners();
   }
@@ -361,11 +618,21 @@ class PatchEditorController extends ChangeNotifier {
     if (current == null) return;
 
     final clamped = bpm.clamp(40, 250);
+    if (clamped == current.tempo) return;
+
+    final previousDirty = _isDirty;
     final newMetadata = Map<String, dynamic>.from(current.metadata);
     newMetadata['tempo'] = clamped;
 
     _patch = current.copyWith(metadata: newMetadata);
     _isDirty = true;
+    _recordUserEdit(
+      previousPatch: current,
+      previousSelectedSlot: _selectedSlotIndex,
+      previousDirty: previousDirty,
+      label: 'Change Tempo',
+      coalesceKey: 'patch_tempo',
+    );
     _syncStructureToDevice();
     notifyListeners();
   }
@@ -384,8 +651,17 @@ class PatchEditorController extends ChangeNotifier {
     final newSlots = List<EffectSlot>.from(current.slots);
     newSlots[slotIndex] = updatedSlot;
 
+    final previousDirty = _isDirty;
     _patch = current.copyWith(slots: newSlots);
     _isDirty = true;
+    _recordUserEdit(
+      previousPatch: current,
+      previousSelectedSlot: _selectedSlotIndex,
+      previousDirty: previousDirty,
+      label: updatedSlot.isEnabled
+          ? 'Enable ${slot.effectName}'
+          : 'Bypass ${slot.effectName}',
+    );
     notifyListeners();
 
     // Dispatch real-time bypass change to hardware if connected
@@ -454,9 +730,17 @@ class PatchEditorController extends ChangeNotifier {
     final meta = Map<String, dynamic>.from(current.metadata);
     meta['activeEffectSlot'] = insertIndex;
 
+    final previousSlot = _selectedSlotIndex;
+    final previousDirty = _isDirty;
     _patch = current.copyWith(slots: newSlots, metadata: meta);
     _isDirty = true;
     _selectedSlotIndex = insertIndex;
+    _recordUserEdit(
+      previousPatch: current,
+      previousSelectedSlot: previousSlot,
+      previousDirty: previousDirty,
+      label: 'Add ${def.name}',
+    );
     final affected = [for (int i = insertIndex; i < newSlots.length; i++) i];
     _syncStructureToDevice(affectedSlots: affected);
     notifyListeners();
@@ -487,6 +771,9 @@ class PatchEditorController extends ChangeNotifier {
     }
 
     final clearedSlotIndex = current.slots.length - 1;
+    final removedName = current.slots[slotIndex].effectName;
+    final previousSlot = _selectedSlotIndex;
+    final previousDirty = _isDirty;
     final newSlots = List<EffectSlot>.from(current.slots);
     newSlots.removeAt(slotIndex);
 
@@ -507,6 +794,12 @@ class PatchEditorController extends ChangeNotifier {
 
     _patch = current.copyWith(slots: newSlots, metadata: meta);
     _isDirty = true;
+    _recordUserEdit(
+      previousPatch: current,
+      previousSelectedSlot: previousSlot,
+      previousDirty: previousDirty,
+      label: 'Remove $removedName',
+    );
     final affected = [for (int i = slotIndex; i < newSlots.length; i++) i];
     _syncStructureToDevice(
       affectedSlots: affected,
@@ -540,6 +833,8 @@ class PatchEditorController extends ChangeNotifier {
     }
 
     // Adjust selected slot index
+    final previousSlot = _selectedSlotIndex;
+    final previousDirty = _isDirty;
     if (_selectedSlotIndex == oldIndex) {
       _selectedSlotIndex = newIndex;
     } else if (oldIndex < _selectedSlotIndex && newIndex >= _selectedSlotIndex) {
@@ -557,6 +852,12 @@ class PatchEditorController extends ChangeNotifier {
 
     _patch = current.copyWith(slots: newSlots, metadata: meta);
     _isDirty = true;
+    _recordUserEdit(
+      previousPatch: current,
+      previousSelectedSlot: previousSlot,
+      previousDirty: previousDirty,
+      label: 'Reorder Slots',
+    );
     _syncStructureToDevice(affectedSlots: affected);
     notifyListeners();
     return true;
@@ -581,6 +882,8 @@ class PatchEditorController extends ChangeNotifier {
     newSlots[indexA] = newSlots[indexB].copyWith(slotIndex: indexA);
     newSlots[indexB] = temp.copyWith(slotIndex: indexB);
 
+    final previousSlot = _selectedSlotIndex;
+    final previousDirty = _isDirty;
     if (_selectedSlotIndex == indexA) {
       _selectedSlotIndex = indexB;
     } else if (_selectedSlotIndex == indexB) {
@@ -592,6 +895,12 @@ class PatchEditorController extends ChangeNotifier {
 
     _patch = current.copyWith(slots: newSlots, metadata: meta);
     _isDirty = true;
+    _recordUserEdit(
+      previousPatch: current,
+      previousSelectedSlot: previousSlot,
+      previousDirty: previousDirty,
+      label: 'Swap Slots',
+    );
     _syncStructureToDevice(affectedSlots: [indexA, indexB]);
     notifyListeners();
     return true;
@@ -655,8 +964,15 @@ class PatchEditorController extends ChangeNotifier {
     final meta = Map<String, dynamic>.from(current.metadata);
     meta['activeEffectSlot'] = _selectedSlotIndex;
 
+    final previousDirty = _isDirty;
     _patch = current.copyWith(slots: newSlots, metadata: meta);
     _isDirty = true;
+    _recordUserEdit(
+      previousPatch: current,
+      previousSelectedSlot: _selectedSlotIndex,
+      previousDirty: previousDirty,
+      label: 'Change to ${def.name}',
+    );
     _syncStructureToDevice(affectedSlots: [slotIndex]);
     notifyListeners();
   }
@@ -708,6 +1024,92 @@ class PatchEditorController extends ChangeNotifier {
     }
   }
 
+  /// Synchronizes an Undo/Redo or A/B transition from [fromPatch] to [targetPatch]
+  /// to connected hardware.
+  ///
+  /// On Zoom MS Plus (`0x6E`), dispatches targeted `64 20 00` slot/parameter/bypass
+  /// deltas (never `64 12 01`). On Line 6 Bass POD Pro (`0x0E41`), dispatches
+  /// `encodePatch`.
+  void _syncPatchTransitionToDevice(Patch fromPatch, Patch targetPatch) {
+    if (!transport.isConnected || _isHandlingIncoming) return;
+
+    if (connectionController.activeFamily.isLine6BassPodPro) {
+      try {
+        final dump = protocol.encodePatch(targetPatch);
+        unawaited(transport.send(dump));
+      } catch (e) {
+        _errorMessage = 'Failed to sync patch transition to device: $e';
+      }
+      return;
+    }
+
+    _isSyncingStructure = true;
+    try {
+      for (int i = 0; i < targetPatch.slots.length; i++) {
+        final targetSlot = targetPatch.slots[i];
+        if (i >= fromPatch.slots.length ||
+            fromPatch.slots[i].effectId != targetSlot.effectId) {
+          final messages = protocol.buildSlotSyncSequence(i, targetSlot);
+          for (final msg in messages) {
+            transport.send(msg);
+          }
+        } else {
+          final fromSlot = fromPatch.slots[i];
+          if (fromSlot.isEnabled != targetSlot.isEnabled) {
+            final bypassMsg = protocol.buildSlotBypassMessage(
+              slotIndex: i,
+              isEnabled: targetSlot.isEnabled,
+            );
+            if (bypassMsg != null) {
+              transport.send(bypassMsg);
+            }
+          }
+          final paramCount = min(
+            fromSlot.parameters.length,
+            targetSlot.parameters.length,
+          );
+          for (int p = 0; p < paramCount; p++) {
+            final prevVal = fromSlot.parameters[p].currentValue;
+            final nextVal = targetSlot.parameters[p].currentValue;
+            if ((prevVal - nextVal).abs() > 0.05) {
+              final editMsg = protocol.buildParameterEditMessage(
+                slotIndex: i,
+                paramIndex: p,
+                value: nextVal.round(),
+              );
+              transport.send(editMsg);
+            }
+          }
+        }
+      }
+
+      for (int clearedIdx = targetPatch.slots.length;
+          clearedIdx < fromPatch.slots.length;
+          clearedIdx++) {
+        final clearMsg = protocol.buildEffectTypeMessage(clearedIdx, 0);
+        if (clearMsg != null) {
+          transport.send(clearMsg);
+        }
+        final bypassMsg = protocol.buildSlotBypassMessage(
+          slotIndex: clearedIdx,
+          isEnabled: false,
+        );
+        if (bypassMsg != null) {
+          transport.send(bypassMsg);
+        }
+      }
+
+      final focusMsg = protocol.buildSlotFocusMessage(_selectedSlotIndex);
+      if (focusMsg != null) {
+        transport.send(focusMsg);
+      }
+    } catch (e) {
+      _errorMessage = 'Failed to sync patch transition to device: $e';
+    } finally {
+      _isSyncingStructure = false;
+    }
+  }
+
   /// Updates parameter at [paramIndex] in [slotIndex] to [newValue],
   /// updating local state immediately and transmitting real-time MIDI when connected.
   Future<void> updateParameter(
@@ -728,6 +1130,10 @@ class PatchEditorController extends ChangeNotifier {
     }
 
     final param = slot.parameters[paramIndex];
+    if (param.currentValue == newValue.toDouble()) {
+      return;
+    }
+
     final updatedParam = param.copyWith(currentValue: newValue.toDouble());
     final newParams = List<ParameterValue>.from(slot.parameters);
     newParams[paramIndex] = updatedParam;
@@ -736,8 +1142,16 @@ class PatchEditorController extends ChangeNotifier {
     final newSlots = List<EffectSlot>.from(current.slots);
     newSlots[slotIndex] = updatedSlot;
 
+    final previousDirty = _isDirty;
     _patch = current.copyWith(slots: newSlots);
     _isDirty = true;
+    _recordUserEdit(
+      previousPatch: current,
+      previousSelectedSlot: _selectedSlotIndex,
+      previousDirty: previousDirty,
+      label: 'Adjust ${param.descriptor.name}',
+      coalesceKey: 'param_${slotIndex}_$paramIndex',
+    );
     notifyListeners();
 
     // Dispatch real-time parameter change to hardware if connected
@@ -776,8 +1190,10 @@ class PatchEditorController extends ChangeNotifier {
       final prog = patch.programNumber ??
           connectionController.activeHardwareSlotIndex ??
           _patch?.programNumber;
-      _patch = prog != null ? patch.copyWith(programNumber: prog) : patch;
+      final resolved = prog != null ? patch.copyWith(programNumber: prog) : patch;
+      _patch = resolved;
       _isDirty = false;
+      _resetSessionBaseline(resolved);
       notifyListeners();
       return;
     }

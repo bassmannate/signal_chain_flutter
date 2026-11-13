@@ -1,12 +1,28 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 13 Complete (External File Import & Round-Trip Restore)  
-**Active Milestone:** Milestone 13 Complete / Full Export & Import Round-Trip Ready  
+**Current Status:** Milestone 14 Complete (Undo/Redo History, A/B Tone Compare & Patch Diff Preview)  
+**Active Milestone:** Milestone 14 Complete / Ready for Local Verification  
 **Last Updated:** 2026-11-12
 
 ---
 
 ## 1. Milestone Roadmap
+
+### 🟢 Milestone 14: Editor Power-User Ergonomics (Undo/Redo, A/B Compare & Patch Diff Preview)
+*Status:* **Completed**
+- [x] **Pure Dart Patch Diff Engine (`lib/models/patch_diff.dart`):**
+  * Implemented `PatchDiff`, `SlotDiff`, `SlotDiffKind`, and `ParameterDiff` comparing metadata (name, tempo), slot structure (`added`, `removed`, `replaced`, `modified`, `unchanged`), bypass states, and formatted parameter values while filtering `Hidden-*` descriptors by default.
+- [x] **Bounded Undo/Redo History & A/B Tone Compare (`lib/features/editor/patch_edit_history.dart`, `patch_editor_controller.dart`):**
+  * Implemented `PatchEditHistory` (50-step cap) with explicit rotary-knob drag gesture transactions (`beginEditGesture` / `endEditGesture` wired to `RotaryKnobWidget.onDragStart` / `onDragEnd`) and 600ms time-window coalescing for scroll wheel, tempo slider, and patch name typing.
+  * Added `CompareSlot` (`A`/`B`) snapshots (`captureCompareA`, `toggleCompareSlot`, `copyCompareSlot`, `swapCompareSlots`, `diffAB`) and live hardware delta sync (`_syncPatchTransitionToDevice`) dispatching Zoom `64 20 00` deltas (never `64 12 01`) and Line 6 `encodePatch`, while excluding `applyExternalHardwareUpdate` from the Undo stack.
+- [x] **Responsive UI & Keyboard Shortcuts (`patch_metadata_header_widget.dart`, `patch_diff_dialog.dart`, `write_to_slot_dialog.dart`, `patch_import_dialog.dart`, `patch_library_drawer_or_panel.dart`, `lib/main.dart`):**
+  * Added Undo/Redo buttons, `A | B` toggle, View Diff button, and A/B actions menu to `PatchMetadataHeaderWidget` within its responsive `Wrap`.
+  * Created viewport-clamped `PatchDiffDialog` and integrated it into A/B compare, `WriteToSlotDialog` pre-write slot diffing, `PatchImportDialog` entry previews, and `PatchLibraryDrawerOrPanel` preset cards.
+  * Wired `Ctrl+Z` / `Cmd+Z` (Undo) and `Ctrl+Y` / `Ctrl+Shift+Z` / `Cmd+Shift+Z` (Redo) in `lib/main.dart`, guarded against focused `EditableText` widgets.
+- [x] **Unit & `FakeAsync`-Safe Widget Tests (14 new tests, 283 total):**
+  * Added `test/models/patch_diff_test.dart`, `test/features/patch_edit_history_test.dart`, `test/features/editor/undo_compare_diff_ui_test.dart`, and expanded `test/features/patch_editor_controller_test.dart`.
+
+---
 
 ### 🟢 Milestone 13: External File Import & Round-Trip Restore
 *Status:* **Completed**
@@ -544,13 +560,13 @@
 | **Legacy Source Code** | Audited | Reference mappings in `tool/reference/zoom-effect-mappings-ms60bp.json` |
 | **Directory Scaffolding** | Complete | Clean architecture layers maintained |
 | **Core MIDI Transport** | Complete | `MidiTransport`, `MidiMessage`, `MockMidiTransport`, `LinuxAlsaMidiTransport`, `AndroidMidiTransport`, `CompositeMidiTransport` |
-| **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch`, `BankSlotDescriptor` |
+| **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch`, `PatchDiff`, `BankSlotDescriptor` |
 | **SysEx & Protocol Engine** | Complete | `SysexCodec`, `ZoomMsPlusProtocol` (Memory slots 0–99 read/write), `Line6BassPodProProtocol` (`0x02` family byte, 80-byte MSB-first nibbles, 36 slots) |
 | **Effect Catalogs** | Complete (578 Zoom + 50 Line 6) | `EffectDefinition`, `EffectCatalogRegistry`, `ZoomMsPlusCatalog` (MS-60B+ 98, MS-50G+ 106, MS-70CDR+ 150, MS-200D+ 224), `Line6BassPodProCatalog` |
 | **Catalog Generator** | Complete | Deterministic pure-Dart script `tool/generate_zoom_catalog.dart` |
-| **Persistence Repositories** | Complete | `PatchLibraryRepository`, `InMemoryPatchLibraryRepository`, `FileSystemPatchLibraryRepository` |
-| **State Controllers** | Complete | `DeviceConnectionController` (Bank sync), `PatchEditorController` (Name/Tempo/Slots), `PatchLibraryController` |
-| **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget` (RTL order), `RotaryKnobWidget`, `SlotInspectorWidget`, `HardwareBankBrowserWidget`, `WriteToSlotDialog`, `PatchLibraryDrawerOrPanel` |
+| **Persistence Repositories** | Complete | `PatchLibraryRepository`, `InMemoryPatchLibraryRepository`, `FileSystemPatchLibraryRepository`, `AppPreferencesRepository` |
+| **State Controllers** | Complete | `DeviceConnectionController` (Bank sync), `PatchEditorController` (Undo/Redo, A/B Compare, Name/Tempo/Slots), `PatchLibraryController` |
+| **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget` (RTL order), `RotaryKnobWidget`, `SlotInspectorWidget`, `PatchDiffDialog`, `HardwareBankBrowserWidget`, `WriteToSlotDialog`, `PatchLibraryDrawerOrPanel` |
 | **Static Analysis** | Passing (0 issues) | Verified via `flutter analyze --no-pub` |
-| **Unit & Widget Tests** | 100% Passing | 219 tests passing across all test suites |
+| **Unit & Widget Tests** | 283 Passing (100%) | 269 prior + 14 Milestone 14 tests (`patch_diff_test.dart`, `patch_edit_history_test.dart`, `patch_editor_controller_test.dart`, `undo_compare_diff_ui_test.dart`) |
 

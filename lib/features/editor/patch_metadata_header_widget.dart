@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../theme/studio_theme.dart';
+import 'patch_diff_dialog.dart';
+import 'patch_edit_history.dart';
 import 'patch_editor_controller.dart';
 import 'write_to_slot_dialog.dart';
 
@@ -83,8 +85,8 @@ class _PatchMetadataHeaderWidgetState extends State<PatchMetadataHeaderWidget> {
                 ),
               ),
               child: Wrap(
-                spacing: 10,
-                runSpacing: 6,
+                spacing: 8,
+                runSpacing: 4,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 alignment: WrapAlignment.spaceBetween,
                 children: [
@@ -191,8 +193,11 @@ class _PatchMetadataHeaderWidgetState extends State<PatchMetadataHeaderWidget> {
                         key: const Key('tempo_decrement_button'),
                         icon: const Icon(Icons.remove, size: 16, color: Colors.grey),
                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                        splashRadius: 16,
+                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        style: IconButton.styleFrom(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        splashRadius: 14,
                         tooltip: 'Decrease Tempo (-1 BPM)',
                         onPressed: () {
                           widget.controller.updatePatchTempo(currentTempo - 1);
@@ -224,8 +229,11 @@ class _PatchMetadataHeaderWidgetState extends State<PatchMetadataHeaderWidget> {
                         key: const Key('tempo_increment_button'),
                         icon: const Icon(Icons.add, size: 16, color: Colors.grey),
                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                        splashRadius: 16,
+                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        style: IconButton.styleFrom(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        splashRadius: 14,
                         tooltip: 'Increase Tempo (+1 BPM)',
                         onPressed: () {
                           widget.controller.updatePatchTempo(currentTempo + 1);
@@ -233,6 +241,9 @@ class _PatchMetadataHeaderWidgetState extends State<PatchMetadataHeaderWidget> {
                       ),
                     ],
                   ),
+
+                  // Undo / Redo & A/B Compare Controls
+                  _buildHistoryAndCompareControls(context),
 
                   // "Write to Hardware Slot..." Button
                   OutlinedButton.icon(
@@ -254,6 +265,7 @@ class _PatchMetadataHeaderWidgetState extends State<PatchMetadataHeaderWidget> {
                       side: const BorderSide(color: StudioTheme.colorModulation),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       visualDensity: isCompact ? VisualDensity.compact : VisualDensity.standard,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     ),
                     onPressed: () => _showWriteToSlotDialog(context),
@@ -267,12 +279,181 @@ class _PatchMetadataHeaderWidgetState extends State<PatchMetadataHeaderWidget> {
     );
   }
 
+  Widget _buildHistoryAndCompareControls(BuildContext context) {
+    final canUndo = widget.controller.canUndo;
+    final canRedo = widget.controller.canRedo;
+    final activeSlot = widget.controller.activeCompareSlot;
+    final hasDiff = widget.controller.hasABDifference;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          key: const Key('undo_button'),
+          icon: const Icon(Icons.undo, size: 17),
+          color: canUndo ? Colors.white : Colors.grey.shade700,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          style: IconButton.styleFrom(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          splashRadius: 15,
+          tooltip: canUndo
+              ? 'Undo ${widget.controller.undoLabel ?? ''} (Ctrl+Z)'.trim()
+              : 'Nothing to Undo',
+          onPressed: canUndo ? () => widget.controller.undo() : null,
+        ),
+        IconButton(
+          key: const Key('redo_button'),
+          icon: const Icon(Icons.redo, size: 17),
+          color: canRedo ? Colors.white : Colors.grey.shade700,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          style: IconButton.styleFrom(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          splashRadius: 15,
+          tooltip: canRedo
+              ? 'Redo ${widget.controller.redoLabel ?? ''} (Ctrl+Y)'.trim()
+              : 'Nothing to Redo',
+          onPressed: canRedo ? () => widget.controller.redo() : null,
+        ),
+        const SizedBox(width: 4),
+        InkWell(
+          key: const Key('compare_ab_toggle'),
+          borderRadius: BorderRadius.circular(6),
+          onTap: () => widget.controller.toggleCompareSlot(),
+          child: Tooltip(
+            message: 'Toggle A/B Tone Compare',
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: StudioTheme.surface,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: hasDiff
+                      ? StudioTheme.colorModulation.withValues(alpha: 0.7)
+                      : StudioTheme.surfaceBorder,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ComparePill(
+                    label: 'A',
+                    isActive: activeSlot == CompareSlot.a,
+                    accentColor: StudioTheme.colorDynamics,
+                  ),
+                  _ComparePill(
+                    label: 'B',
+                    isActive: activeSlot == CompareSlot.b,
+                    accentColor: StudioTheme.colorModulation,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          key: const Key('compare_diff_button'),
+          icon: const Icon(Icons.compare_arrows, size: 17),
+          color: hasDiff ? StudioTheme.colorFilterEq : Colors.grey,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          style: IconButton.styleFrom(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          splashRadius: 15,
+          tooltip: 'View A/B Diff',
+          onPressed: () {
+            final diff = widget.controller.diffAB();
+            if (diff != null) {
+              PatchDiffDialog.show(
+                context,
+                baseLabel: 'Snapshot A',
+                targetLabel: 'Snapshot B',
+                diff: diff,
+              );
+            }
+          },
+        ),
+        PopupMenuButton<String>(
+          key: const Key('compare_menu_button'),
+          tooltip: 'A/B Compare Actions',
+          color: StudioTheme.surfaceElevated,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 28, minHeight: 30),
+          icon: const Icon(Icons.more_vert, size: 16, color: Colors.grey),
+          onSelected: (action) {
+            switch (action) {
+              case 'store_a':
+                widget.controller.captureCompareA();
+                break;
+              case 'copy_a_to_b':
+                widget.controller.copyCompareSlot(
+                  from: CompareSlot.a,
+                  to: CompareSlot.b,
+                );
+                break;
+              case 'copy_b_to_a':
+                widget.controller.copyCompareSlot(
+                  from: CompareSlot.b,
+                  to: CompareSlot.a,
+                );
+                break;
+              case 'swap_ab':
+                widget.controller.swapCompareSlots();
+                break;
+            }
+          },
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'store_a', child: Text('Store Current as A')),
+            PopupMenuItem(value: 'copy_a_to_b', child: Text('Copy A → B')),
+            PopupMenuItem(value: 'copy_b_to_a', child: Text('Copy B → A')),
+            PopupMenuItem(value: 'swap_ab', child: Text('Swap A ↔ B')),
+          ],
+        ),
+      ],
+    );
+  }
+
   void _showWriteToSlotDialog(BuildContext context) {
     showDialog<bool>(
       context: context,
       builder: (_) => WriteToSlotDialog(
         editorController: widget.controller,
         connectionController: widget.controller.connectionController,
+      ),
+    );
+  }
+}
+
+class _ComparePill extends StatelessWidget {
+  final String label;
+  final bool isActive;
+  final Color accentColor;
+
+  const _ComparePill({
+    required this.label,
+    required this.isActive,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: isActive ? accentColor.withValues(alpha: 0.25) : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: isActive ? accentColor : Colors.grey,
+        ),
       ),
     );
   }

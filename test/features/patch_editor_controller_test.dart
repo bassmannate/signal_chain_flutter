@@ -389,5 +389,94 @@ void main() {
       expect(editorController.patch?.programNumber, equals(5));
       expect(connectionController.activeHardwareSlotIndex, equals(5));
     });
+
+    test('undo and redo restore state, dirty flag, and dispatch Zoom 64 20 00 deltas (never 64 12 01)', () async {
+      // Transport is already connected to 'p1' (Zoom MS-60B+ Port) in setUp().
+      transport.clearSentMessages();
+
+      // Gesture-coalesced parameter sweep
+      editorController.beginEditGesture(label: 'Adjust Sense');
+      await editorController.updateParameter(0, 0, 7);
+      await editorController.updateParameter(0, 0, 9);
+      editorController.endEditGesture();
+
+      expect(editorController.patch!.slots[0].parameters[0].currentValue, equals(9.0));
+      expect(editorController.canUndo, isTrue);
+      expect(editorController.isDirty, isTrue);
+
+      // Add a 3rd slot (sampleZoomPatch starts with 2 slots)
+      editorController.addEffectSlot(effectId: '0x02000010');
+      expect(editorController.patch!.slots.length, equals(3));
+
+      transport.clearSentMessages();
+      // Undo adding slot -> must clear slot 2 via 64 20 00 (effectId=0), never 64 12 01
+      expect(editorController.undo(), isTrue);
+      expect(editorController.patch!.slots.length, equals(2));
+      expect(
+        transport.sentMessages.any(
+          (m) => m.data.length >= 9 && m.data[4] == 0x64 && m.data[5] == 0x20 && m.data[7] == 2 && m.data[8] == 1,
+        ),
+        isTrue,
+      );
+      expect(
+        transport.sentMessages.any(
+          (m) => m.data.length >= 7 && m.data[4] == 0x64 && m.data[5] == 0x12 && m.data[6] == 0x01,
+        ),
+        isFalse,
+      );
+
+      // Undo parameter sweep -> restores original value (6.0) and clean dirty flag!
+      transport.clearSentMessages();
+      expect(editorController.undo(), isTrue);
+      expect(editorController.patch!.slots[0].parameters[0].currentValue, equals(6.0));
+      expect(editorController.isDirty, isFalse);
+      expect(editorController.canRedo, isTrue);
+
+      // Redo parameter sweep -> restores 9.0 and sends 64 20 00 param edit
+      transport.clearSentMessages();
+      expect(editorController.redo(), isTrue);
+      expect(editorController.patch!.slots[0].parameters[0].currentValue, equals(9.0));
+      expect(editorController.isDirty, isTrue);
+      expect(
+        transport.sentMessages.any(
+          (m) => m.data.length >= 9 && m.data[4] == 0x64 && m.data[5] == 0x20 && m.data[7] == 0 && m.data[8] == 2,
+        ),
+        isTrue,
+      );
+    });
+
+    test('A/B compare toggles between baseline A and edited B with hardware sync', () async {
+      // Edit parameter -> automatically forks into B while A keeps baseline (6.0)
+      await editorController.updateParameter(0, 0, 10);
+      expect(editorController.comparePatchA?.slots[0].parameters[0].currentValue, equals(6.0));
+      expect(editorController.comparePatchB?.slots[0].parameters[0].currentValue, equals(10.0));
+      expect(editorController.hasABDifference, isTrue);
+
+      transport.clearSentMessages();
+      editorController.toggleCompareSlot();
+      expect(editorController.patch?.slots[0].parameters[0].currentValue, equals(6.0));
+      expect(
+        transport.sentMessages.any(
+          (m) => m.data.length >= 9 && m.data[4] == 0x64 && m.data[5] == 0x20 && m.data[7] == 0 && m.data[8] == 2,
+        ),
+        isTrue,
+      );
+
+      editorController.toggleCompareSlot();
+      expect(editorController.patch?.slots[0].parameters[0].currentValue, equals(10.0));
+    });
+
+    test('applyExternalHardwareUpdate does not push onto app Undo stack', () async {
+      expect(editorController.canUndo, isFalse);
+
+      editorController.applyExternalHardwareUpdate(
+        slotIndex: 0,
+        paramIndex: 0,
+        value: 8,
+      );
+
+      expect(editorController.patch!.slots[0].parameters[0].currentValue, equals(8.0));
+      expect(editorController.canUndo, isFalse);
+    });
   });
 }
