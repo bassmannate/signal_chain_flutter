@@ -1,12 +1,27 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 12 Complete (External Format Export & Interoperability)  
-**Active Milestone:** Milestone 12 Complete / Multi-Format Export & XDG Preferences Ready  
+**Current Status:** Milestone 13 Complete (External File Import & Round-Trip Restore)  
+**Active Milestone:** Milestone 13 Complete / Full Export & Import Round-Trip Ready  
 **Last Updated:** 2026-11-12
 
 ---
 
 ## 1. Milestone Roadmap
+
+### 🟢 Milestone 13: External File Import & Round-Trip Restore
+*Status:* **Completed**
+- [x] **Symmetric Import Layer (`lib/core/import/`):**
+  * Implemented `ImportFormat`, `ImportedPatchEntry`, `ImportBatchResult` (`ImportDiagnostic`), `ImportAdapter`, and `PatchImporter` with magic-header and filename-suffix auto-detection.
+  * Added 5 format decoders: `NativeJsonImportAdapter` (single `.json` + `signal_chain_library` bundles), `ZoomPtcfImportAdapter` (`.zptc`), `SymbiosisImportAdapter` (`.60bp.zptc` / `.50gp.zptc` / `.70cdrp.zptc` / `.200dp.zptc` + batch folder restore), `ZoomMultistompStudioImportAdapter` (`.zptc`), and `RawSysExImportAdapter` (Zoom `0x45` 989-byte / `64 12 01`, Line 6 `0x02` 170/169-byte, and multi-message `.syx` streams).
+  * Added `ImportFileSystem` (`LocalImportFileSystem` backed by `dart:io` + `InMemoryImportFileSystem` for deterministic widget tests).
+- [x] **Responsive Import Dialog & Controller Integration (`lib/features/library/`):**
+  * Built `PatchImportDialog` with File & Folder Browser tab (quick locations `SignalChainExports`, `Documents`, `Home`, directory navigation, extension filter, "Import Folder"), Paste JSON / SysEx tab ("Paste from Clipboard"), Preview & Selection pane with format/device badges, per-patch checkboxes, and mismatch/error banners.
+  * Wired `PatchLibraryController.importEntries` with collision-safe ID generation and `PatchImportDialog` into `PatchLibraryDrawerOrPanel`.
+  * Handled mismatched "Load into Editor" cleanly: auto-switches offline `activeFamily` when disconnected, locks `activeFamily` with warning when connected.
+- [x] **Unit & Widget Tests:**
+  * Added `test/core/import/patch_importer_test.dart` (round-trip & malformed-input unit tests) and `test/features/library/patch_import_dialog_test.dart` (FakeAsync-safe widget tests), and updated `test/widget_test.dart`.
+
+---
 
 ### 🟢 Milestone 12: External Format Export & Interoperability
 *Status:* **Completed**

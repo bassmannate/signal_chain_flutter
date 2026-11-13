@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:signal_chain_flutter/features/editor/effect_bank_palette_widget.dart';
 import 'package:signal_chain_flutter/features/editor/slot_inspector_widget.dart';
 import 'package:signal_chain_flutter/features/library/hardware_bank_browser_widget.dart';
+import 'package:signal_chain_flutter/features/library/patch_export_dialog.dart';
+import 'package:signal_chain_flutter/features/library/patch_import_dialog.dart';
 import 'package:signal_chain_flutter/features/library/patch_library_drawer_or_panel.dart';
 import 'package:signal_chain_flutter/main.dart';
 
@@ -120,15 +122,17 @@ void main() {
 
       await tester.tap(find.byKey(const Key('export_patch_zoom_sample_slap_punch_button')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('export_json_text')), findsOneWidget);
+      expect(find.byType(PatchExportDialog), findsOneWidget);
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('import_preset_button')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('import_text_field')), findsOneWidget);
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(PatchImportDialog), findsOneWidget);
+      await tester.tap(find.byKey(const Key('import_cancel_button')));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
 
       expect(errors, isEmpty);
     });
@@ -177,7 +181,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('export_patch_zoom_sample_slap_punch_button')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('export_json_text')), findsOneWidget);
+      expect(find.byType(PatchExportDialog), findsOneWidget);
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
 

@@ -26,17 +26,17 @@ Total Zoom MS Plus catalog coverage: **578** typed effect definitions across all
 
 ---
 
-## Key Features (Through Milestone 12)
+## Key Features (Through Milestone 13)
 
 - **Right-to-Left Pedalboard Signal Chain:** Physical audio-flow strip (`OUT ← ... ← IN`) with drag-and-drop reordering (`LongPressDraggable` on mobile touchscreens, immediate drag on desktop), inter-slot insertion zones, and custom scroll/drag rotary knobs (`RotaryKnobWidget`).
 - **Live Bidirectional Hardware Sync:** Real-time knob, bypass, and active-slot focus synchronization with Zoom MS Plus hardware, plus 100-slot hardware bank browsing and slot writing.
 - **Responsive & Adaptive UI:** Three-tier breakpoints (`compact`, `medium`, `expanded`) across phone portrait/landscape, tablets, and resized desktop windows, with unified vertical scrolling on short viewports and keyboard-safe dialogs.
-- **Local Patch Library & Multi-Format Export:** Manage offline preset libraries and export single patches, full libraries, or hardware banks in:
-  - **Signal Chain Native JSON** (`.json`)
+- **Local Patch Library & Multi-Format Export / Import:** Manage offline preset libraries and export or import/restore single patches, full libraries, or hardware banks in:
+  - **Signal Chain Native JSON** (`.json` single patches and library bundles)
   - **Zoom PTCF** (`.zptc`)
-  - **Symbiosis** (model-suffixed `.<model>.zptc`, e.g., `.60bp.zptc`, and batch backup folders)
+  - **Symbiosis** (model-suffixed `.<model>.zptc`, e.g., `.60bp.zptc` / `.50gp.zptc` / `.70cdrp.zptc` / `.200dp.zptc`, and batch backup folders)
   - **Zoom MultiStomp Studio** (`.zptc`)
-  - **Raw SysEx** (`.syx`)
+  - **Raw SysEx** (`.syx`, including Zoom `0x45` / `64 12 01`, Line 6 `0x02`, and multi-message `.syx` files)
 - **Persistent Preferences:** Default export format and app preferences persist via pure `dart:io` storage (`$XDG_CONFIG_HOME/signal_chain_flutter/preferences.json` on Linux).
 
 ---
@@ -73,5 +73,3 @@ Because the project uses **zero external `pub.dev` packages**, all Flutter comma
 - [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) — Architecture, protocol notes, and milestone highlights
 - [SPEC.md](SPEC.md) — Detailed technical specification
 - [STATUS.md](STATUS.md) — Milestone completion log and test verification status
-
-**Upcoming (Milestone 13):** External `.zptc`, `.syx`, and `.json` file import and round-trip restore.

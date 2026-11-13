@@ -1,16 +1,12 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 
 import '../../models/device_family.dart';
 import '../../models/patch.dart';
-import '../../protocols/device_protocol.dart';
-import '../../protocols/line6_bass_pod_pro_protocol.dart';
-import '../../protocols/zoom_ms_plus_protocol.dart';
 import '../editor/patch_editor_controller.dart';
 import '../theme/studio_theme.dart';
 import 'hardware_bank_browser_widget.dart';
 import 'patch_export_dialog.dart';
+import 'patch_import_dialog.dart';
 import 'patch_library_controller.dart';
 
 /// Responsive preset library and hardware bank browser showing search, device filters,
@@ -241,7 +237,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                         size: 20,
                         color: StudioTheme.colorModulation,
                       ),
-                      tooltip: 'Import JSON / SysEx',
+                      tooltip: 'Import Patches (.json, .zptc, .syx)',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       onPressed: () => _showImportDialog(context),
@@ -482,137 +478,12 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
   }
 
   Future<void> _showImportDialog(BuildContext context) async {
-    final textController = TextEditingController();
-
-    await showDialog(
+    await showDialog<bool>(
       context: context,
-      builder: (ctx) {
-        final mediaSize = MediaQuery.sizeOf(ctx);
-        final isCompact = mediaSize.width < 600;
-        final isShort = mediaSize.height < 500;
-
-        return AlertDialog(
-          backgroundColor: StudioTheme.surfaceElevated,
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: isCompact ? 16 : 40,
-            vertical: isShort ? 12 : 24,
-          ),
-          title: const Row(
-            children: [
-              Icon(Icons.file_download_outlined, color: StudioTheme.colorModulation),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Import Preset (JSON / SysEx)',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 16),
-                ),
-              ),
-            ],
-          ),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 500),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Paste either a JSON preset definition or raw SysEx hex bytes (e.g., "F0 52 ... F7" or "F0 00 01 0C ... F7"):',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    key: const Key('import_text_field'),
-                    controller: textController,
-                    maxLines: isShort ? 4 : 7,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                    decoration: const InputDecoration(
-                      hintText: '{\n  "name": "My Patch", ...\n}\n\nOR:\nF0 52 00 6E ... F7',
-                      border: OutlineInputBorder(),
-                      fillColor: StudioTheme.surface,
-                      filled: true,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              key: const Key('confirm_import_button'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: StudioTheme.colorModulation,
-                foregroundColor: Colors.black,
-              ),
-              onPressed: () async {
-                final text = textController.text.trim();
-                if (text.isEmpty) return;
-
-                try {
-                  if (text.startsWith('{')) {
-                    final patch = await libraryController.importPatchFromJson(text);
-                    if (context.mounted) {
-                      Navigator.of(ctx).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Successfully imported "${patch.name}"')),
-                      );
-                    }
-                  } else {
-                    // Attempt hex parsing
-                    final cleanHex = text.replaceAll(RegExp(r'[^0-9a-fA-F]'), ' ');
-                    final tokens = cleanHex.split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
-                    final bytes = Uint8List.fromList(
-                      tokens.map((t) => int.parse(t, radix: 16)).toList(),
-                    );
-
-                    if (bytes.isEmpty || bytes.first != 0xF0 || bytes.last != 0xF7) {
-                      throw const FormatException('Invalid SysEx: Must start with F0 and end with F7');
-                    }
-
-                    DeviceProtocol protocol;
-                    if (bytes.length >= 2 && bytes[1] == 0x52) {
-                      protocol = const ZoomMsPlusProtocol();
-                    } else if (bytes.length >= 4 &&
-                        bytes[1] == 0x00 &&
-                        bytes[2] == 0x01 &&
-                        bytes[3] == 0x0C) {
-                      protocol = const Line6BassPodProProtocol();
-                    } else {
-                      protocol = libraryController.deviceFilter == DeviceFamily.line6BassPodPro
-                          ? const Line6BassPodProProtocol()
-                          : const ZoomMsPlusProtocol();
-                    }
-
-                    final patch = await libraryController.importPatchSysEx(bytes, protocol);
-                    if (context.mounted) {
-                      Navigator.of(ctx).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Successfully imported "${patch.name}" from SysEx')),
-                      );
-                    }
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Import failed: $e'),
-                        backgroundColor: Colors.redAccent,
-                      ),
-                    );
-                  }
-                }
-              },
-              child: const Text('Import'),
-            ),
-          ],
-        );
-      },
+      builder: (_) => PatchImportDialog(
+        libraryController: libraryController,
+        editorController: editorController,
+      ),
     );
   }
 

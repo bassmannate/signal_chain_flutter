@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'core/import/import_file_system.dart';
 import 'core/midi/composite_midi_transport.dart';
 import 'core/midi/linux_alsa_midi_transport.dart';
 import 'core/midi/android_midi_transport.dart';
@@ -125,6 +126,9 @@ class _SignalChainAppState extends State<SignalChainApp> {
           preferencesRepository: _isRunningInWidgetTest
               ? InMemoryPreferencesRepository()
               : _createDefaultPreferencesRepository(),
+          importFileSystem: _isRunningInWidgetTest
+              ? InMemoryImportFileSystem()
+              : const LocalImportFileSystem(),
         );
 
     // Initial async setup

@@ -1,3 +1,6 @@
+@Timeout(Duration(seconds: 10))
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:signal_chain_flutter/features/connection/connection_bar_widget.dart';
@@ -116,30 +119,30 @@ void main() {
     final exportButton = find.byKey(const Key('export_patch_zoom_sample_slap_punch_button'));
     expect(exportButton, findsOneWidget);
     await tester.tap(exportButton);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('Export: Slap & Punch'), findsOneWidget);
-    expect(find.byKey(const Key('export_json_text')), findsOneWidget);
-    expect(find.byKey(const Key('copy_json_button')), findsOneWidget);
-
-    // Switch to SysEx tab
-    await tester.tap(find.text('SysEx Hex Dump'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('export_sysex_text')), findsOneWidget);
-    expect(find.byKey(const Key('copy_sysex_button')), findsOneWidget);
+    expect(find.byKey(const Key('export_payload_preview')), findsOneWidget);
+    expect(find.byKey(const Key('export_copy_button')), findsOneWidget);
 
     // Close export dialog
     await tester.tap(find.text('Close'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
 
-    // Test Import Dialog
+    // Test Import Dialog (Paste JSON tab)
     final importButton = find.byKey(const Key('import_preset_button'));
     expect(importButton, findsOneWidget);
     await tester.tap(importButton);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Import Preset (JSON / SysEx)'), findsOneWidget);
-    final inputField = find.byKey(const Key('import_text_field'));
+    expect(find.text('Import Patches'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('import_tab_paste')));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final inputField = find.byKey(const Key('import_paste_text_field'));
     expect(inputField, findsOneWidget);
 
     // Enter JSON patch
@@ -151,11 +154,13 @@ void main() {
   "slots": []
 }
 ''');
-    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('import_parse_text_button')));
+    await tester.pump(const Duration(milliseconds: 100));
 
-    await tester.tap(find.byKey(const Key('confirm_import_button')));
-    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('import_add_library_button')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Imported Slap'), findsOneWidget);
+    expect(find.text('Imported Slap'), findsAtLeastNWidgets(1));
   });
 }

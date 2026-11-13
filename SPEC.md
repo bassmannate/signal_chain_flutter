@@ -8,6 +8,7 @@ The codebase is organized strictly under Clean Architecture principles to ensure
 lib/
 ├── core/
 │   ├── export/             # ExportAdapter registry, format serializers & file writer
+│   ├── import/             # ImportAdapter decoders, PatchImporter & ImportFileSystem
 │   ├── midi/               # Abstract transport contracts & testing doubles
 │   └── storage/            # Pure dart:io preset library & preferences repositories
 ├── protocols/              # Pure Dart SysEx encoders, decoders, bit-packers
