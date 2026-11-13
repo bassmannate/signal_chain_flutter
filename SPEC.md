@@ -445,7 +445,16 @@ Implemented using Flutter's built-in `ChangeNotifier` and clean constructor depe
 
 ### 9.3 Windows Distribution
 - **Metadata:** Clean application metadata in `windows/runner/Runner.rc` ("Signal Chain", "Signal Chain Contributors").
-- **Packaging:** PowerShell script `tool/package_windows_zip.ps1` bundling release executable, assets, and DLLs into a clean portable release ZIP.
+- **Packaging:** PowerShell script `tool/package_windows_zip.ps1` bundling release executable, assets, and DLLs into a clean portable release ZIP (`dist/signal-chain-windows-x64-<version>.zip`).
+
+### 9.4 Automated GitHub Releases (`.github/workflows/release.yml`)
+- **Trigger:** Pushing a `v*.*.*` tag (`GITHUB_REF_NAME`).
+- **Verification Gate (`verify`):** Runs `flutter analyze --no-pub` and `flutter test --no-pub` on `ubuntu-latest`.
+- **Platform Build Jobs:**
+  - `build-linux`: Builds `flutter build linux --release --no-pub`, downloads `appimagetool`, runs `./tool/package_linux_deb.sh "${VERSION}"` and `./tool/package_linux_appimage.sh "${VERSION}"` (with `APPIMAGE_EXTRACT_AND_RUN=1`), and uploads `dist/*.deb` and `dist/*.AppImage`.
+  - `build-android`: Builds `flutter build apk --release --no-pub` and uploads `build/app/outputs/flutter-apk/app-release.apk`.
+  - `build-windows`: Builds `flutter build windows --release --no-pub`, runs `pwsh -File tool/package_windows_zip.ps1 -Version $version`, and uploads `dist/*.zip`.
+- **Release Publishing (`publish-release`):** Downloads all artifacts, generates `SHA256SUMS.txt`, and publishes via `softprops/action-gh-release@v3`.
 
 ---
 

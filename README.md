@@ -61,6 +61,8 @@ Because the project uses **zero external `pub.dev` packages**, all Flutter comma
   - Desktop & AppStream metadata: [`linux/packaging/signal-chain.desktop`](linux/packaging/signal-chain.desktop) and [`linux/packaging/io.github.bassmannate.signal_chain.appdata.xml`](linux/packaging/io.github.bassmannate.signal_chain.appdata.xml)
 - **Windows portable ZIP packaging:**
   - `./tool/package_windows_zip.ps1`
+- **Automated GitHub Releases:**
+  - Pushing a `v*.*.*` tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which runs `flutter analyze --no-pub` and `flutter test --no-pub`, builds Linux (`.deb` and `.AppImage`), Android (`app-release.apk`), and Windows (`.zip`) artifacts, generates `SHA256SUMS.txt`, and publishes the GitHub Release via `softprops/action-gh-release@v3`.
 - **Static analysis & tests:**
   ```bash
   flutter analyze --no-pub

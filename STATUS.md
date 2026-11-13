@@ -110,6 +110,8 @@
 - [x] **Windows Packaging Configuration:**
   * Updated `windows/runner/Runner.rc` with official application branding, company name ("Signal Chain Contributors"), and description.
   * Created PowerShell distribution script `tool/package_windows_zip.ps1` for assembling clean portable release ZIP archives.
+- [x] **Automated GitHub Release Workflow (`.github/workflows/release.yml`):**
+  * Configured `v*.*.*` tag-triggered CI/CD workflow with `verify` (`flutter analyze --no-pub` & `flutter test --no-pub`), `build-linux` (`./tool/package_linux_deb.sh` + `./tool/package_linux_appimage.sh` outputting `dist/*.deb` & `dist/*.AppImage`), `build-android` (`app-release.apk`), `build-windows` (`tool/package_windows_zip.ps1` outputting `dist/*.zip`), `SHA256SUMS.txt` generation, and `softprops/action-gh-release@v3`.
 - [x] **Targeted Unit Test Suites (100% passing):**
   * `test/packaging_config_test.dart` (5 tests verifying desktop launcher, AppStream MetaInfo XML fields, executable script permissions, Android features, USB filter VIDs, and Windows PowerShell packaging script).
   * Full project test suite: 219 tests passing across all suites (`flutter test --no-pub`).
