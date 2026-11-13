@@ -1,5 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
+import '../../core/export/export_adapter_registry.dart';
+import '../../core/export/export_file_writer.dart';
+import '../../core/export/export_format.dart';
+import '../../core/export/export_payload.dart';
+import '../../core/storage/app_preferences_repository.dart';
 import '../../core/storage/patch_library_repository.dart';
 import '../../models/device_family.dart';
 import '../../models/patch.dart';
@@ -10,6 +17,9 @@ import '../editor/patch_editor_controller.dart';
 /// filtering, tag filtering, and JSON/SysEx import/export.
 class PatchLibraryController extends ChangeNotifier {
   final PatchLibraryRepository repository;
+  final AppPreferencesRepository preferencesRepository;
+  final ExportAdapterRegistry exportRegistry;
+  final ExportFileWriter exportFileWriter;
 
   DeviceFamily? _deviceFilter;
   String _searchQuery = '';
@@ -18,11 +28,18 @@ class PatchLibraryController extends ChangeNotifier {
   List<Patch> _patches = [];
   bool _isLoading = false;
   String? _errorMessage;
+  ExportFormat? _defaultExportFormat;
 
   PatchLibraryController({
     required this.repository,
+    AppPreferencesRepository? preferencesRepository,
+    ExportAdapterRegistry? exportRegistry,
+    ExportFileWriter? exportFileWriter,
     DeviceFamily? initialDeviceFilter,
-  }) : _deviceFilter = initialDeviceFilter;
+  })  : preferencesRepository = preferencesRepository ?? InMemoryPreferencesRepository(),
+        exportRegistry = exportRegistry ?? ExportAdapterRegistry.standard(),
+        exportFileWriter = exportFileWriter ?? const ExportFileWriter(),
+        _deviceFilter = initialDeviceFilter;
 
   /// Currently filtered list of presets in the library.
   List<Patch> get patches => List.unmodifiable(_patches);
@@ -41,6 +58,53 @@ class PatchLibraryController extends ChangeNotifier {
 
   /// Most recent error message, or null.
   String? get errorMessage => _errorMessage;
+
+  /// Persisted default export format, or null if not yet set.
+  ExportFormat? get defaultExportFormat => _defaultExportFormat;
+
+  /// Loads persisted user preferences (such as [defaultExportFormat]).
+  Future<void> loadPreferences() async {
+    _defaultExportFormat = await preferencesRepository.getDefaultExportFormat();
+    notifyListeners();
+  }
+
+  /// Persists [format] as the default export format (or clears it if null).
+  Future<void> setDefaultExportFormat(ExportFormat? format) async {
+    _defaultExportFormat = format;
+    await preferencesRepository.setDefaultExportFormat(format);
+    notifyListeners();
+  }
+
+  /// Serializes a single [patch] using the adapter for [format].
+  ExportPayload exportPatchWithFormat(Patch patch, ExportFormat format) {
+    return exportRegistry.adapterFor(format).exportPatch(patch);
+  }
+
+  /// Serializes [patchesOverride] (or the current library patches) using [format].
+  ExportPayload exportLibraryWithFormat(
+    ExportFormat format, {
+    List<Patch>? patchesOverride,
+    String libraryName = 'signal_chain_library',
+  }) {
+    final targetPatches = patchesOverride ?? _patches;
+    return exportRegistry.adapterFor(format).exportLibrary(
+          targetPatches,
+          libraryName: libraryName,
+        );
+  }
+
+  /// Writes [payload] to disk via [exportFileWriter] and returns the output path.
+  Future<String> saveExportToFile(
+    ExportPayload payload, {
+    Directory? targetDir,
+    String? nameOverride,
+  }) {
+    return exportFileWriter.writePayload(
+      payload,
+      targetDir: targetDir,
+      nameOverride: nameOverride,
+    );
+  }
 
   /// Refreshes the patch list from [repository] using current filters.
   Future<void> refresh() async {

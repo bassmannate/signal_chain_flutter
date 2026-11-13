@@ -34,30 +34,33 @@ class ConnectionBarWidget extends StatelessWidget {
 
         return LayoutBuilder(
           builder: (context, constraints) {
-            final isCompact = constraints.maxWidth < 800;
+            final isCompact = constraints.maxWidth < 600;
 
-            final statusAndPort = Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildStatusBadge(isConnected),
-                const SizedBox(width: 12),
-                _buildPortDropdown(context, selectedPort, availablePorts),
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: connectionController.isScanning
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.refresh, size: 20),
-                  tooltip: 'Refresh MIDI Ports',
-                  onPressed: connectionController.isScanning
-                      ? null
-                      : () => connectionController.refreshPorts(),
-                ),
-              ],
+            final refreshButton = IconButton(
+              icon: connectionController.isScanning
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh, size: 20),
+              tooltip: 'Refresh MIDI Ports',
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              padding: EdgeInsets.zero,
+              onPressed: connectionController.isScanning
+                  ? null
+                  : () => connectionController.refreshPorts(),
             );
+
+            final libraryButton = onToggleLibrary != null
+                ? IconButton(
+                    key: const Key('toggle_library_button'),
+                    icon: const Icon(Icons.folder_special_outlined),
+                    tooltip: 'Toggle Preset Library',
+                    constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                    onPressed: onToggleLibrary,
+                  )
+                : null;
 
             final deviceSelector = Row(
               mainAxisSize: MainAxisSize.min,
@@ -66,11 +69,12 @@ class ConnectionBarWidget extends StatelessWidget {
                   'Device:',
                   style: TextStyle(fontSize: 13, color: Colors.grey),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 DropdownButton<DeviceFamily>(
                   value: connectionController.activeFamily,
                   dropdownColor: StudioTheme.surfaceElevated,
                   underline: const SizedBox.shrink(),
+                  isDense: isCompact,
                   style: const TextStyle(
                     fontSize: 13,
                     color: Colors.white,
@@ -107,89 +111,92 @@ class ConnectionBarWidget extends StatelessWidget {
               ],
             );
 
-            final actionButtons = Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (editorController.isDirty)
-                  Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: StudioTheme.colorDirty.withValues(alpha: 0.15),
-                      border: Border.all(color: StudioTheme.colorDirty, width: 1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.edit, size: 12, color: StudioTheme.colorDirty),
-                        SizedBox(width: 4),
-                        Text(
-                          'UNSAVED',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: StudioTheme.colorDirty,
-                            letterSpacing: 0.8,
-                          ),
+            final buttonPadding = isCompact
+                ? const EdgeInsets.symmetric(horizontal: 8, vertical: 6)
+                : const EdgeInsets.symmetric(horizontal: 10, vertical: 6);
+            final actionItems = <Widget>[
+              if (editorController.isDirty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: StudioTheme.colorDirty.withValues(alpha: 0.15),
+                    border: Border.all(color: StudioTheme.colorDirty, width: 1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit, size: 12, color: StudioTheme.colorDirty),
+                      SizedBox(width: 4),
+                      Text(
+                        'UNSAVED',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: StudioTheme.colorDirty,
+                          letterSpacing: 0.8,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-
-                // Pull Patch Button
-                ElevatedButton.icon(
-                  key: const Key('pull_patch_button'),
-                  icon: const Icon(Icons.download, size: 16),
-                  label: const Text('Pull Patch'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: StudioTheme.surfaceElevated,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  ),
-                  onPressed: isConnected && !editorController.isLoading
-                      ? () => _pullPatch(context)
-                      : null,
                 ),
-                const SizedBox(width: 8),
 
-                // Push Patch Button
-                ElevatedButton.icon(
-                  key: const Key('push_patch_button'),
-                  icon: const Icon(Icons.upload, size: 16),
-                  label: const Text('Push Patch'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: StudioTheme.surfaceElevated,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  ),
-                  onPressed: isConnected &&
-                          editorController.patch != null &&
-                          !editorController.isLoading
-                      ? () => _pushPatch(context)
-                      : null,
+              // Pull Patch Button
+              ElevatedButton.icon(
+                key: const Key('pull_patch_button'),
+                icon: const Icon(Icons.download, size: 16),
+                label: const Text('Pull Patch'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: StudioTheme.surfaceElevated,
+                  foregroundColor: Colors.white,
+                  padding: buttonPadding,
+                  visualDensity: isCompact ? VisualDensity.compact : VisualDensity.standard,
                 ),
-                const SizedBox(width: 8),
+                onPressed: isConnected && !editorController.isLoading
+                    ? () => _pullPatch(context)
+                    : null,
+              ),
 
-                // Save to Library Button
-                OutlinedButton.icon(
-                  key: const Key('save_to_library_button'),
-                  icon: const Icon(Icons.bookmark_add, size: 16),
-                  label: const Text('Save to Library'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: StudioTheme.colorModulation,
-                    side: const BorderSide(color: StudioTheme.colorModulation),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  ),
-                  onPressed: editorController.patch != null
-                      ? () => _saveCurrentToLibrary(context)
-                      : null,
+              // Push Patch Button
+              ElevatedButton.icon(
+                key: const Key('push_patch_button'),
+                icon: const Icon(Icons.upload, size: 16),
+                label: const Text('Push Patch'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: StudioTheme.surfaceElevated,
+                  foregroundColor: Colors.white,
+                  padding: buttonPadding,
+                  visualDensity: isCompact ? VisualDensity.compact : VisualDensity.standard,
                 ),
-              ],
-            );
+                onPressed: isConnected &&
+                        editorController.patch != null &&
+                        !editorController.isLoading
+                    ? () => _pushPatch(context)
+                    : null,
+              ),
+
+              // Save to Library Button
+              OutlinedButton.icon(
+                key: const Key('save_to_library_button'),
+                icon: const Icon(Icons.bookmark_add, size: 16),
+                label: const Text('Save to Library'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: StudioTheme.colorModulation,
+                  side: const BorderSide(color: StudioTheme.colorModulation),
+                  padding: buttonPadding,
+                  visualDensity: isCompact ? VisualDensity.compact : VisualDensity.standard,
+                ),
+                onPressed: editorController.patch != null
+                    ? () => _saveCurrentToLibrary(context)
+                    : null,
+              ),
+            ];
 
             return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: EdgeInsets.symmetric(
+                horizontal: isCompact ? 10 : 16,
+                vertical: 8,
+              ),
               decoration: const BoxDecoration(
                 color: StudioTheme.surface,
                 border: Border(
@@ -202,50 +209,69 @@ class ConnectionBarWidget extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Expanded(child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: statusAndPort)),
-                            if (onToggleLibrary != null) ...[
-                              IconButton(
-                                key: const Key('toggle_library_button'),
-                                icon: const Icon(Icons.folder_special_outlined),
-                                tooltip: 'Toggle Preset Library',
-                                onPressed: onToggleLibrary,
+                            _buildStatusBadge(isConnected, compact: true),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildPortDropdown(
+                                context,
+                                selectedPort,
+                                availablePorts,
+                                expandDropdown: true,
                               ),
-                            ],
+                            ),
+                            refreshButton,
+                            ?libraryButton,
                           ],
                         ),
                         const SizedBox(height: 6),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              deviceSelector,
-                              const SizedBox(width: 12),
-                              actionButtons,
-                            ],
-                          ),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            deviceSelector,
+                            ...actionItems,
+                          ],
                         ),
                       ],
                     )
-                  : SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          statusAndPort,
-                          const SizedBox(width: 16),
-                          deviceSelector,
-                          const SizedBox(width: 24),
-                          actionButtons,
-                          if (onToggleLibrary != null) ...[
-                            const SizedBox(width: 8),
-                            IconButton(
-                              key: const Key('toggle_library_button'),
-                              icon: const Icon(Icons.folder_special_outlined),
-                              tooltip: 'Toggle Preset Library',
-                              onPressed: onToggleLibrary,
-                            ),
-                          ],
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Wrap(
+                            spacing: 12,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _buildStatusBadge(isConnected),
+                                  const SizedBox(width: 10),
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(maxWidth: 220),
+                                    child: _buildPortDropdown(
+                                      context,
+                                      selectedPort,
+                                      availablePorts,
+                                      expandDropdown: availablePorts.isNotEmpty,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  refreshButton,
+                                ],
+                              ),
+                              deviceSelector,
+                              ...actionItems,
+                            ],
+                          ),
+                        ),
+                        if (libraryButton != null) ...[
+                          const SizedBox(width: 8),
+                          libraryButton,
                         ],
-                      ),
+                      ],
                     ),
             );
           },
@@ -254,9 +280,9 @@ class ConnectionBarWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusBadge(bool isConnected) {
+  Widget _buildStatusBadge(bool isConnected, {bool compact = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: compact ? 4 : 5),
       decoration: BoxDecoration(
         color: isConnected
             ? StudioTheme.colorConnected.withValues(alpha: 0.15)
@@ -286,9 +312,9 @@ class ConnectionBarWidget extends StatelessWidget {
           Text(
             isConnected ? 'CONNECTED' : 'DISCONNECTED',
             style: TextStyle(
-              fontSize: 11,
+              fontSize: compact ? 10 : 11,
               fontWeight: FontWeight.bold,
-              letterSpacing: 0.8,
+              letterSpacing: compact ? 0.5 : 0.8,
               color: isConnected
                   ? StudioTheme.colorConnected
                   : StudioTheme.colorDisconnected,
@@ -302,11 +328,14 @@ class ConnectionBarWidget extends StatelessWidget {
   Widget _buildPortDropdown(
     BuildContext context,
     MidiPortDescriptor? selectedPort,
-    List<MidiPortDescriptor> availablePorts,
-  ) {
+    List<MidiPortDescriptor> availablePorts, {
+    bool expandDropdown = false,
+  }) {
     if (availablePorts.isEmpty) {
       return const Text(
         'No MIDI Ports Found',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(fontSize: 13, color: Colors.grey),
       );
     }
@@ -314,7 +343,14 @@ class ConnectionBarWidget extends StatelessWidget {
     return DropdownButton<String>(
       key: const Key('midi_port_dropdown'),
       value: selectedPort?.id,
-      hint: const Text('Select MIDI Port', style: TextStyle(fontSize: 13)),
+      isExpanded: expandDropdown,
+      isDense: expandDropdown,
+      hint: const Text(
+        'Select MIDI Port',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(fontSize: 13),
+      ),
       dropdownColor: StudioTheme.surfaceElevated,
       underline: const SizedBox.shrink(),
       items: availablePorts.map((p) {
@@ -322,6 +358,8 @@ class ConnectionBarWidget extends StatelessWidget {
           value: p.id,
           child: Text(
             p.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 13, color: Colors.white),
           ),
         );

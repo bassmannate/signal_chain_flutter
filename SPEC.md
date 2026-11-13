@@ -7,7 +7,9 @@ The codebase is organized strictly under Clean Architecture principles to ensure
 ```
 lib/
 ├── core/
-│   └── midi/               # Abstract transport contracts & testing doubles
+│   ├── export/             # ExportAdapter registry, format serializers & file writer
+│   ├── midi/               # Abstract transport contracts & testing doubles
+│   └── storage/            # Pure dart:io preset library & preferences repositories
 ├── protocols/              # Pure Dart SysEx encoders, decoders, bit-packers
 ├── models/                 # Immutable domain models (devices, patches, FX, params)
 └── features/               # Presentation layer & Riverpod state controllers
@@ -414,6 +416,11 @@ Implemented using Flutter's built-in `ChangeNotifier` and clean constructor depe
   * **Modulation:** Electric Cyan (`#00E5FF`)
   * **Delay / Reverb:** Royal Blue (`#3D5AFE`)
   * **Pitch / Synth / SFX:** Bright Pink (`#FF4081`)
+- `ResponsiveLayoutMetrics` & `ViewportSizeClass` (`lib/features/theme/responsive_layout.dart`):
+  * **Breakpoints:** `compact` (`< 600px` width), `medium` (`600–1024px` width), and `expanded` (`> 1024px` width), plus `isShortEditorBody(availableBodyHeight < 440)` for landscape phones and Android `adjustResize` soft keyboards.
+  * **Adaptive Panels & Drawers:** `PatchLibraryDrawerOrPanel` (`Local Presets` | `Hardware Bank`) docks as a right side panel (`300–340px`) on `expanded` viewports (`> 1024px`, height `>= 480px`) and collapses into an `endDrawer` (`min(360px, 88% width)`) on `compact` and `medium` viewports.
+  * **Adaptive Inspector & Palette:** Side-by-side when editor body width `>= 700px` and non-short (`>= 440px`); switches cleanly to an `INSPECTOR | EFFECT PALETTE` segmented tab toggle on narrow/short screens, wrapped in a unified vertical `SingleChildScrollView` on short viewports (`< 440px` body height) with `LayoutBuilder` unbounded-height awareness in `SlotInspectorWidget` and `EffectBankPaletteWidget`.
+  * **Touch-Friendly Drag & Controls:** Uses `LongPressDraggable` on mobile touch platforms (Android/iOS) so swipes scroll the horizontal signal chain strip and effect palette grid naturally while preserving immediate `Draggable` on desktop; toolbars, metadata header, and dialogs (`EffectPickerDialog`, `WriteToSlotDialog`, Import/Export) use `Wrap`, `SingleChildScrollView`, `CustomScrollView`, and viewport-clamped sizing.
 
 ---
 

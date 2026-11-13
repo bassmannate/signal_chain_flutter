@@ -240,10 +240,11 @@ class _RotaryKnobWidgetState extends State<RotaryKnobWidget> {
         });
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+        constraints: const BoxConstraints(minHeight: 28),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         decoration: BoxDecoration(
           color: StudioTheme.surface,
-          borderRadius: BorderRadius.circular(3),
+          borderRadius: BorderRadius.circular(4),
           border: Border.all(
             color: widget.accentColor.withValues(alpha: 0.4),
             width: 0.5,
@@ -266,7 +267,7 @@ class _RotaryKnobWidgetState extends State<RotaryKnobWidget> {
               ),
             ),
             const SizedBox(width: 2),
-            Icon(Icons.arrow_drop_down, size: 12, color: widget.accentColor),
+            Icon(Icons.arrow_drop_down, size: 13, color: widget.accentColor),
           ],
         ),
       ),

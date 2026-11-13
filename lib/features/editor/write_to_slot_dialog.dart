@@ -42,8 +42,14 @@ class _WriteToSlotDialogState extends State<WriteToSlotDialog> {
     final totalSlots = widget.connectionController.activeFamily.totalMemorySlots;
     final bankSlots = widget.connectionController.bankSlots;
 
+    final isCompact = MediaQuery.sizeOf(context).width < 600;
+
     return AlertDialog(
       backgroundColor: StudioTheme.surfaceElevated,
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: isCompact ? 16 : 40,
+        vertical: 16,
+      ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: const BorderSide(color: StudioTheme.surfaceBorder),
@@ -52,113 +58,122 @@ class _WriteToSlotDialogState extends State<WriteToSlotDialog> {
         children: [
           const Icon(Icons.save_alt, color: StudioTheme.colorModulation, size: 22),
           const SizedBox(width: 8),
-          const Text(
-            'Write to Hardware Slot',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
+          const Expanded(
+            child: Text(
+              'Write to Hardware Slot',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
           ),
         ],
       ),
-      content: SizedBox(
-        width: 380,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (patch != null) ...[
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (patch != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: StudioTheme.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: StudioTheme.surfaceBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.music_note, color: Colors.grey, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'TARGET PRESET',
+                              style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              patch.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: StudioTheme.colorModulation,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${patch.slots.length} effects',
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              Text(
+                'Select Destination Slot (0–${totalSlots - 1}):',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70),
+              ),
+              const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
                   color: StudioTheme.surface,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: StudioTheme.surfaceBorder),
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.music_note, color: Colors.grey, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'TARGET PRESET',
-                            style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            patch.name,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: StudioTheme.colorModulation,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      '${patch.slots.length} effects',
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                  ],
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    key: const Key('write_slot_dropdown'),
+                    value: _selectedSlot,
+                    isExpanded: true,
+                    dropdownColor: StudioTheme.surfaceElevated,
+                    icon: const Icon(Icons.arrow_drop_down, color: StudioTheme.colorModulation),
+                    items: List.generate(totalSlots, (index) {
+                      final bank = (index ~/ 10) + 1;
+                      final prog = (index % 10) + 1;
+                      String slotDesc = '';
+                      if (index < bankSlots.length && bankSlots[index].isLoaded) {
+                        slotDesc = ' - ${bankSlots[index].name}';
+                      }
+                      return DropdownMenuItem<int>(
+                        value: index,
+                        child: Text(
+                          'Slot ${index.toString().padLeft(2, '0')} ($bank-$prog)$slotDesc',
+                          style: const TextStyle(fontSize: 13, color: Colors.white),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _selectedSlot = val);
+                      }
+                    },
+                  ),
                 ),
               ),
-              const SizedBox(height: 16),
-            ],
-            const Text(
-              'Select Destination Slot (0–99):',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: StudioTheme.surface,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: StudioTheme.surfaceBorder),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<int>(
-                  key: const Key('write_slot_dropdown'),
-                  value: _selectedSlot,
-                  isExpanded: true,
-                  dropdownColor: StudioTheme.surfaceElevated,
-                  icon: const Icon(Icons.arrow_drop_down, color: StudioTheme.colorModulation),
-                  items: List.generate(totalSlots, (index) {
-                    final bank = (index ~/ 10) + 1;
-                    final prog = (index % 10) + 1;
-                    String slotDesc = '';
-                    if (index < bankSlots.length && bankSlots[index].isLoaded) {
-                      slotDesc = ' - ${bankSlots[index].name}';
-                    }
-                    return DropdownMenuItem<int>(
-                      value: index,
-                      child: Text(
-                        'Slot ${index.toString().padLeft(2, '0')} ($bank-$prog)$slotDesc',
-                        style: const TextStyle(fontSize: 13, color: Colors.white),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  }),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() => _selectedSlot = val);
-                    }
-                  },
+              if (_statusMessage != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _statusMessage!,
+                  style: const TextStyle(fontSize: 12, color: Colors.redAccent),
                 ),
-              ),
-            ),
-            if (_statusMessage != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _statusMessage!,
-                style: const TextStyle(fontSize: 12, color: Colors.redAccent),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
       actions: [

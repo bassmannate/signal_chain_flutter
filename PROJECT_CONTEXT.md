@@ -27,6 +27,8 @@ The goal of this Flutter rewrite is to replace the heavier Electron desktop foot
 - **Milestone 8.11:** Linux ALSA Warm-Restart Reliability & Handshake Pacing (`amidi` Cleanup, Port Drain, Init Pacing & Retry Guards) — **Completed**
 - **Milestone 9:** Platform Packaging & Release Distribution (Linux .deb/AppImage/.desktop, Android USB Host OTG, Windows Portable ZIP, AppImageHub / AppStream compliance) — **Completed**
 - **Milestone 10:** Platform Expansion & Multi-Device Support (Native Android USB MIDI Transport hardware-verified on Fire HD 10 & Pixel 10 Pro XL with Zoom MS-60B+; Multi-Pedal Zoom MS Plus Catalogs: MS-60B+ 98, MS-50G+ 106, MS-70CDR+ 150, MS-200D+ 224; Hardware-Aligned Line 6 Bass POD Pro Baseline) — **Completed**
+- **Milestone 11:** Responsive & Adaptive UI Polish (Three-tier `compact`/`medium`/`expanded` breakpoints in `ResponsiveLayoutMetrics`, wrapping toolbars & metadata header, short-viewport unified vertical scrolling, `LongPressDraggable` on Android/iOS touchscreens, and keyboard-safe scrollable dialogs) — **Completed**
+- **Milestone 12:** External Format Export & Interoperability (`ExportAdapter` registry for Native JSON, Zoom PTCF `.zptc`, Symbiosis model-suffixed `.zptc` / batch folders, Zoom MultiStomp Studio, and Raw SysEx `.syx`; pure `dart:io` XDG preferences persistence & `ExportFileWriter`; responsive `PatchExportDialog` wired into `PatchLibraryDrawerOrPanel` and `HardwareBankBrowserWidget`) — **Completed**
 
 ---
 
@@ -235,7 +237,21 @@ The project adheres strictly to Clean Architecture separation of concerns:
 
 ---
 
-## 14. Terminal Sandbox Execution Guidelines
+## 14. Responsive & Adaptive UI Polish (Milestone 11)
+
+- **Three-Tier Breakpoints & Short-Viewport Handling (`lib/features/theme/responsive_layout.dart` & `lib/main.dart`):**
+  - Implemented `ResponsiveLayoutMetrics` with `ViewportSizeClass` (`compact < 600px`, `medium 600–1024px`, `expanded > 1024px`) and `isShortEditorBody(availableBodyHeight < 440)`.
+  - Collapsed `PatchLibraryDrawerOrPanel` (`Local Presets` | `Hardware Bank`) into an adaptive `endDrawer` on compact and medium viewports (`<= 1024px`, e.g., Pixel 10 Pro XL and Fire HD 10 `1024x600`), while keeping `SlotInspectorWidget` and `EffectBankPaletteWidget` side-by-side when editor body width `>= 700px` and non-short.
+  - Replaced `TabBarView` on narrow/short screens with an explicit `INSPECTOR | EFFECT PALETTE` segmented tab bar and unified vertical `SingleChildScrollView` on short viewports (`844x390` landscape or open Android soft keyboard), paired with `LayoutBuilder` bounded/unbounded height awareness in `SlotInspectorWidget` and `EffectBankPaletteWidget`.
+- **Wrapping Toolbars, Scrollable Dialogs & Touch Ergonomics:**
+  - Replaced horizontal `SingleChildScrollView` clipping in `ConnectionBarWidget` and `PatchMetadataHeaderWidget` with responsive `Wrap` layouts and ellipsized port dropdowns.
+  - Removed rigid outer `height: 255` on `SignalChainStripWidget`, scaled card grid `mainAxisExtent` with `textScalerOf` in `EffectBankPaletteWidget`, and enlarged touch targets on slot controls, tempo `+/-`, bank slot actions, and discrete `RotaryKnobWidget` menus.
+  - Switched reorderable slots and palette cards to `LongPressDraggable` on mobile touch platforms (Android/iOS) so horizontal/vertical swipes scroll naturally while keeping immediate `Draggable` on desktop.
+  - Made `EffectPickerDialog`, `WriteToSlotDialog`, and `PatchLibraryDrawerOrPanel` Import/Export dialogs viewport-clamped and scrollable down to keyboard-resized heights.
+
+---
+
+## 15. Terminal Sandbox Execution Guidelines
 
 When running `flutter` or `dart` commands in sandboxed environments:
 1. **Binary Location:** Flutter is installed at `/home/nreynolds/.local/share/flutter/bin/flutter` and Dart at `/home/nreynolds/.local/share/flutter/bin/dart`. Ensure the path is prefixed or exported:

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/effect_slot.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
+import '../theme/responsive_layout.dart';
 import '../theme/studio_theme.dart';
 import 'effect_bank_palette_widget.dart';
 import 'effect_picker_dialog.dart';
@@ -20,14 +21,20 @@ class SignalChainStripWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final viewportSize = MediaQuery.sizeOf(context);
+    final isCompactOrShort = viewportSize.width < 600 || viewportSize.height < 640;
+    final double stripHeight = isCompactOrShort ? 156.0 : 172.0;
+    final double badgeHeight = stripHeight - 20.0;
+
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
         final patch = controller.patch;
         if (patch == null || patch.slots.isEmpty) {
           return Container(
-            height: 220,
+            constraints: const BoxConstraints(minHeight: 160),
             alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
             decoration: BoxDecoration(
               color: StudioTheme.surface,
               borderRadius: BorderRadius.circular(8),
@@ -43,13 +50,13 @@ class SignalChainStripWidget extends StatelessWidget {
         final canAdd = controller.canAddEffectSlot;
 
         return Container(
-          height: 255,
           decoration: BoxDecoration(
             color: StudioTheme.surface,
             border: Border.all(color: StudioTheme.surfaceBorder),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Metadata Header (Patch Name TextField, Tempo Slider/Input, Write to Slot)
@@ -62,13 +69,17 @@ class SignalChainStripWidget extends StatelessWidget {
                   children: [
                     const Icon(Icons.arrow_back, size: 14, color: Colors.grey),
                     const SizedBox(width: 6),
-                    Text(
-                      'SIGNAL CHAIN (${patch.slots.length} SLOTS)',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.0,
-                        color: Colors.grey,
+                    Flexible(
+                      child: Text(
+                        'SIGNAL CHAIN (${patch.slots.length} SLOTS)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.0,
+                          color: Colors.grey,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -82,12 +93,17 @@ class SignalChainStripWidget extends StatelessWidget {
                     ),
                     const Spacer(),
                     if (patch.programNumber != null)
-                      Text(
-                        'HARDWARE SLOT #${patch.programNumber!.toString().padLeft(2, '0')}',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: StudioTheme.colorFilterEq,
+                      Flexible(
+                        child: Text(
+                          'HARDWARE SLOT #${patch.programNumber!.toString().padLeft(2, '0')}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: StudioTheme.colorFilterEq,
+                          ),
                         ),
                       ),
                   ],
@@ -95,12 +111,20 @@ class SignalChainStripWidget extends StatelessWidget {
               ),
 
               // Slot Cards, Insertion Zones, & Add Card (Right-to-Left pedalboard order)
-              Expanded(
+              SizedBox(
+                height: stripHeight,
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   child: Row(
-                    children: _buildRtlSignalChainElements(context, patch.slots, canAdd),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: _buildRtlSignalChainElements(
+                      context,
+                      patch.slots,
+                      canAdd,
+                      badgeHeight: badgeHeight,
+                      cardHeight: stripHeight - 12.0,
+                    ),
                   ),
                 ),
               ),
@@ -114,13 +138,15 @@ class SignalChainStripWidget extends StatelessWidget {
   List<Widget> _buildRtlSignalChainElements(
     BuildContext context,
     List<EffectSlot> slots,
-    bool canAdd,
-  ) {
+    bool canAdd, {
+    required double badgeHeight,
+    required double cardHeight,
+  }) {
     final elements = <Widget>[];
     final numSlots = slots.length;
 
     // 1. Output Jack / Badge (Far Left)
-    elements.add(_buildOutBadge());
+    elements.add(_buildOutBadge(badgeHeight));
 
     // 2. Connector & Add Slot Card (if canAdd)
     if (canAdd) {
@@ -131,28 +157,37 @@ class SignalChainStripWidget extends StatelessWidget {
     // 3. Stompbox slots in RTL order (from slot N-1 down to slot 0) with insertion zones
     for (int i = numSlots - 1; i >= 0; i--) {
       // Insertion zone to the left of slot i (i.e. insertIndex = i + 1)
-      elements.add(_buildInsertionZone(i + 1));
+      elements.add(_buildInsertionZone(i + 1, badgeHeight: badgeHeight));
 
       // Stompbox slot i
       final slot = slots[i];
       final isSelected = controller.selectedSlotIndex == i;
-      elements.add(_buildStompboxSlot(context, slot, i, isSelected, numSlots));
+      elements.add(
+        _buildStompboxSlot(
+          context,
+          slot,
+          i,
+          isSelected,
+          numSlots,
+          cardHeight: cardHeight,
+        ),
+      );
     }
 
     // 4. Insertion zone 0 (between slot 0 and IN)
-    elements.add(_buildInsertionZone(0));
+    elements.add(_buildInsertionZone(0, badgeHeight: badgeHeight));
 
     // 5. Input Jack / Badge (Far Right)
-    elements.add(_buildInBadge());
+    elements.add(_buildInBadge(badgeHeight));
 
     return elements;
   }
 
-  Widget _buildInBadge() {
+  Widget _buildInBadge(double height) {
     return Center(
       child: Container(
         width: 56,
-        height: 140,
+        height: height,
         margin: const EdgeInsets.only(left: 4),
         decoration: BoxDecoration(
           color: StudioTheme.surfaceElevated.withValues(alpha: 0.5),
@@ -188,11 +223,11 @@ class SignalChainStripWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildOutBadge() {
+  Widget _buildOutBadge(double height) {
     return Center(
       child: Container(
         width: 56,
-        height: 140,
+        height: height,
         margin: const EdgeInsets.only(right: 4),
         decoration: BoxDecoration(
           color: StudioTheme.surfaceElevated.withValues(alpha: 0.5),
@@ -228,7 +263,7 @@ class SignalChainStripWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildInsertionZone(int insertIndex) {
+  Widget _buildInsertionZone(int insertIndex, {required double badgeHeight}) {
     return DragTarget<Object>(
       key: Key('insertion_zone_$insertIndex'),
       onWillAcceptWithDetails: (details) {
@@ -266,7 +301,7 @@ class SignalChainStripWidget extends StatelessWidget {
             child: isHovered
                 ? Container(
                     width: 5,
-                    height: 140,
+                    height: badgeHeight,
                     decoration: BoxDecoration(
                       color: StudioTheme.colorModulation,
                       borderRadius: BorderRadius.circular(3),
@@ -301,11 +336,13 @@ class SignalChainStripWidget extends StatelessWidget {
     EffectSlot slot,
     int index,
     bool isSelected,
-    int totalSlots,
-  ) {
+    int totalSlots, {
+    required double cardHeight,
+  }) {
     final family = controller.connectionController.activeFamily;
     final def = EffectCatalogRegistry.getDefinition(family, slot.effectId);
     final categoryColor = StudioTheme.getCategoryColor(def.category);
+    final isTouch = ResponsiveLayoutMetrics.isTouchPlatform(context);
 
     return DragTarget<Object>(
       key: Key('slot_drag_target_$index'),
@@ -347,33 +384,47 @@ class SignalChainStripWidget extends StatelessWidget {
           return slotWidget;
         }
 
+        final feedbackWidget = Material(
+          elevation: 8,
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: 154,
+            height: cardHeight,
+            child: _buildSlotCardContent(
+              context,
+              slot: slot,
+              index: index,
+              isSelected: true,
+              totalSlots: totalSlots,
+              categoryColor: categoryColor,
+              def: def,
+              isHovered: false,
+              isDragging: true,
+            ),
+          ),
+        );
+
+        final childWhenDragging = Opacity(
+          opacity: 0.35,
+          child: slotWidget,
+        );
+
+        if (isTouch) {
+          return LongPressDraggable<SlotReorderPayload>(
+            key: Key('slot_draggable_$index'),
+            data: SlotReorderPayload(index),
+            feedback: feedbackWidget,
+            childWhenDragging: childWhenDragging,
+            child: slotWidget,
+          );
+        }
+
         return Draggable<SlotReorderPayload>(
           key: Key('slot_draggable_$index'),
           data: SlotReorderPayload(index),
-          feedback: Material(
-            elevation: 8,
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: 154,
-              height: 180,
-              child: _buildSlotCardContent(
-                context,
-                slot: slot,
-                index: index,
-                isSelected: true,
-                totalSlots: totalSlots,
-                categoryColor: categoryColor,
-                def: def,
-                isHovered: false,
-                isDragging: true,
-              ),
-            ),
-          ),
-          childWhenDragging: Opacity(
-            opacity: 0.35,
-            child: slotWidget,
-          ),
+          feedback: feedbackWidget,
+          childWhenDragging: childWhenDragging,
           child: slotWidget,
         );
       },
@@ -465,17 +516,17 @@ class SignalChainStripWidget extends StatelessWidget {
                     message: 'Remove Effect Slot',
                     child: InkWell(
                       key: Key('delete_slot_$index'),
-                      borderRadius: BorderRadius.circular(3),
+                      borderRadius: BorderRadius.circular(4),
                       onTap: () => controller.removeEffectSlot(index),
                       child: const Padding(
-                        padding: EdgeInsets.all(2),
-                        child: Icon(Icons.close, size: 14, color: Colors.grey),
+                        padding: EdgeInsets.all(4),
+                        child: Icon(Icons.close, size: 15, color: Colors.grey),
                       ),
                     ),
                   ),
               ],
             ),
-            const SizedBox(height: 3),
+            const SizedBox(height: 2),
 
             // Effect Name
             Text(
@@ -505,15 +556,15 @@ class SignalChainStripWidget extends StatelessWidget {
                   message: 'Move Left',
                   child: InkWell(
                     key: Key('move_slot_left_$index'),
-                    borderRadius: BorderRadius.circular(3),
+                    borderRadius: BorderRadius.circular(4),
                     onTap: index < totalSlots - 1 && controller.canReorderSlots
                         ? () => controller.swapEffectSlots(index, index + 1)
                         : null,
                     child: Padding(
-                      padding: const EdgeInsets.all(3),
+                      padding: const EdgeInsets.all(5),
                       child: Icon(
                         Icons.arrow_back,
-                        size: 15,
+                        size: 16,
                         color: index < totalSlots - 1 && controller.canReorderSlots
                             ? Colors.white70
                             : Colors.white24,
@@ -538,7 +589,7 @@ class SignalChainStripWidget extends StatelessWidget {
                     }
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                     decoration: BoxDecoration(
                       color: StudioTheme.surface,
                       borderRadius: BorderRadius.circular(4),
@@ -565,15 +616,15 @@ class SignalChainStripWidget extends StatelessWidget {
                   message: 'Move Right',
                   child: InkWell(
                     key: Key('move_slot_right_$index'),
-                    borderRadius: BorderRadius.circular(3),
+                    borderRadius: BorderRadius.circular(4),
                     onTap: index > 0 && controller.canReorderSlots
                         ? () => controller.swapEffectSlots(index, index - 1)
                         : null,
                     child: Padding(
-                      padding: const EdgeInsets.all(3),
+                      padding: const EdgeInsets.all(5),
                       child: Icon(
                         Icons.arrow_forward,
-                        size: 15,
+                        size: 16,
                         color: index > 0 && controller.canReorderSlots
                             ? Colors.white70
                             : Colors.white24,
@@ -583,7 +634,7 @@ class SignalChainStripWidget extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 3),
+            const SizedBox(height: 2),
 
             // LED & Bypass Button
             Row(
@@ -626,13 +677,12 @@ class SignalChainStripWidget extends StatelessWidget {
                 // Bypass Toggle Button
                 IconButton(
                   key: Key('toggle_slot_${index}_button'),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                   style: IconButton.styleFrom(
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    padding: EdgeInsets.zero,
                   ),
-                  iconSize: 18,
+                  iconSize: 19,
                   icon: Icon(
                     slot.isEnabled
                         ? Icons.power_settings_new

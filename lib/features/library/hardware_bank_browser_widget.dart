@@ -5,6 +5,8 @@ import '../connection/device_connection_controller.dart';
 import '../editor/patch_editor_controller.dart';
 import '../editor/write_to_slot_dialog.dart';
 import '../theme/studio_theme.dart';
+import 'patch_export_dialog.dart';
+import 'patch_library_controller.dart';
 
 /// Responsive browser for the connected hardware's persistent memory bank slots (0–99).
 ///
@@ -13,12 +15,14 @@ import '../theme/studio_theme.dart';
 class HardwareBankBrowserWidget extends StatefulWidget {
   final DeviceConnectionController connectionController;
   final PatchEditorController editorController;
+  final PatchLibraryController? libraryController;
   final bool isPanel;
 
   const HardwareBankBrowserWidget({
     super.key,
     required this.connectionController,
     required this.editorController,
+    this.libraryController,
     this.isPanel = true,
   });
 
@@ -106,6 +110,33 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    if (widget.libraryController != null) ...[
+                      IconButton(
+                        key: const Key('export_hardware_bank_button'),
+                        icon: const Icon(Icons.ios_share, size: 18, color: StudioTheme.colorFilterEq),
+                        tooltip: 'Backup Loaded Bank',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: bankSlots.any((s) => s.patch != null)
+                            ? () {
+                                final loadedPatches = bankSlots
+                                    .where((s) => s.patch != null)
+                                    .map((s) => s.patch!)
+                                    .toList();
+                                showDialog<bool>(
+                                  context: context,
+                                  builder: (_) => PatchExportDialog.library(
+                                    libraryController: widget.libraryController!,
+                                    patches: loadedPatches,
+                                    title: 'Backup Hardware Bank (${loadedPatches.length})',
+                                    defaultLibraryName: 'hardware_bank_backup',
+                                  ),
+                                );
+                              }
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     if (isSyncing)
                       IconButton(
                         key: const Key('cancel_bank_sync_button'),
@@ -166,6 +197,8 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
                       const SizedBox(height: 4),
                       Text(
                         syncStatus ?? 'Syncing hardware bank...',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 10, color: Colors.grey),
                       ),
                     ],
@@ -363,8 +396,8 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
                   key: Key('load_slot_${slot.index}_button'),
                   icon: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
                   tooltip: 'Load into Editor',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   onPressed: isConnected ? () => _loadSlot(slot.index) : null,
                 ),
                 // Quick Write button
@@ -372,8 +405,8 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
                   key: Key('write_slot_${slot.index}_button'),
                   icon: const Icon(Icons.save, size: 16, color: StudioTheme.colorModulation),
                   tooltip: 'Write current patch to Slot ${slot.formattedSlotIndex}',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   onPressed: isConnected ? () => _quickWriteToSlot(slot.index) : null,
                 ),
               ],

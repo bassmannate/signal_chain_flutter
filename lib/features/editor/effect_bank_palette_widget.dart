@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../protocols/catalogs/effect_catalog.dart';
+import '../theme/responsive_layout.dart';
 import '../theme/studio_theme.dart';
 import 'patch_editor_controller.dart';
 
@@ -106,15 +107,52 @@ class _EffectBankPaletteWidgetState extends State<EffectBankPaletteWidget> {
               def.effectId.toLowerCase().contains(q);
         }).toList();
 
-        return Container(
-          decoration: BoxDecoration(
-            color: StudioTheme.surface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: StudioTheme.surfaceBorder),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final hasBoundedHeight = constraints.hasBoundedHeight;
+            final textScale = MediaQuery.textScalerOf(context).scale(1.0).clamp(1.0, 1.4);
+            final gridExtent = 76.0 * textScale;
+
+            final gridContent = filtered.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(
+                        'No matching effects found',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ),
+                  )
+                : GridView.builder(
+                    key: const Key('palette_effects_grid'),
+                    shrinkWrap: !hasBoundedHeight,
+                    physics: hasBoundedHeight
+                        ? null
+                        : const NeverScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(8),
+                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 180,
+                      mainAxisExtent: gridExtent,
+                      crossAxisSpacing: 6,
+                      mainAxisSpacing: 6,
+                    ),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      final effect = filtered[index];
+                      return _buildDraggableEffectItem(context, effect);
+                    },
+                  );
+
+            return Container(
+              decoration: BoxDecoration(
+                color: StudioTheme.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: StudioTheme.surfaceBorder),
+              ),
+              child: Column(
+                mainAxisSize: hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
               // Header
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -243,32 +281,14 @@ class _EffectBankPaletteWidgetState extends State<EffectBankPaletteWidget> {
               const Divider(color: StudioTheme.surfaceBorder, height: 1),
 
               // Scrollable Effects Grid
-              Expanded(
-                child: filtered.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No matching effects found',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                      )
-                    : GridView.builder(
-                        key: const Key('palette_effects_grid'),
-                        padding: const EdgeInsets.all(8),
-                        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 180,
-                          mainAxisExtent: 64,
-                          crossAxisSpacing: 6,
-                          mainAxisSpacing: 6,
-                        ),
-                        itemCount: filtered.length,
-                        itemBuilder: (context, index) {
-                          final effect = filtered[index];
-                          return _buildDraggableEffectItem(context, effect);
-                        },
-                      ),
-              ),
+              if (hasBoundedHeight)
+                Expanded(child: gridContent)
+              else
+                gridContent,
             ],
           ),
+        );
+          },
         );
       },
     );
@@ -276,6 +296,7 @@ class _EffectBankPaletteWidgetState extends State<EffectBankPaletteWidget> {
 
   Widget _buildDraggableEffectItem(BuildContext context, EffectDefinition effect) {
     final categoryColor = StudioTheme.getCategoryColor(effect.category);
+    final isTouch = ResponsiveLayoutMetrics.isTouchPlatform(context);
 
     final cardContent = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -333,75 +354,95 @@ class _EffectBankPaletteWidgetState extends State<EffectBankPaletteWidget> {
       ),
     );
 
-    return Draggable<EffectDragPayload>(
-      key: Key('palette_draggable_${effect.effectId}'),
-      data: EffectDragPayload(effect),
-      feedback: Material(
-        elevation: 8,
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(6),
-        child: SizedBox(
-          width: 160,
-          height: 64,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(
-              color: StudioTheme.surfaceElevated,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: categoryColor, width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: categoryColor.withValues(alpha: 0.4),
-                  blurRadius: 10,
-                  spreadRadius: 2,
+    final feedbackWidget = Material(
+      elevation: 8,
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        width: 160,
+        height: 68,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: StudioTheme.surfaceElevated,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: categoryColor, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: categoryColor.withValues(alpha: 0.4),
+                blurRadius: 10,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                effect.category.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  color: categoryColor,
                 ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  effect.category.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    color: categoryColor,
-                  ),
+              ),
+              Text(
+                effect.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
-                Text(
-                  effect.name,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
-      childWhenDragging: Opacity(
-        opacity: 0.35,
-        child: cardContent,
-      ),
-      child: InkWell(
-        key: Key('palette_click_${effect.effectId}'),
-        borderRadius: BorderRadius.circular(6),
-        onTap: () {
-          // Accessibility tap: if space available, append; else swap selected slot
-          if (widget.controller.canAddEffectSlot) {
-            widget.controller.addEffectSlot(effectId: effect.effectId);
-          } else if (widget.controller.selectedSlot != null) {
-            widget.controller.changeSlotEffect(
-              widget.controller.selectedSlotIndex,
-              effect.effectId,
-            );
-          }
-        },
-        child: cardContent,
-      ),
+    );
+
+    final childWhenDragging = Opacity(
+      opacity: 0.35,
+      child: cardContent,
+    );
+
+    final clickChild = InkWell(
+      key: Key('palette_click_${effect.effectId}'),
+      borderRadius: BorderRadius.circular(6),
+      onTap: () {
+        // Accessibility tap: if space available, append; else swap selected slot
+        if (widget.controller.canAddEffectSlot) {
+          widget.controller.addEffectSlot(effectId: effect.effectId);
+        } else if (widget.controller.selectedSlot != null) {
+          widget.controller.changeSlotEffect(
+            widget.controller.selectedSlotIndex,
+            effect.effectId,
+          );
+        }
+      },
+      child: cardContent,
+    );
+
+    if (isTouch) {
+      return LongPressDraggable<EffectDragPayload>(
+        key: Key('palette_draggable_${effect.effectId}'),
+        data: EffectDragPayload(effect),
+        feedback: feedbackWidget,
+        childWhenDragging: childWhenDragging,
+        child: clickChild,
+      );
+    }
+
+    return Draggable<EffectDragPayload>(
+      key: Key('palette_draggable_${effect.effectId}'),
+      data: EffectDragPayload(effect),
+      feedback: feedbackWidget,
+      childWhenDragging: childWhenDragging,
+      child: clickChild,
     );
   }
 }

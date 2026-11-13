@@ -1,12 +1,46 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 10 Complete (Platform Expansion & Multi-Device Support)  
-**Active Milestone:** Milestone 10 Complete / Hardware & Multi-Pedal Ready  
+**Current Status:** Milestone 12 Complete (External Format Export & Interoperability)  
+**Active Milestone:** Milestone 12 Complete / Multi-Format Export & XDG Preferences Ready  
 **Last Updated:** 2026-11-12
 
 ---
 
 ## 1. Milestone Roadmap
+
+### 🟢 Milestone 12: External Format Export & Interoperability
+*Status:* **Completed**
+- [x] **Export Adapter Architecture (`lib/core/export/`):**
+  * Implemented `ExportFormat`, `ExportPayload`, `ExportAdapter`, and `ExportAdapterRegistry` with zero external pub dependencies.
+  * Added 5 format serializers: `NativeJsonExportAdapter` (`.json`), `ZoomPtcfExportAdapter` (848-byte `.zptc`), `SymbiosisExportAdapter` (model-suffixed `.60bp.zptc` / `.50gp.zptc` / `.70cdrp.zptc` / `.200dp.zptc` and batch folder exports), `ZoomMultistompStudioExportAdapter` (`.zptc`), and `RawSysExExportAdapter` (`.syx` for Zoom 989-byte `0x45` and Line 6 170-byte `0x02`).
+  * Implemented pure `dart:io` `ExportFileWriter` targeting OS-appropriate `SignalChainExports` directories.
+- [x] **XDG / AppData Preferences Persistence (`lib/core/storage/`):**
+  * Added `AppPreferencesRepository`, `InMemoryPreferencesRepository`, and `FileSystemPreferencesRepository` (atomic write-temp-then-rename `preferences.json`) wired into `PatchLibraryController` and `lib/main.dart`.
+- [x] **Responsive Export Dialog & UI Integration (`lib/features/library/`):**
+  * Built `PatchExportDialog` with format dropdown, "Set as default format" checkbox, editable filename/folder name, Line 6 compatibility filtering/skipped-item warnings, clipboard copy, and file/folder save.
+  * Wired into `PatchLibraryDrawerOrPanel` (single-patch and full-library export) and `HardwareBankBrowserWidget` (bank backup export).
+- [x] **Unit & Widget Tests:**
+  * Added `test/core/export/export_adapters_test.dart`, `test/core/storage/preferences_repository_test.dart`, and `test/features/library/patch_export_dialog_test.dart`.
+
+---
+
+### 🟢 Milestone 11: Responsive & Adaptive UI Polish
+*Status:* **Completed**
+- [x] **Responsive Breakpoints & Adaptive Workspace (`lib/features/theme/responsive_layout.dart`, `lib/main.dart`):**
+  * Introduced `ResponsiveLayoutMetrics` with `compact` (`< 600px`), `medium` (`600–1024px`), and `expanded` (`> 1024px`) breakpoints plus `isShortEditorBody(availableBodyHeight < 440)`.
+  * Collapsed `PatchLibraryDrawerOrPanel` into a slide-over `endDrawer` (`min(360px, 88% width)`) on compact/medium viewports (`<= 1024px`), while keeping `SlotInspectorWidget` and `EffectBankPaletteWidget` side-by-side on medium/tablet screens (`width >= 700px` and non-short, e.g., Fire HD 10 `1024x600`).
+  * Replaced `TabBarView` on narrow/short screens with an explicit `INSPECTOR | EFFECT PALETTE` segmented tab bar and unified vertical `SingleChildScrollView` on short landscape / keyboard-resized viewports (`844x390`, `390x420`).
+- [x] **Wrapping Toolbars, Unbounded-Height Inspector/Palette & Touch Ergonomics:**
+  * Updated `ConnectionBarWidget` and `PatchMetadataHeaderWidget` from horizontal scroll clipping to responsive `Wrap` layouts with ellipsized port dropdowns and larger touch constraints.
+  * Removed outer fixed `height: 255` on `SignalChainStripWidget` and adapted strip height (`156px` compact/short vs. `172px` desktop), enlarged slot/bank/tempo/discrete-knob touch targets, and scaled palette grid `mainAxisExtent` (`76 * textScale`).
+  * Added `LayoutBuilder` `hasBoundedHeight` support in `SlotInspectorWidget` and `EffectBankPaletteWidget`, and switched `Draggable` to `LongPressDraggable` on Android/iOS touch platforms while preserving immediate `Draggable` on desktop.
+- [x] **Keyboard-Safe & Viewport-Clamped Dialogs:**
+  * Made `EffectPickerDialog` (`CustomScrollView` fallback on short heights, `Flexible` title text, compact `insetPadding`), `WriteToSlotDialog` (`SingleChildScrollView`, `Expanded` title), and `PatchLibraryDrawerOrPanel` Import/Export dialogs viewport-clamped and overflow-free.
+- [x] **Static Analysis & Targeted Responsive/UI Verification:**
+  * `flutter analyze --no-pub`: **0 issues found**.
+  * Targeted UI & responsive test suites (`test/features/responsive_layout_test.dart`, `test/widget_test.dart`, `test/drag_drop_editor_test.dart`, `test/hardware_bank_widget_test.dart`, `test/controllers_and_ui_test.dart`, `test/features/ui_accuracy_and_knob_test.dart`): **43 tests passing (100%)** covering `390x844`, `844x390`, `390x420`, `844x240`, `1024x600`, `1440x900`, `720x540`, `500x450`, and Android vs. Linux drag behavior.
+
+---
 
 ### 🟢 Milestone 10: Platform Expansion & Multi-Device Support
 *Status:* **Completed**

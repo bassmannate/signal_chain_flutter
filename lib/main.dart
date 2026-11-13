@@ -9,7 +9,9 @@ import 'core/midi/midi_message.dart';
 import 'core/midi/midi_port_descriptor.dart';
 import 'core/midi/midi_transport.dart';
 import 'core/midi/mock_midi_transport.dart';
+import 'core/storage/app_preferences_repository.dart';
 import 'core/storage/file_system_patch_library_repository.dart';
+import 'core/storage/file_system_preferences_repository.dart';
 import 'core/storage/in_memory_patch_library_repository.dart';
 import 'core/storage/patch_library_repository.dart';
 import 'features/connection/connection_bar_widget.dart';
@@ -20,6 +22,7 @@ import 'features/editor/signal_chain_strip_widget.dart';
 import 'features/editor/slot_inspector_widget.dart';
 import 'features/library/patch_library_controller.dart';
 import 'features/library/patch_library_drawer_or_panel.dart';
+import 'features/theme/responsive_layout.dart';
 import 'features/theme/studio_theme.dart';
 import 'models/device_family.dart';
 import 'models/effect_slot.dart';
@@ -63,6 +66,7 @@ class _SignalChainAppState extends State<SignalChainApp> {
   late final PatchLibraryController _libraryController;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  int _activeEditorTabIndex = 0;
 
   @override
   void initState() {
@@ -116,11 +120,17 @@ class _SignalChainAppState extends State<SignalChainApp> {
     _connectionController.setEditorController(_editorController);
 
     _libraryController = widget.libraryController ??
-        PatchLibraryController(repository: _libraryRepo);
+        PatchLibraryController(
+          repository: _libraryRepo,
+          preferencesRepository: _isRunningInWidgetTest
+              ? InMemoryPreferencesRepository()
+              : _createDefaultPreferencesRepository(),
+        );
 
     // Initial async setup
     _connectionController.refreshPorts();
     _libraryController.refresh();
+    _libraryController.loadPreferences();
 
     // Seed filesystem repository if empty (at runtime outside widget tests)
     if (!_isRunningInWidgetTest && widget.libraryRepository == null) {
@@ -300,6 +310,35 @@ class _SignalChainAppState extends State<SignalChainApp> {
     }
   }
 
+  static File _resolvePreferencesFile() {
+    if (Platform.isLinux) {
+      final xdgConfig = Platform.environment['XDG_CONFIG_HOME'];
+      if (xdgConfig != null && xdgConfig.isNotEmpty) {
+        return File('$xdgConfig/signal_chain_flutter/preferences.json');
+      }
+      final home = Platform.environment['HOME'] ?? '';
+      return File('$home/.config/signal_chain_flutter/preferences.json');
+    } else if (Platform.isWindows) {
+      final appData = Platform.environment['APPDATA'] ??
+          Platform.environment['USERPROFILE'] ??
+          '';
+      return File('$appData\\signal_chain_flutter\\preferences.json');
+    } else if (Platform.isMacOS) {
+      final home = Platform.environment['HOME'] ?? '';
+      return File('$home/Library/Application Support/signal_chain_flutter/preferences.json');
+    } else {
+      return File('${Directory.systemTemp.path}/signal_chain_flutter/preferences.json');
+    }
+  }
+
+  static AppPreferencesRepository _createDefaultPreferencesRepository() {
+    try {
+      return FileSystemPreferencesRepository(preferencesFile: _resolvePreferencesFile());
+    } catch (_) {
+      return InMemoryPreferencesRepository();
+    }
+  }
+
   static PatchLibraryRepository _createDefaultLibraryRepository(
     Patch zoomSample,
     Patch line6Sample,
@@ -339,87 +378,119 @@ class _SignalChainAppState extends State<SignalChainApp> {
       theme: StudioTheme.darkTheme,
       home: Scaffold(
         key: _scaffoldKey,
-        endDrawer: Drawer(
-          backgroundColor: StudioTheme.surface,
-          child: SafeArea(
-            child: PatchLibraryDrawerOrPanel(
-              libraryController: _libraryController,
-              editorController: _editorController,
-              isPanel: false,
-            ),
-          ),
+        endDrawer: Builder(
+          builder: (context) {
+            final size = MediaQuery.sizeOf(context);
+            final drawerWidth = ResponsiveLayoutMetrics(
+              width: size.width,
+              height: size.height,
+            ).drawerWidth;
+            return Drawer(
+              width: drawerWidth,
+              backgroundColor: StudioTheme.surface,
+              child: SafeArea(
+                child: PatchLibraryDrawerOrPanel(
+                  libraryController: _libraryController,
+                  editorController: _editorController,
+                  isPanel: false,
+                ),
+              ),
+            );
+          },
         ),
         body: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final isDesktopWide = constraints.maxWidth >= 900;
+              final metrics = ResponsiveLayoutMetrics.fromConstraints(constraints);
+              final showLibraryPanel = metrics.showLibraryPanel;
+              final pad = metrics.workspacePadding;
 
-              final editorContent = Column(
-                children: [
-                  // Pedalboard Signal Chain Strip
-                  Padding(
-                    padding: const EdgeInsets.all(12),
+              final editorWorkspace = LayoutBuilder(
+                builder: (context, bodyConstraints) {
+                  final isShortBody = ResponsiveLayoutMetrics.isShortEditorBody(
+                    bodyConstraints.maxHeight,
+                  );
+                  final showSideBySidePalette =
+                      bodyConstraints.maxWidth >= 700 && !isShortBody;
+
+                  final stripWidget = Padding(
+                    padding: EdgeInsets.all(pad),
                     child: SignalChainStripWidget(controller: _editorController),
-                  ),
+                  );
 
-                  // Selected Slot Parameter Inspector + Studio Effect Palette
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                      child: isDesktopWide
-                          ? Row(
+                  if (showSideBySidePalette) {
+                    return Column(
+                      children: [
+                        stripWidget,
+                        Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(pad, 0, pad, pad),
+                            child: Row(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 Expanded(
                                   flex: 3,
-                                  child: SlotInspectorWidget(controller: _editorController),
+                                  child: SlotInspectorWidget(
+                                    controller: _editorController,
+                                  ),
                                 ),
-                                const SizedBox(width: 12),
+                                SizedBox(width: pad),
                                 SizedBox(
-                                  width: 320,
-                                  child: EffectBankPaletteWidget(controller: _editorController),
+                                  width: metrics.palettePanelWidth,
+                                  child: EffectBankPaletteWidget(
+                                    controller: _editorController,
+                                  ),
                                 ),
                               ],
-                            )
-                          : DefaultTabController(
-                              length: 2,
-                              child: Column(
-                                children: [
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: StudioTheme.surface,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: StudioTheme.surfaceBorder),
-                                    ),
-                                    child: const TabBar(
-                                      indicatorColor: StudioTheme.colorModulation,
-                                      tabs: [
-                                        Tab(
-                                          text: 'INSPECTOR',
-                                          icon: Icon(Icons.tune, size: 16),
-                                        ),
-                                        Tab(
-                                          text: 'EFFECT PALETTE',
-                                          icon: Icon(Icons.widgets, size: 16),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Expanded(
-                                    child: TabBarView(
-                                      children: [
-                                        SlotInspectorWidget(controller: _editorController),
-                                        EffectBankPaletteWidget(controller: _editorController),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
                             ),
-                    ),
-                  ),
-                ],
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+
+                  final tabBar = Padding(
+                    padding: EdgeInsets.symmetric(horizontal: pad),
+                    child: _buildEditorTabBar(),
+                  );
+
+                  final activeTabContent = _activeEditorTabIndex == 0
+                      ? SlotInspectorWidget(controller: _editorController)
+                      : EffectBankPaletteWidget(controller: _editorController);
+
+                  if (isShortBody) {
+                    // Short landscape phones & keyboard-resized viewports scroll as one page
+                    return SingleChildScrollView(
+                      key: const Key('short_viewport_editor_scroll'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          stripWidget,
+                          tabBar,
+                          SizedBox(height: pad),
+                          Padding(
+                            padding: EdgeInsets.fromLTRB(pad, 0, pad, pad),
+                            child: activeTabContent,
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return Column(
+                    children: [
+                      stripWidget,
+                      tabBar,
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(pad, 0, pad, pad),
+                          child: activeTabContent,
+                        ),
+                      ),
+                    ],
+                  );
+                },
               );
 
               return Column(
@@ -428,27 +499,110 @@ class _SignalChainAppState extends State<SignalChainApp> {
                     connectionController: _connectionController,
                     editorController: _editorController,
                     libraryController: _libraryController,
-                    onToggleLibrary: isDesktopWide
+                    onToggleLibrary: showLibraryPanel
                         ? null
                         : () => _scaffoldKey.currentState?.openEndDrawer(),
                   ),
                   Expanded(
-                    child: isDesktopWide
+                    child: showLibraryPanel
                         ? Row(
                             children: [
-                              Expanded(child: editorContent),
+                              Expanded(child: editorWorkspace),
                               PatchLibraryDrawerOrPanel(
                                 libraryController: _libraryController,
                                 editorController: _editorController,
                                 isPanel: true,
+                                panelWidth: metrics.libraryPanelWidth,
                               ),
                             ],
                           )
-                        : editorContent,
+                        : editorWorkspace,
                   ),
                 ],
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEditorTabBar() {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: StudioTheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: StudioTheme.surfaceBorder),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildEditorTabButton(
+              key: const Key('editor_tab_inspector'),
+              icon: Icons.tune,
+              label: 'INSPECTOR',
+              isActive: _activeEditorTabIndex == 0,
+              onTap: () => setState(() => _activeEditorTabIndex = 0),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: _buildEditorTabButton(
+              key: const Key('editor_tab_palette'),
+              icon: Icons.widgets,
+              label: 'EFFECT PALETTE',
+              isActive: _activeEditorTabIndex == 1,
+              onTap: () => setState(() => _activeEditorTabIndex = 1),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEditorTabButton({
+    required Key key,
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      key: key,
+      borderRadius: BorderRadius.circular(6),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isActive ? StudioTheme.surfaceElevated : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          border: isActive
+              ? Border.all(color: StudioTheme.colorModulation.withValues(alpha: 0.6))
+              : null,
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isActive ? StudioTheme.colorModulation : Colors.grey,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: isActive ? Colors.white : Colors.grey,
+                ),
+              ),
+            ],
           ),
         ),
       ),
