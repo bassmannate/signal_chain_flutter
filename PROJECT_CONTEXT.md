@@ -32,6 +32,7 @@ The goal of this Flutter rewrite is to replace the heavier Electron desktop foot
 - **Milestone 13:** External File Import & Round-Trip Restore (Symmetric `lib/core/import/` layer with `ImportFormat`, `ImportedPatchEntry`, `ImportBatchResult`, `ImportAdapter`s, and `PatchImporter` auto-detection; testable `ImportFileSystem` (`LocalImportFileSystem` / `InMemoryImportFileSystem`); responsive `PatchImportDialog` with file/folder browser, batch Symbiosis folder import, clipboard paste, selective library restore, and device-mismatch handling) — **Completed**
 - **Milestone 14:** Editor Power-User Ergonomics — Undo/Redo History, A/B Tone Compare & Patch Diff Preview (`PatchDiff` pure-Dart diff model, bounded 50-step `PatchEditHistory` with gesture/time-window coalescing, `A | B` compare slots with live hardware delta sync via Zoom `64 20 00` / Line 6 `encodePatch`, `PatchDiffDialog` integrated across A/B compare, `WriteToSlotDialog`, `PatchImportDialog`, and `PatchLibraryDrawerOrPanel`, plus desktop `Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z` shortcuts) — **Completed**
 - **Milestone 15:** Android Release Polish, F-Droid Readiness & Live Performance Setlist Mode (`Signal Chain` Android launcher branding, adaptive/monochrome icons & dark splash generated via `tool/generate_android_icons.py`, Gradle release signing with safe debug fallback & `dependenciesInfo` disabled for F-Droid, `fastlane/metadata/android/en-US/` listings, `signal-chain-<version>-android.apk` release artifact, and `Setlist` / `SetlistEntry` models, `SetlistRepository` atomic JSON persistence, `SetlistController` live hardware dispatch & MIDI PC/CC foot-controller stepping, `SetlistBrowserWidget`, and `SetlistPerformanceView` Stage Mode) — **Completed**
+- **Milestone 16:** Windows Native WinMM MIDI Transport (`dart:ffi`) (`WinMmMidiTransport` / `WindowsWinMmMidiTransport`, injectable `WinMmNativeBindings` & pure-FFI `FfiWinMmNativeBindings` over `winmm.dll` / `kernel32.dll`, UTF-16 `szPname` decoding, `MIDIIN`/`MIDIOUT` & duplicate ordinal endpoint pairing, `NativeCallable.listener` `MIM_DATA`/`MIM_LONGDATA` SysEx ring reassembly, serialized `MIDIHDR` SysEx writes, deadlock-free `_isClosing` teardown, wired in `lib/main.dart`, and verified with leak-checked `FakeWinMmNativeBindings` unit tests) — **Completed**
 
 ---
 
@@ -41,7 +42,7 @@ The goal of this Flutter rewrite is to replace the heavier Electron desktop foot
 | :--- | :--- | :--- |
 | **Linux** | Desktop (x86_64, ARM64) | ALSA Sequencer / RawMIDI via platform bridge |
 | **Android** | Mobile & Tablet (ARM64, x86_64) | Android MIDI API (`android.media.midi`) / USB Host OTG |
-| **Windows** | Desktop (x64) | Windows Multimedia API (`winmm.dll`) / WinRT MIDI API |
+| **Windows** | Desktop (x64) | Windows Multimedia API (`winmm.dll`) via pure `dart:ffi` (`WinMmMidiTransport`) |
 
 ---
 

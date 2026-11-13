@@ -90,8 +90,26 @@ abstract class MidiTransport {
   * Cleanly kills background listener process on `disconnect()` or `dispose()`.
   * Fully injectable `ProcessRunner` and `ProcessStarter` enabling deterministic offline unit tests.
 
-### 2.4 Composite Transport Architecture (`CompositeMidiTransport`)
-- Aggregates multiple `MidiTransport` implementations (e.g. `LinuxAlsaMidiTransport` + `MockMidiTransport`) into a unified surface.
+### 2.4 Zero-Dependency Windows Native WinMM Transport (`WinMmMidiTransport`)
+- **Pure `dart:ffi` Native Bindings (`WinMmNativeBindings` / `FfiWinMmNativeBindings`):**
+  * Uses only `dart:ffi`, `dart:io`, and `package:flutter/foundation.dart` (zero third-party `pub.dev` packages).
+  * Opens `winmm.dll` and `kernel32.dll` (`GetProcessHeap`, `HeapAlloc` with `HEAP_ZERO_MEMORY`, `HeapFree`) lazily only on Windows.
+  * Defines Win32 `MIDIINCAPSW`, `MIDIOUTCAPSW`, and `MIDIHDR` structs and decodes UTF-16 `szPname` (`MAXPNAMELEN = 32`) up to the null terminator.
+- **Endpoint Enumeration & Pairing (`getAvailablePorts()`):**
+  * Queries `midiInGetNumDevs`/`midiInGetDevCapsW` and `midiOutGetNumDevs`/`midiOutGetDevCapsW`.
+  * Normalizes `MIDIIN<n>` / `MIDIOUT<n>` driver prefixes and pairs matching input and output endpoints 1-to-1 in ordinal order (supporting duplicate connected pedals as well as unpaired input-only or output-only endpoints).
+- **Outbound Short & SysEx Transmission:**
+  * Packs 1-, 2-, and 3-byte short messages into a little-endian `DWORD` via `midiOutShortMsg`.
+  * Serializes outgoing SysEx frames (`0xF0 ... 0xF7`) using heap-allocated `MIDIHDR` buffers (`midiOutPrepareHeader` -> `midiOutLongMsg` -> poll `MHDR_DONE` -> `midiOutUnprepareHeader`) with `finally` cleanup.
+- **Inbound `NativeCallable.listener` & Ring Buffer SysEx Reassembly:**
+  * Registers a `NativeCallable<MidiInProcNative>.listener` callback backed by pre-queued `MIDIHDR` input buffers (`midiInPrepareHeader` + `midiInAddBuffer`).
+  * Emits 1-, 2-, and 3-byte `MIM_DATA` messages and reassembles single- and multi-buffer `MIM_LONGDATA` SysEx dumps until `0xF7`, re-queueing processed buffers while active.
+- **Rollback & Deadlock-Free Teardown:**
+  * Rolls back input handles and prepared buffers if `midiOutOpen` fails during `connect()`.
+  * On `disconnect()` / `dispose()`, sets `_isClosing = true` prior to `midiInStop` and `midiInReset` so flushed buffers are never re-queued, closes the `NativeCallable`, unprepares headers, closes handles, and frees every native heap allocation.
+
+### 2.5 Composite Transport Architecture (`CompositeMidiTransport`)
+- Aggregates multiple `MidiTransport` implementations (e.g., `LinuxAlsaMidiTransport`, `AndroidMidiTransport`, or `WinMmMidiTransport` + `MockMidiTransport`) into a unified surface.
 - Discovers ports across all underlying transports concurrently.
 - Automatically routes `connect`, `send`, `onMessageReceived`, and `disconnect` calls to the transport managing the target port.
 

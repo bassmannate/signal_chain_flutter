@@ -21,12 +21,14 @@ Built with a **100% pure Dart/Flutter foundation** and **zero external pub depen
 Total Zoom MS Plus catalog coverage: **578** typed effect definitions across all four models.
 
 ### Connectivity Scope
-- **Supported:** Wired USB MIDI, Linux ALSA (`amidi`), and Android USB Host OTG (`android.media.midi`).
+- **Supported:** Wired USB MIDI across Linux ALSA (`amidi`), Android USB Host OTG (`android.media.midi`), and Windows native WinMM (`winmm.dll` via pure `dart:ffi`).
 - **Not Supported:** Bluetooth LE (BLE) MIDI is not supported and is not currently planned.
 
 ---
 
-## Key Features (Through Milestone 15)
+## Key Features (Through Milestone 16)
+
+- **Native Cross-Platform Hardware USB MIDI:** Zero-dependency hardware MIDI transports for Linux ALSA (`LinuxAlsaMidiTransport`), Android USB Host OTG (`AndroidMidiTransport`), and Windows WinMM (`WinMmMidiTransport` via pure `dart:ffi` to `winmm.dll` and `kernel32.dll`, with endpoint pairing, `NativeCallable.listener` SysEx ring reassembly, and `MIDIHDR` SysEx transmission).
 
 - **Live Performance Setlist Mode:** Ordered gig/rehearsal setlists referencing saved library patches with BPM overrides, cue notes, a high-contrast Stage Mode view (`◄ PREVIOUS` / `NEXT ►` stepping, live stompbox bypass toggles, and desktop arrow shortcuts), immediate hardware dispatch (`64 20 00` deltas on Zoom MS Plus, `encodePatch` on Line 6), and optional incoming MIDI Program Change / CC foot-controller triggers.
 - **Right-to-Left Pedalboard Signal Chain:** Physical audio-flow strip (`OUT ← ... ← IN`) with drag-and-drop reordering (`LongPressDraggable` on mobile touchscreens, immediate drag on desktop), inter-slot insertion zones, and custom scroll/drag rotary knobs (`RotaryKnobWidget`).
@@ -50,6 +52,10 @@ Because the project uses **zero external `pub.dev` packages**, all Flutter comma
 - **Run on Linux desktop:**
   ```bash
   flutter run -d linux --no-pub
+  ```
+- **Run on Windows desktop:**
+  ```bash
+  flutter run -d windows --no-pub
   ```
 - **Build Android debug APK:**
   ```bash

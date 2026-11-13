@@ -7,6 +7,7 @@ import 'core/import/import_file_system.dart';
 import 'core/midi/composite_midi_transport.dart';
 import 'core/midi/linux_alsa_midi_transport.dart';
 import 'core/midi/android_midi_transport.dart';
+import 'core/midi/windows_winmm_midi_transport.dart';
 import 'core/midi/midi_message.dart';
 import 'core/midi/midi_port_descriptor.dart';
 import 'core/midi/midi_transport.dart';
@@ -101,6 +102,12 @@ class _SignalChainAppState extends State<SignalChainApp> {
           childTransports.add(AndroidMidiTransport());
         } else if (Platform.isLinux) {
           childTransports.add(LinuxAlsaMidiTransport());
+        } else if (Platform.isWindows) {
+          try {
+            childTransports.add(WinMmMidiTransport());
+          } catch (_) {
+            // Gracefully fall back to simulation transport in headless environments
+          }
         }
         childTransports.add(mock);
         _transport = CompositeMidiTransport(transports: childTransports);

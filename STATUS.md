@@ -1,12 +1,29 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 15 Complete (Android Release Polish, F-Droid Readiness & Live Performance Setlist Mode)  
-**Active Milestone:** Milestone 15 Complete / Ready for Local Verification  
+**Current Status:** Milestone 16 Complete (Windows Native WinMM MIDI Transport via `dart:ffi`)  
+**Active Milestone:** Milestone 16 Complete / Ready for Windows Hardware Verification  
 **Last Updated:** 2026-11-13
 
 ---
 
 ## 1. Milestone Roadmap
+
+### 🟢 Milestone 16: Windows Native WinMM MIDI Transport (`dart:ffi`)
+*Status:* **Completed**
+- [x] **Zero-Dependency Native WinMM Bindings (`lib/core/midi/windows_winmm_midi_transport.dart`):**
+  * Implemented pure `dart:ffi` structs (`MIDIINCAPSW`, `MIDIOUTCAPSW`, `MIDIHDR`), UTF-16 `szPname` (`MAXPNAMELEN = 32`) decoding (`decodeWinMmPname`), injectable `WinMmNativeBindings`, and `FfiWinMmNativeBindings` loading `winmm.dll` and `kernel32.dll` (`GetProcessHeap`, `HeapAlloc` with `HEAP_ZERO_MEMORY`, `HeapFree`) exclusively on Windows.
+- [x] **Port Discovery, Endpoint Pairing & Connection Rollback (`WinMmMidiTransport`):**
+  * Queries `midiInGetNumDevs`/`midiInGetDevCapsW` and `midiOutGetNumDevs`/`midiOutGetDevCapsW`, normalizes `MIDIIN<n>` / `MIDIOUT<n>` driver prefixes, pairs matching endpoints 1-to-1 by ordinal (including duplicate pedals), and supports unpaired input-only / output-only endpoints.
+  * Opens input (`CALLBACK_FUNCTION` + `NativeCallable<MidiInProcNative>.listener`) and output (`CALLBACK_NULL`) handles with full native resource rollback if `midiOutOpen` or buffer preparation fails.
+- [x] **Bidirectional Short & SysEx Streaming + Deadlock-Free Teardown:**
+  * Sends 1-, 2-, and 3-byte short messages via `midiOutShortMsg` and serializes outgoing SysEx via heap-allocated `MIDIHDR` (`midiOutPrepareHeader` -> `midiOutLongMsg` -> `MHDR_DONE` poll -> `midiOutUnprepareHeader`) with guaranteed `finally` heap cleanup.
+  * Receives 1-, 2-, and 3-byte `MIM_DATA` messages and reassembles single- and multi-buffer `MIM_LONGDATA` SysEx dumps until `0xF7` with automatic buffer re-queueing while active.
+  * Sets `_isClosing = true` before `midiInStop`/`midiInReset` on `disconnect()` / `dispose()` so flushed buffers are never re-queued, drains queued listener callbacks, closes the `NativeCallable`, unprepares headers, closes handles, and frees every native heap block.
+- [x] **App Wiring & Leak-Checked Unit Tests (`lib/main.dart`, `test/core/midi/windows_winmm_midi_transport_test.dart`):**
+  * Registered `WinMmMidiTransport` inside `CompositeMidiTransport` in `lib/main.dart` when `Platform.isWindows` is true (guarded with `try/catch`).
+  * Added 9 unit tests (305 total) backed by `FakeWinMmNativeBindings` verifying zero leaked heap blocks (`allocatedBlocks.isEmpty`) across pairing, rollback, short/SysEx sends, `MIM_DATA`, multi-buffer `MIM_LONGDATA` reassembly, and reset-flush teardown.
+
+---
 
 ### 🟢 Milestone 15: Android Release Polish, F-Droid Readiness & Live Performance Setlist Mode
 *Status:* **Completed**
@@ -577,7 +594,7 @@
 | **Workspace Repository** | Clean Flutter Project | Flutter 3.47.9 / Dart 3.13.7 baseline |
 | **Legacy Source Code** | Audited | Reference mappings in `tool/reference/zoom-effect-mappings-ms60bp.json` |
 | **Directory Scaffolding** | Complete | Clean architecture layers maintained |
-| **Core MIDI Transport** | Complete | `MidiTransport`, `MidiMessage`, `MockMidiTransport`, `LinuxAlsaMidiTransport`, `AndroidMidiTransport`, `CompositeMidiTransport` |
+| **Core MIDI Transport** | Complete | `MidiTransport`, `MidiMessage`, `MockMidiTransport`, `LinuxAlsaMidiTransport`, `AndroidMidiTransport`, `WinMmMidiTransport`, `CompositeMidiTransport` |
 | **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch`, `PatchDiff`, `BankSlotDescriptor` |
 | **SysEx & Protocol Engine** | Complete | `SysexCodec`, `ZoomMsPlusProtocol` (Memory slots 0–99 read/write), `Line6BassPodProProtocol` (`0x02` family byte, 80-byte MSB-first nibbles, 36 slots) |
 | **Effect Catalogs** | Complete (578 Zoom + 50 Line 6) | `EffectDefinition`, `EffectCatalogRegistry`, `ZoomMsPlusCatalog` (MS-60B+ 98, MS-50G+ 106, MS-70CDR+ 150, MS-200D+ 224), `Line6BassPodProCatalog` |
@@ -586,5 +603,5 @@
 | **State Controllers** | Complete | `DeviceConnectionController` (Bank sync), `PatchEditorController` (Undo/Redo, A/B Compare, Name/Tempo/Slots), `PatchLibraryController` |
 | **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget` (RTL order), `RotaryKnobWidget`, `SlotInspectorWidget`, `PatchDiffDialog`, `HardwareBankBrowserWidget`, `WriteToSlotDialog`, `PatchLibraryDrawerOrPanel` |
 | **Static Analysis** | Passing (0 issues) | Verified via `flutter analyze --no-pub` |
-| **Unit & Widget Tests** | 283 Passing (100%) | 269 prior + 14 Milestone 14 tests (`patch_diff_test.dart`, `patch_edit_history_test.dart`, `patch_editor_controller_test.dart`, `undo_compare_diff_ui_test.dart`) |
+| **Unit & Widget Tests** | 305 Passing (100%) | 296 prior + 9 Milestone 16 tests (`test/core/midi/windows_winmm_midi_transport_test.dart`) |
 
