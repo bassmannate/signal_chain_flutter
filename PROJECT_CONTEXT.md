@@ -88,6 +88,7 @@ The project adheres strictly to Clean Architecture separation of concerns:
 - **Targeted Test Execution:** When iterating on protocol parsing or feature controllers, run strictly targeted unit tests (e.g., `flutter test test/protocols/zoom_test.dart`) to maintain fast feedback loops.
 - **Deterministic Hardware Mocking:** All protocol unit tests must run against `MockMidiTransport` with canned SysEx byte fixtures (hex dumps captured from actual pedals). No physical device is required to run test suites.
 - **Static Analysis Compliance:** Code must maintain a clean `flutter analyze` baseline with zero errors and zero warnings under `analysis_options.yaml` (`flutter_lints`).
+- **Milestone Documentation Sync:** At the completion of every milestone, `README.md` must be updated alongside `SPEC.md` and `STATUS.md` so project documentation stays current.
 
 ---
 
