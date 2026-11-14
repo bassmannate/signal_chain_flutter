@@ -87,6 +87,12 @@ class SetlistController extends ChangeNotifier {
   String? get warningMessage => _warningMessage;
   String? get errorMessage => _errorMessage;
   MidiFootControllerConfig get midiConfig => _midiConfig;
+  bool get isTunerActive => connectionController.isTunerActive;
+
+  Future<void> toggleTuner() => connectionController.toggleTuner();
+  Future<void> setTunerActive(bool enabled) =>
+      connectionController.setTunerActive(enabled);
+  Future<void> selectEntry(int index) => selectEntryAt(index);
 
   Setlist? get activeSetlist {
     if (_activeSetlistId == null) return null;
@@ -333,6 +339,9 @@ class SetlistController extends ChangeNotifier {
 
     _activeEntryIndex = index;
     _warningMessage = null;
+    if (connectionController.isTunerActive) {
+      await connectionController.setTunerActive(false);
+    }
     final entry = current.entries[index];
     final basePatch = resolvePatchForEntry(entry);
 

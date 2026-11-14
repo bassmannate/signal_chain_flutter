@@ -74,6 +74,9 @@ class Line6BassPodProProtocol extends DeviceProtocol {
   static const int ccCabinetModel = 71;
   static const int ccAirLevel = 72;
 
+  /// Program Change number reserved for Hardware Tuner on Bass POD Pro.
+  static const int programTuner = 37;
+
   static const int _cabBypassIndex = 10;
   static const int _fxBypassIndex = 10;
 
@@ -241,6 +244,43 @@ class Line6BassPodProProtocol extends DeviceProtocol {
         program: (clamped + 1) & 0x7F,
       ),
     ];
+  }
+
+  @override
+  List<MidiMessage> buildTunerToggleMessages(
+    bool enabled, {
+    int? restoreProgramNumber,
+  }) {
+    if (enabled) {
+      return [
+        MidiMessage.programChange(
+          channel: midiChannel,
+          program: programTuner,
+        ),
+      ];
+    }
+    final restoreProgram = restoreProgramNumber != null
+        ? (restoreProgramNumber.clamp(0, totalProgramSlots - 1) + 1) & 0x7F
+        : 0;
+    return [
+      MidiMessage.programChange(
+        channel: midiChannel,
+        program: restoreProgram,
+      ),
+    ];
+  }
+
+  @override
+  bool isTunerStateChange(MidiMessage message) {
+    if (!message.isProgramChange || message.data.length < 2) return false;
+    if ((message.data[0] & 0x0F) != midiChannel) return false;
+    return (message.data[1] & 0x7F) == programTuner;
+  }
+
+  @override
+  bool? parseTunerStateChange(MidiMessage message) {
+    if (!isTunerStateChange(message)) return null;
+    return true;
   }
 
   @override

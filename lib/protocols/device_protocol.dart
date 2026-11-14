@@ -123,4 +123,20 @@ abstract class DeviceProtocol {
 
   /// Returns true if [message] is a hardware success acknowledgment (e.g. Zoom 00 00).
   bool isSuccessAck(MidiMessage message) => false;
+
+  /// Builds the MIDI messages required to engage or exit the hardware tuner.
+  ///
+  /// When [enabled] is false, [restoreProgramNumber] (0-based hardware slot)
+  /// may be used by protocols that exit tuner mode via Program Change.
+  List<MidiMessage> buildTunerToggleMessages(
+    bool enabled, {
+    int? restoreProgramNumber,
+  }) =>
+      const [];
+
+  /// Returns true if [message] represents a hardware tuner state feedback event.
+  bool isTunerStateChange(MidiMessage message) => false;
+
+  /// Parses the tuner active state from [message], or null if not a tuner event.
+  bool? parseTunerStateChange(MidiMessage message) => null;
 }

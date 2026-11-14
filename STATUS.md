@@ -1,12 +1,47 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 17.1 Complete (Hardware Patch-Switch Fix, Generation Compatibility Locks, Export Folder Browser, File-Based Bank Restore & Multi-File Library Import)  
-**Active Milestone:** Milestone 17.1 Complete  
+**Current Status:** Milestone 18.1 Complete (Landscape Stage Mode Re-Layout & Verified Zoom MS Plus 7-Byte Tuner SysEx Fix)  
+**Active Milestone:** Milestone 18.1 Complete  
 **Last Updated:** 2026-11-14
 
 ---
 
 ## 1. Milestone Roadmap
+
+### 🟢 Milestone 18.1: Landscape Stage Mode Re-Layout & Verified Zoom MS Plus 7-Byte Tuner SysEx Fix
+*Status:* **Completed**
+- [x] **Verified Zoom MS Plus 7-Byte Tuner SysEx (`lib/protocols/zoom_ms_plus_protocol.dart`):**
+  * Updated `buildTunerToggleMessages` to emit strictly the 7-byte SysEx command `F0 52 00 6E 64 0B F7` (Tuner ON) or `F0 52 00 6E 64 0C F7` (Tuner OFF).
+  * Updated `isTunerStateChange` and `parseTunerStateChange` to match incoming 7-byte `F0 52 00 6E 64 0B F7` (`true`) and `F0 52 00 6E 64 0C F7` (`false`) messages from the physical pedal.
+- [x] **Landscape Stage Mode Re-Layout (`lib/features/setlist/setlist_performance_view.dart`):**
+  * Preserved the portrait phone layout (`maxWidth < maxHeight` or `< 700px`) unchanged.
+  * Updated the landscape layout (`maxWidth >= maxHeight` and `>= 700px`) to a `~22%` left column (`stage_landscape_left_panel`, `(maxWidth * 0.22).clamp(220.0, 320.0)`) containing `stage_setlist_selector`, compact `stage_landscape_patch_box`, `PREV`/`NEXT` buttons, `stage_tuner_toggle_button`, and the auto-scrolling `stage_setlist_patch_list` (`stage_setlist_entry_tile_$index`).
+  * Updated the `~78%` right area (`stage_landscape_effects_panel`) to display ONLY the active patch's effects as giant, category-colored stompbox cards (`stage_stomp_slot_${slot.slotIndex}`) with slot badge, bold effect name, `ON`/`BYPASSED` LED indicator, and live tap-to-bypass toggling.
+
+---
+
+### 🟢 Milestone 18: Landscape Stage Mode Dashboard & Hardware Tuner Toggle
+*Status:* **Completed**
+- [x] **Hardware Tuner Toggle (`DeviceProtocol`, `Line6BassPodProProtocol`, `ZoomMsPlusProtocol`, Controllers & UI):**
+  * Added `buildTunerToggleMessages`, `isTunerStateChange`, and `parseTunerStateChange` to `DeviceProtocol`: Line 6 Bass POD Pro sends `PC 37` to engage tuner and restores `restoreProgramNumber + 1` (or `PC 0` Manual mode); Zoom MS Plus sends `CC #74` (`0xB0, 0x4A, 0x7F/0x00`) alongside `F0 52 00 6E 64 20 00 64 0B <01/00> 00 00 00 00 F7` and parses incoming pedal tuner feedback.
+  * Tracked `isTunerActive` with `toggleTuner()` / `setTunerActive(bool)` on `DeviceConnectionController` and `SetlistController`, automatically resetting on disconnect or when switching patches/setlist entries.
+  * Added `stage_tuner_toggle_button` in `SetlistPerformanceView` and `toolbar_tuner_toggle_button` in `ConnectionBarWidget`.
+- [x] **Landscape Stage Mode Dashboard (`lib/features/setlist/setlist_performance_view.dart`):**
+  * Preserved the vertical portrait layout (`maxWidth < maxHeight` or `< 700px`) with the `TUNER` button integrated into the top bar.
+  * Implemented the landscape dashboard (`maxWidth >= maxHeight` and `>= 700px`): 20–25% left column (`(maxWidth * 0.23).clamp(210.0, 300.0)`) with `stage_setlist_selector`, `stage_landscape_patch_box`, `stage_tuner_toggle_button`, and `PREV`/`NEXT` buttons, paired with a 75–80% right area containing the adaptive multi-column non-scrolling `stage_setlist_patch_grid` (`stage_setlist_entry_tile_$index`) and bottom `stage_effect_stompbox_strip`.
+
+---
+
+### 🟢 Milestone 17.2: Full-Screen Stage Mode Layout (Hide Docked Library Sidebar in Stage Mode)
+*Status:* **Completed**
+- [x] **Full-Screen Stage Mode Workspace (`lib/main.dart`):**
+  * Hid the docked right-hand `PatchLibraryDrawerOrPanel` side panel on `expanded` / wide tablet and desktop viewports when `_setlistController.isPerformanceModeActive` is true, expanding `SetlistPerformanceView` to 100% of the available workspace width and height and restoring the docked panel upon exiting Stage Mode.
+- [x] **Self-Contained Setlist Selector (`lib/features/setlist/setlist_performance_view.dart`):**
+  * Added a touch-friendly `stage_setlist_selector` dropdown in the `SetlistPerformanceView` header bar (and empty-setlist fallback) so performers can switch active setlists directly in full-screen Stage Mode without the library sidebar.
+- [x] **Widget Tests & Verification (`test/features/setlist/setlist_ui_test.dart`):**
+  * Added a `1280x800` tablet/desktop widget test verifying docked `PatchLibraryDrawerOrPanel` removal on entering Stage Mode, full-width `SetlistPerformanceView` (`1280.0` px), live setlist switching via `stage_setlist_selector`, and restoration of the docked panel on exit (326 total passing tests).
+
+---
 
 ### 🟢 Milestone 17.1: Hardware Patch-Switch Fix, Generation Compatibility Locks, Export Folder Browser, File-Based Bank Restore & Multi-File Library Import
 *Status:* **Completed**
@@ -637,5 +672,5 @@
 | **State Controllers** | Complete | `DeviceConnectionController` (Bank sync), `PatchEditorController` (Undo/Redo, A/B Compare, Name/Tempo/Slots), `PatchLibraryController` |
 | **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget` (RTL order), `RotaryKnobWidget`, `SlotInspectorWidget`, `PatchDiffDialog`, `HardwareBankBrowserWidget`, `WriteToSlotDialog`, `PatchLibraryDrawerOrPanel` |
 | **Static Analysis** | Passing (0 issues) | Verified via `flutter analyze --no-pub` |
-| **Unit & Widget Tests** | 325 Passing (100%) | 314 prior + 11 net new Milestone 17.1 regression & widget tests |
+| **Unit & Widget Tests** | 330 Passing (100%) | 326 prior + 4 new Milestone 18 tuner & landscape Stage Mode tests |
 

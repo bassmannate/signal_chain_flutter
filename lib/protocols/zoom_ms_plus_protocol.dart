@@ -40,6 +40,8 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   static const int cmdRequestBankAndProgram = 0x33; // Zoom request current bank and program opcode
   static const int cmdCurrentPatchDumpV1 = 0x28; // legacy Zoom current patch dump
   static const int cmdParameterEditV1 = 0x31; // legacy Zoom real-time parameter edit
+  static const int cmdTunerOn = 0x0B; // Zoom MS Plus 7-byte Tuner ON (with prefix 0x64)
+  static const int cmdTunerOff = 0x0C; // Zoom MS Plus 7-byte Tuner OFF (with prefix 0x64)
 
   /// Target pedal constants in PTCF header.
   static const int ptcfTargetMs50gPlus = 0x00040000;
@@ -514,6 +516,44 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
 
     // Zoom success response: F0 52 00 <familyIdByte> 00 00 F7
     return data[4] == 0x00 && data[5] == 0x00 && data[6] == 0xF7;
+  }
+
+  @override
+  List<MidiMessage> buildTunerToggleMessages(
+    bool enabled, {
+    int? restoreProgramNumber,
+  }) {
+    // Zoom MS Plus 7-byte Tuner SysEx:
+    // ON:  F0 52 00 6E 64 0B F7
+    // OFF: F0 52 00 6E 64 0C F7
+    return [
+      MidiMessage.sysEx([
+        manufacturerId,
+        0x00,
+        familyIdByte,
+        0x64,
+        enabled ? cmdTunerOn : cmdTunerOff,
+      ]),
+    ];
+  }
+
+  @override
+  bool isTunerStateChange(MidiMessage message) {
+    final data = message.data;
+    if (!message.isSysEx || data.length != 7) return false;
+    return data[0] == 0xF0 &&
+        data[1] == manufacturerId &&
+        data[2] == 0x00 &&
+        data[3] == familyIdByte &&
+        data[4] == 0x64 &&
+        (data[5] == cmdTunerOn || data[5] == cmdTunerOff) &&
+        data[6] == 0xF7;
+  }
+
+  @override
+  bool? parseTunerStateChange(MidiMessage message) {
+    if (!isTunerStateChange(message)) return null;
+    return message.data[5] == cmdTunerOn;
   }
 
   @override

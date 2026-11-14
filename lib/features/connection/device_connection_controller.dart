@@ -42,6 +42,7 @@ class DeviceConnectionController extends ChangeNotifier {
   String? _bankSyncStatus;
   bool _cancelBankSync = false;
   bool _isDisposed = false;
+  bool _isTunerActive = false;
 
   HardwareUpdateHandler? _hardwareUpdateHandler;
   dynamic _editor;
@@ -271,6 +272,46 @@ class DeviceConnectionController extends ChangeNotifier {
   /// Status description of the bank sync operation, or null.
   String? get bankSyncStatus => _bankSyncStatus;
 
+  /// True when the hardware tuner is currently engaged.
+  bool get isTunerActive => _isTunerActive;
+
+  /// Engages or exits the hardware tuner and dispatches protocol MIDI commands.
+  Future<void> setTunerActive(bool enabled) async {
+    if (_isTunerActive == enabled) return;
+    _isTunerActive = enabled;
+    notifyListeners();
+
+    if (!transport.isConnected) return;
+
+    int? restoreProgramNumber = _activeHardwareSlotIndex;
+    if (restoreProgramNumber == null && _editor != null) {
+      try {
+        restoreProgramNumber = (_editor.patch as Patch?)?.programNumber;
+      } catch (_) {}
+    }
+
+    final messages = _activeProtocol.buildTunerToggleMessages(
+      enabled,
+      restoreProgramNumber: restoreProgramNumber,
+    );
+    for (final msg in messages) {
+      try {
+        await transport.send(msg);
+      } catch (_) {}
+    }
+  }
+
+  /// Toggles the hardware tuner active state.
+  Future<void> toggleTuner() => setTunerActive(!_isTunerActive);
+
+  /// Resets the local tuner indicator without dispatching MIDI.
+  void resetTunerState() {
+    if (_isTunerActive) {
+      _isTunerActive = false;
+      notifyListeners();
+    }
+  }
+
   /// Scans for available MIDI ports from [transport] and auto-selects known hardware ports.
   Future<void> refreshPorts({bool autoConnect = true}) async {
     _isScanning = true;
@@ -325,6 +366,7 @@ class DeviceConnectionController extends ChangeNotifier {
     _isConnecting = true;
     _errorMessage = null;
     _activeHardwareSlotIndex = null;
+    _isTunerActive = false;
     notifyListeners();
 
     try {
@@ -406,6 +448,7 @@ class DeviceConnectionController extends ChangeNotifier {
   Future<void> disconnect() async {
     cancelBankSync();
     _activeHardwareSlotIndex = null;
+    _isTunerActive = false;
     _errorMessage = null;
     try {
       if (transport.isConnected) {
@@ -689,6 +732,16 @@ class DeviceConnectionController extends ChangeNotifier {
       return;
     }
 
+    // Hardware Tuner state feedback (CC #74 or SysEx 64 20 00 64 0B on Zoom; PC 37 on Line 6)
+    if (_activeProtocol.isTunerStateChange(message)) {
+      final tunerActive = _activeProtocol.parseTunerStateChange(message);
+      if (tunerActive != null && _isTunerActive != tunerActive) {
+        _isTunerActive = tunerActive;
+        notifyListeners();
+      }
+      return;
+    }
+
     // Track Bank Select CC messages from hardware (CC 0 = MSB, CC 32 = LSB)
     if (message.isControlChange) {
       final ccNum = message.data[1];
@@ -705,6 +758,7 @@ class DeviceConnectionController extends ChangeNotifier {
     if (_activeProtocol.isSlotChange(message)) {
       final slotIndex = _activeProtocol.parseSlotChange(message);
       if (slotIndex != null) {
+        _isTunerActive = false;
         _incomingBankMsb = 0;
         _incomingBankLsb = slotIndex ~/ 10;
         setActiveHardwareSlotIndex(
@@ -718,6 +772,7 @@ class DeviceConnectionController extends ChangeNotifier {
 
     // Program Change: combined with tracked Bank Select (10 patches/bank on MS Plus; 1..36 on Bass POD Pro)
     if (message.isProgramChange) {
+      _isTunerActive = false;
       final prog = message.data.length > 1 ? (message.data[1] & 0x7F) : 0;
       final int slotIndex;
       if (_activeFamily.isLine6BassPodPro) {

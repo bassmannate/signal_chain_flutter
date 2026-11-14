@@ -247,6 +247,84 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(setlistController.activeEntryIndex, equals(1));
     });
+
+    test('toggles hardware tuner for Zoom MS Plus with 7-byte SysEx, handles feedback, and resets on patch switch or disconnect', () async {
+      await transport.connect('sim_zoom');
+      connection.selectDeviceFamily(DeviceFamily.zoomMs60bPlus);
+      transport.clearSentMessages();
+
+      // Engage tuner -> F0 52 00 6E 64 0B F7
+      await setlistController.toggleTuner();
+      expect(setlistController.isTunerActive, isTrue);
+      expect(connection.isTunerActive, isTrue);
+      expect(transport.sentMessages.length, equals(1));
+      expect(
+        transport.sentMessages.single.data,
+        equals([0xF0, 0x52, 0x00, 0x6E, 0x64, 0x0B, 0xF7]),
+      );
+
+      // Exit tuner -> F0 52 00 6E 64 0C F7
+      transport.clearSentMessages();
+      await setlistController.toggleTuner();
+      expect(setlistController.isTunerActive, isFalse);
+      expect(transport.sentMessages.length, equals(1));
+      expect(
+        transport.sentMessages.single.data,
+        equals([0xF0, 0x52, 0x00, 0x6E, 0x64, 0x0C, 0xF7]),
+      );
+
+      // Physical pedal 7-byte SysEx tuner ON feedback: F0 52 00 6E 64 0B F7
+      transport.simulateIncomingMessage(
+        MidiMessage.sysEx(const [0x52, 0x00, 0x6E, 0x64, 0x0B]),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(setlistController.isTunerActive, isTrue);
+
+      // Physical pedal 7-byte SysEx tuner OFF feedback: F0 52 00 6E 64 0C F7
+      transport.simulateIncomingMessage(
+        MidiMessage.sysEx(const [0x52, 0x00, 0x6E, 0x64, 0x0C]),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(setlistController.isTunerActive, isFalse);
+
+      // Switching setlist entry resets active tuner
+      await setlistController.setTunerActive(true);
+      expect(setlistController.isTunerActive, isTrue);
+      await setlistController.nextEntry();
+      expect(setlistController.isTunerActive, isFalse);
+
+      // Disconnecting resets active tuner
+      await setlistController.setTunerActive(true);
+      expect(setlistController.isTunerActive, isTrue);
+      await connection.disconnect();
+      expect(setlistController.isTunerActive, isFalse);
+    });
+
+    test('toggles hardware tuner for Line 6 Bass POD Pro with PC 37 and restores active PC or Manual PC 0', () async {
+      await transport.connect('sim_zoom');
+      connection.selectDeviceFamily(DeviceFamily.line6BassPodPro);
+
+      // Case 1: Active hardware slot 4 -> engage PC 37, exit restores PC 5
+      connection.setActiveHardwareSlotIndex(4, syncEditorPatchProgramNumber: false);
+      transport.clearSentMessages();
+
+      await connection.toggleTuner();
+      expect(connection.isTunerActive, isTrue);
+      expect(transport.sentMessages.single.data, equals([0xC0, 37]));
+
+      transport.clearSentMessages();
+      await connection.toggleTuner();
+      expect(connection.isTunerActive, isFalse);
+      expect(transport.sentMessages.single.data, equals([0xC0, 5]));
+
+      // Case 2: No active hardware slot -> exit restores PC 0 (Manual mode)
+      connection.setActiveHardwareSlotIndex(null, syncEditorPatchProgramNumber: false);
+      transport.clearSentMessages();
+      await connection.setTunerActive(true);
+      transport.clearSentMessages();
+      await connection.setTunerActive(false);
+      expect(transport.sentMessages.single.data, equals([0xC0, 0]));
+    });
   });
 }
 

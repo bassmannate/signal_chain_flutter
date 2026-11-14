@@ -118,6 +118,41 @@ class ConnectionBarWidget extends StatelessWidget {
               ],
             );
 
+            final tunerButton = Tooltip(
+              message: connectionController.isTunerActive
+                  ? 'Tuner ON (Tap to Exit)'
+                  : 'Toggle Hardware Tuner',
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: connectionController.isTunerActive
+                      ? Colors.amberAccent.withValues(alpha: 0.22)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: connectionController.isTunerActive
+                        ? Colors.amberAccent
+                        : StudioTheme.surfaceBorder,
+                  ),
+                ),
+                child: IconButton(
+                  key: const Key('toolbar_tuner_toggle_button'),
+                  icon: Icon(
+                    Icons.graphic_eq,
+                    size: 18,
+                    color: connectionController.isTunerActive
+                        ? Colors.amberAccent
+                        : Colors.white70,
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 34,
+                    minHeight: 34,
+                  ),
+                  padding: EdgeInsets.zero,
+                  onPressed: () => connectionController.toggleTuner(),
+                ),
+              ),
+            );
+
             final buttonPadding = isCompact
                 ? const EdgeInsets.symmetric(horizontal: 8, vertical: 6)
                 : const EdgeInsets.symmetric(horizontal: 10, vertical: 6);
@@ -198,6 +233,8 @@ class ConnectionBarWidget extends StatelessWidget {
                     : null,
               ),
 
+              if (!isCompact) tunerButton,
+
               if (setlistController != null)
                 OutlinedButton.icon(
                   key: const Key('toggle_performance_mode_button'),
@@ -253,6 +290,7 @@ class ConnectionBarWidget extends StatelessWidget {
                               ),
                             ),
                             refreshButton,
+                            tunerButton,
                             ?libraryButton,
                           ],
                         ),

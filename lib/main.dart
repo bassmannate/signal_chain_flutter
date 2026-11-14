@@ -611,7 +611,9 @@ class _SignalChainAppState extends State<SignalChainApp> {
               return ListenableBuilder(
                 listenable: _setlistController,
                 builder: (context, _) {
-                  final mainContent = _setlistController.isPerformanceModeActive
+                  final isStageMode = _setlistController.isPerformanceModeActive;
+                  final showDockedLibrary = showLibraryPanel && !isStageMode;
+                  final mainContent = isStageMode
                       ? SetlistPerformanceView(
                           setlistController: _setlistController,
                           editorController: _editorController,
@@ -630,7 +632,7 @@ class _SignalChainAppState extends State<SignalChainApp> {
                             : () => _scaffoldKey.currentState?.openEndDrawer(),
                       ),
                       Expanded(
-                        child: showLibraryPanel
+                        child: showDockedLibrary
                             ? Row(
                                 children: [
                                   Expanded(child: mainContent),

@@ -26,7 +26,7 @@ Total Zoom MS Plus catalog coverage: **578** typed effect definitions across all
 
 ---
 
-## Key Features (Through Milestone 17.1)
+## Key Features (Through Milestone 18.1)
 
 - **Physical Pedal Patch-Switch Sync & Hardware Generation Locks:** Incoming pedal patch switches (`64 26 00 00`, Bank Select CC `0`/`32` + PC, and `64 12 01` dumps) immediately update the active hardware slot and editor buffer with zero MIDI echo (`notifyHardware: false`); hardware generation locks (`DeviceGeneration`) hard-block incompatible cross-generation writes (e.g., Line 6 ↔ Zoom MS Plus) while allowing same-generation cross-model writes (e.g., MS-50G+ → MS-60B+) after confirmation.
 
@@ -36,7 +36,7 @@ Total Zoom MS Plus catalog coverage: **578** typed effect definitions across all
 
 - **Native Cross-Platform Hardware USB MIDI:** Zero-dependency hardware MIDI transports for Linux ALSA (`LinuxAlsaMidiTransport`), Android USB Host OTG (`AndroidMidiTransport`), and Windows WinMM (`WinMmMidiTransport` via pure `dart:ffi` to `winmm.dll` and `kernel32.dll`, with endpoint pairing, `NativeCallable.listener` SysEx ring reassembly, and `MIDIHDR` SysEx transmission).
 
-- **Live Performance Setlist Mode:** Ordered gig/rehearsal setlists referencing saved library patches with BPM overrides, cue notes, a high-contrast Stage Mode view (`◄ PREVIOUS` / `NEXT ►` stepping, live stompbox bypass toggles, and desktop arrow shortcuts), immediate hardware dispatch (`64 20 00` deltas on Zoom MS Plus, `encodePatch` on Line 6), and optional incoming MIDI Program Change / CC foot-controller triggers.
+- **Live Performance Setlist Mode & Hardware Tuner Toggle:** Ordered gig/rehearsal setlists referencing saved library patches with BPM overrides, cue notes, a full-screen Stage Mode view with responsive portrait layout and a dedicated **Landscape Stage Dashboard** (`~22%` left column with setlist selector, compact active-patch header, `PREV`/`NEXT` step buttons, `TUNER` toggle, and auto-scrolling setlist patch list + `~78%` right adaptive grid of giant touch-friendly effect stompboxes with live bypass toggling), **Hardware Tuner Toggle** in both `ConnectionBarWidget` and `SetlistPerformanceView` (Line 6 `PC 37` / restore PC; Zoom MS Plus 7-byte SysEx `F0 52 00 6E 64 0B F7` ON / `F0 52 00 6E 64 0C F7` OFF with bidirectional feedback), immediate hardware dispatch (`64 20 00` deltas on Zoom MS Plus, `encodePatch` on Line 6), and optional incoming MIDI Program Change / CC foot-controller triggers.
 - **Right-to-Left Pedalboard Signal Chain:** Physical audio-flow strip (`OUT ← ... ← IN`) with drag-and-drop reordering (`LongPressDraggable` on mobile touchscreens, immediate drag on desktop), inter-slot insertion zones, and custom scroll/drag rotary knobs (`RotaryKnobWidget`).
 - **Undo/Redo History, A/B Tone Compare & Patch Diff Preview:** Bounded 50-step Undo/Redo history with rotary-knob drag coalescing and desktop keyboard shortcuts (`Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z`), instant `A | B` tone comparison with live hardware delta sync (`64 20 00` on Zoom MS Plus, `encodePatch` on Line 6), and structured `PatchDiffDialog` previews for A/B compare, pre-write slot diffing, library preset comparison, and import preview.
 - **Live Bidirectional Hardware Sync:** Real-time knob, bypass, and active-slot focus synchronization with Zoom MS Plus hardware, plus 100-slot hardware bank browsing and slot writing.
