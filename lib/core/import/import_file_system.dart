@@ -41,6 +41,7 @@ abstract class ImportFileSystem {
   Future<List<ImportQuickLocation>> getQuickLocations();
   Future<bool> directoryExists(String path);
   Future<bool> fileExists(String path);
+  Future<void> createDirectory(String path);
   Future<String?> parentDirectory(String path);
   Future<List<ImportFsEntry>> listDirectory(
     String path, {
@@ -153,6 +154,11 @@ class LocalImportFileSystem extends ImportFileSystem {
 
   @override
   Future<bool> fileExists(String path) => File(path).exists();
+
+  @override
+  Future<void> createDirectory(String path) async {
+    await Directory(path).create(recursive: true);
+  }
 
   @override
   Future<String?> parentDirectory(String path) async {
@@ -318,6 +324,11 @@ class InMemoryImportFileSystem extends ImportFileSystem {
   @override
   Future<bool> fileExists(String path) async =>
       _files.containsKey(_normalize(path));
+
+  @override
+  Future<void> createDirectory(String path) async {
+    addDirectory(path);
+  }
 
   @override
   Future<String?> parentDirectory(String path) async {

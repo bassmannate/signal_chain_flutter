@@ -149,6 +149,8 @@ class _SignalChainAppState extends State<SignalChainApp> {
               : const LocalImportFileSystem(),
         );
 
+    _editorController.setLibraryController(_libraryController);
+
     _setlistRepo = widget.setlistRepository ??
         (_isRunningInWidgetTest
             ? InMemorySetlistRepository()

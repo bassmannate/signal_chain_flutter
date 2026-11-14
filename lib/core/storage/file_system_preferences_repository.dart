@@ -66,5 +66,26 @@ class FileSystemPreferencesRepository extends AppPreferencesRepository {
     }
     await _writeAll(data);
   }
+
+  @override
+  Future<String?> getLastExportDirectory() async {
+    final data = await _readAll();
+    final raw = data['lastExportDirectory'] as String?;
+    if (raw == null || raw.trim().isEmpty) return null;
+    return raw.trim();
+  }
+
+  @override
+  Future<void> setLastExportDirectory(String? directoryPath) async {
+    final data = await _readAll();
+    data['version'] = 1;
+    final trimmed = directoryPath?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      data.remove('lastExportDirectory');
+    } else {
+      data['lastExportDirectory'] = trimmed;
+    }
+    await _writeAll(data);
+  }
 }
 

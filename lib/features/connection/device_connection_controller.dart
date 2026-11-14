@@ -135,12 +135,15 @@ class DeviceConnectionController extends ChangeNotifier {
   /// Currently active hardware memory slot index (0 to 99), or null if not yet determined.
   int? get activeHardwareSlotIndex => _activeHardwareSlotIndex;
 
-  /// Explicitly sets the active hardware slot index, notifies the bound editor controller,
-  /// and updates listeners.
-  void setActiveHardwareSlotIndex(int? slotIndex) {
+  /// Explicitly sets the active hardware slot index, optionally synchronizing the
+  /// bound editor patch's [Patch.programNumber] metadata, and updates listeners.
+  void setActiveHardwareSlotIndex(
+    int? slotIndex, {
+    bool syncEditorPatchProgramNumber = true,
+  }) {
     if (_activeHardwareSlotIndex != slotIndex) {
       _activeHardwareSlotIndex = slotIndex;
-      if (slotIndex != null && _editor != null) {
+      if (syncEditorPatchProgramNumber && slotIndex != null && _editor != null) {
         try {
           _editor.setHardwareSlotIndex(slotIndex);
         } catch (_) {}
@@ -240,6 +243,9 @@ class DeviceConnectionController extends ChangeNotifier {
 
   /// Active hardware family.
   DeviceFamily get activeFamily => _activeFamily;
+
+  /// Connected hardware device family, or null when disconnected.
+  DeviceFamily? get connectedDeviceFamily => isConnected ? _activeFamily : null;
 
   /// Resolved protocol engine for [activeFamily].
   DeviceProtocol get activeProtocol => _activeProtocol;
@@ -701,17 +707,28 @@ class DeviceConnectionController extends ChangeNotifier {
       if (slotIndex != null) {
         _incomingBankMsb = 0;
         _incomingBankLsb = slotIndex ~/ 10;
-        setActiveHardwareSlotIndex(slotIndex);
+        setActiveHardwareSlotIndex(
+          slotIndex,
+          syncEditorPatchProgramNumber: false,
+        );
         _hardwareUpdateHandler?.call(programNumber: slotIndex);
       }
       return;
     }
 
-    // Program Change: combined with tracked Bank Select (10 patches/bank on MS Plus)
+    // Program Change: combined with tracked Bank Select (10 patches/bank on MS Plus; 1..36 on Bass POD Pro)
     if (message.isProgramChange) {
       final prog = message.data.length > 1 ? (message.data[1] & 0x7F) : 0;
-      final slotIndex = (currentIncomingBank * 10) + prog;
-      setActiveHardwareSlotIndex(slotIndex);
+      final int slotIndex;
+      if (_activeFamily.isLine6BassPodPro) {
+        slotIndex = prog > 0 ? (prog - 1).clamp(0, _activeFamily.totalMemorySlots - 1) : 0;
+      } else {
+        slotIndex = (currentIncomingBank * 10) + prog;
+      }
+      setActiveHardwareSlotIndex(
+        slotIndex,
+        syncEditorPatchProgramNumber: false,
+      );
       _hardwareUpdateHandler?.call(programNumber: slotIndex);
       return;
     }
@@ -757,14 +774,27 @@ class DeviceConnectionController extends ChangeNotifier {
         if (_activeHardwareSlotIndex == null) {
           final matched = findMatchingBankSlot(decoded);
           if (matched != null) {
-            setActiveHardwareSlotIndex(matched);
+            setActiveHardwareSlotIndex(
+              matched,
+              syncEditorPatchProgramNumber: false,
+            );
           }
         }
-        _hardwareUpdateHandler?.call(
-          patch: _activeHardwareSlotIndex != null
-              ? decoded.copyWith(programNumber: _activeHardwareSlotIndex)
-              : decoded,
-        );
+        final resolvedPatch = _activeHardwareSlotIndex != null
+            ? decoded.copyWith(programNumber: _activeHardwareSlotIndex)
+            : decoded;
+        if (_activeHardwareSlotIndex != null &&
+            _activeHardwareSlotIndex! >= 0 &&
+            _activeHardwareSlotIndex! < _bankSlots.length) {
+          updateBankSlot(
+            _activeHardwareSlotIndex!,
+            patchName: resolvedPatch.name.trim().isNotEmpty
+                ? resolvedPatch.name.trim()
+                : 'Slot ${_activeHardwareSlotIndex!.toString().padLeft(2, '0')}',
+            patch: resolvedPatch,
+          );
+        }
+        _hardwareUpdateHandler?.call(patch: resolvedPatch);
       } catch (_) {}
       return;
     }

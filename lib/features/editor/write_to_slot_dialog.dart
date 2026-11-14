@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../models/device_family.dart';
+import '../../models/patch.dart';
 import '../../models/patch_diff.dart';
 import '../connection/device_connection_controller.dart';
 import '../theme/studio_theme.dart';
@@ -7,15 +9,17 @@ import 'patch_diff_dialog.dart';
 import 'patch_editor_controller.dart';
 
 /// Modal dialog allowing the user to select a hardware persistent memory slot (0–99)
-/// and save the current active editor patch into that slot.
+/// and save the active editor patch (or [patchOverride]) into that slot.
 class WriteToSlotDialog extends StatefulWidget {
   final PatchEditorController editorController;
   final DeviceConnectionController connectionController;
+  final Patch? patchOverride;
 
   const WriteToSlotDialog({
     super.key,
     required this.editorController,
     required this.connectionController,
+    this.patchOverride,
   });
 
   @override
@@ -31,7 +35,8 @@ class _WriteToSlotDialogState extends State<WriteToSlotDialog> {
   void initState() {
     super.initState();
     final totalSlots = widget.connectionController.activeFamily.totalMemorySlots;
-    final currentProg = widget.editorController.patch?.programNumber ??
+    final targetPatch = widget.patchOverride ?? widget.editorController.patch;
+    final currentProg = targetPatch?.programNumber ??
         widget.connectionController.activeHardwareSlotIndex;
     _selectedSlot = currentProg != null && currentProg >= 0 && currentProg < totalSlots
         ? currentProg
@@ -40,9 +45,19 @@ class _WriteToSlotDialogState extends State<WriteToSlotDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final patch = widget.editorController.patch;
-    final totalSlots = widget.connectionController.activeFamily.totalMemorySlots;
+    final patch = widget.patchOverride ?? widget.editorController.patch;
+    final targetFamily = widget.connectionController.activeFamily;
+    final totalSlots = targetFamily.totalMemorySlots;
     final bankSlots = widget.connectionController.bankSlots;
+
+    final isCrossGeneration = patch != null &&
+        targetFamily != DeviceFamily.unknown &&
+        patch.deviceFamily != DeviceFamily.unknown &&
+        !patch.deviceFamily.isSameGeneration(targetFamily);
+    final isSameGenCrossModel = patch != null &&
+        !isCrossGeneration &&
+        targetFamily != DeviceFamily.unknown &&
+        patch.deviceFamily != targetFamily;
 
     final isCompact = MediaQuery.sizeOf(context).width < 600;
 
@@ -123,6 +138,53 @@ class _WriteToSlotDialogState extends State<WriteToSlotDialog> {
                   ),
                 ),
                 const SizedBox(height: 16),
+              ],
+              if (isCrossGeneration) ...[
+                Container(
+                  key: const Key('write_slot_generation_error_banner'),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.redAccent),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.block, color: Colors.redAccent, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Incompatible hardware generation: "${patch.deviceFamily.displayName}" (${patch.deviceFamily.generation.displayName}) cannot be written to ${targetFamily.displayName} (${targetFamily.generation.displayName}).',
+                          style: const TextStyle(fontSize: 12, color: Colors.redAccent),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ] else if (isSameGenCrossModel) ...[
+                Container(
+                  key: const Key('write_slot_model_warning_banner'),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.orangeAccent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orangeAccent),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Same-generation model mismatch: "${patch.deviceFamily.displayName}" will be written to ${targetFamily.displayName}. Unsupported DSP blocks may be mapped differently.',
+                          style: const TextStyle(fontSize: 12, color: Colors.orangeAccent),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
               ],
               Text(
                 'Select Destination Slot (0–${totalSlots - 1}):',
@@ -257,7 +319,7 @@ class _WriteToSlotDialogState extends State<WriteToSlotDialog> {
             foregroundColor: Colors.black,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           ),
-          onPressed: _isSaving ? null : _handleWrite,
+          onPressed: (_isSaving || isCrossGeneration || patch == null) ? null : _handleWrite,
         ),
       ],
     );
@@ -270,7 +332,10 @@ class _WriteToSlotDialogState extends State<WriteToSlotDialog> {
     });
 
     try {
-      await widget.editorController.savePatchToDeviceSlot(_selectedSlot);
+      await widget.editorController.savePatchToDeviceSlot(
+        _selectedSlot,
+        widget.patchOverride,
+      );
       if (mounted) {
         if (widget.editorController.errorMessage != null) {
           setState(() {

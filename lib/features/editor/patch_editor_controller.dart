@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/midi/midi_message.dart';
 import '../../core/midi/midi_transport.dart';
 import '../../core/midi/mock_midi_transport.dart';
+import '../../models/device_family.dart';
 import '../../models/effect_slot.dart';
 import '../../models/parameter_descriptor.dart';
 import '../../models/patch.dart';
@@ -12,6 +13,7 @@ import '../../models/patch_diff.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
 import '../../protocols/device_protocol.dart';
 import '../connection/device_connection_controller.dart';
+import '../library/patch_library_controller.dart';
 import 'patch_edit_history.dart';
 
 /// Controller managing active patch editing, slot inspection, and bidirectional
@@ -34,6 +36,15 @@ class PatchEditorController extends ChangeNotifier {
   CompareSlot _activeCompareSlot = CompareSlot.a;
   Patch? _compareSlotA;
   Patch? _compareSlotB;
+  PatchLibraryController? _libraryController;
+
+  bool _isDisposed = false;
+  bool _isRestoringBank = false;
+  bool _cancelBankRestore = false;
+  double _bankRestoreProgress = 0.0;
+  String? _bankRestoreStatus;
+  int _bankRestoreCompletedCount = 0;
+  int _bankRestoreTotalCount = 0;
 
   PatchEditorController({
     required this.transport,
@@ -71,6 +82,18 @@ class PatchEditorController extends ChangeNotifier {
 
   /// Most recent error message, or null.
   String? get errorMessage => _errorMessage;
+
+  /// Batch hardware bank restore progress state.
+  bool get isRestoringBank => _isRestoringBank;
+  double get bankRestoreProgress => _bankRestoreProgress;
+  String? get bankRestoreStatus => _bankRestoreStatus;
+  int get bankRestoreCompletedCount => _bankRestoreCompletedCount;
+  int get bankRestoreTotalCount => _bankRestoreTotalCount;
+
+  /// Binds an optional [PatchLibraryController] for "Save Copy As..." duplication.
+  void setLibraryController(PatchLibraryController? libraryController) {
+    _libraryController = libraryController;
+  }
 
   /// Resolved protocol engine from [connectionController].
   DeviceProtocol get protocol => connectionController.activeProtocol;
@@ -335,7 +358,10 @@ class PatchEditorController extends ChangeNotifier {
     _errorMessage = null;
     _resetSessionBaseline(patch);
     if (patch.programNumber != null) {
-      connectionController.setActiveHardwareSlotIndex(patch.programNumber);
+      connectionController.setActiveHardwareSlotIndex(
+        patch.programNumber,
+        syncEditorPatchProgramNumber: false,
+      );
     }
     notifyListeners();
   }
@@ -480,9 +506,65 @@ class PatchEditorController extends ChangeNotifier {
   /// no switch messages are sent back to the pedal, preventing feedback/flopping loops.
   Future<void> loadPatchFromDeviceSlot(int slotIndex, {bool notifyHardware = true}) async {
     if (!transport.isConnected) {
+      if (!notifyHardware) {
+        connectionController.setActiveHardwareSlotIndex(
+          slotIndex,
+          syncEditorPatchProgramNumber: false,
+        );
+        if (_patch != null && _patch!.programNumber != slotIndex) {
+          _patch = _patch!.copyWith(programNumber: slotIndex);
+        }
+        notifyListeners();
+        return;
+      }
       _errorMessage = 'Cannot load slot $slotIndex: MIDI transport is not connected.';
       notifyListeners();
       return;
+    }
+
+    // Always update the tracked active slot index immediately so the UI bank view
+    // highlights the pedal's newly selected patch right away.
+    connectionController.setActiveHardwareSlotIndex(
+      slotIndex,
+      syncEditorPatchProgramNumber: false,
+    );
+
+    // 1. Check if patch is already cached in local memory (fast path: zero MIDI needed to fetch).
+    final cachedSlot =
+        (slotIndex >= 0 && slotIndex < connectionController.bankSlots.length)
+            ? connectionController.bankSlots[slotIndex]
+            : null;
+
+    if (cachedSlot != null && cachedSlot.patch != null) {
+      final patchToLoad = cachedSlot.patch!.copyWith(programNumber: slotIndex);
+      _isHandlingIncoming = true;
+      try {
+        loadPatch(patchToLoad);
+        connectionController.setActiveHardwareSlotIndex(
+          slotIndex,
+          syncEditorPatchProgramNumber: false,
+        );
+      } finally {
+        _isHandlingIncoming = false;
+      }
+
+      // Send slot switch message(s) to pedal (CC0/CC32/PC) ONLY when initiated by app UI!
+      if (notifyHardware) {
+        final switchMessages = protocol.buildSlotSelectMessages(slotIndex);
+        for (final msg in switchMessages) {
+          try {
+            await transport.send(msg);
+          } catch (_) {}
+        }
+      }
+      return;
+    }
+
+    // When switching on physical pedal and the slot isn't cached yet, reflect the
+    // new programNumber immediately while fetching the slot/current patch from hardware.
+    if (!notifyHardware && _patch != null && _patch!.programNumber != slotIndex) {
+      _patch = _patch!.copyWith(programNumber: slotIndex);
+      notifyListeners();
     }
 
     _isLoading = true;
@@ -491,41 +573,73 @@ class PatchEditorController extends ChangeNotifier {
 
     try {
       final activeProto = protocol;
-      Patch patchToLoad;
+      final timeout = notifyHardware
+          ? const Duration(seconds: 2)
+          : connectionController.currentPatchTimeout;
 
-      // 1. Check if patch is already cached in local memory
-      final cachedSlot = (slotIndex >= 0 && slotIndex < connectionController.bankSlots.length)
-          ? connectionController.bankSlots[slotIndex]
-          : null;
-
-      if (cachedSlot != null && cachedSlot.patch != null) {
-        patchToLoad = cachedSlot.patch!;
-      } else {
-        // 2. Fetch slot from hardware with targeted matcher verifying slot index
+      MidiMessage? response;
+      try {
         final request = activeProto.buildPatchSlotRequest(slotIndex);
-        final response = await transport.sendSysExAndWait(
+        response = await transport.sendSysExAndWait(
           request,
           responseMatcher: (m) =>
-              activeProto.isSlotPatchDump(m) &&
-              activeProto.extractSlotIndex(m) == slotIndex,
-          timeout: const Duration(seconds: 3),
+              (activeProto.isSlotPatchDump(m) &&
+                  activeProto.extractSlotIndex(m) == slotIndex) ||
+              (!notifyHardware && activeProto.isCurrentPatchDump(m)),
+          timeout: timeout,
         );
-
-        patchToLoad = activeProto.decodePatch(response);
-        connectionController.updateBankSlot(
-          slotIndex,
-          patchName: patchToLoad.name.trim().isNotEmpty
-              ? patchToLoad.name.trim()
-              : 'Slot ${slotIndex.toString().padLeft(2, '0')}',
-          patch: patchToLoad,
-        );
+      } on TimeoutException {
+        response = null;
+      } catch (_) {
+        if (notifyHardware) rethrow;
+        response = null;
       }
+
+      // Hardware fallback for physical pedal switches: request current edit buffer if slot dump didn't answer.
+      if (response == null && !notifyHardware && transport.isConnected) {
+        try {
+          final currentRequest = activeProto.buildCurrentPatchRequest();
+          response = await transport.sendSysExAndWait(
+            currentRequest,
+            responseMatcher: (m) =>
+                activeProto.isCurrentPatchDump(m) ||
+                (activeProto.isSlotPatchDump(m) &&
+                    activeProto.extractSlotIndex(m) == slotIndex),
+            timeout: connectionController.currentPatchTimeout,
+          );
+        } on TimeoutException {
+          response = null;
+        } catch (_) {
+          response = null;
+        }
+      }
+
+      if (_isDisposed) return;
+
+      if (response == null) {
+        if (notifyHardware) {
+          throw TimeoutException('Timed out requesting hardware slot $slotIndex');
+        }
+        return;
+      }
+
+      final patchToLoad = activeProto.decodePatch(response).copyWith(programNumber: slotIndex);
+      connectionController.updateBankSlot(
+        slotIndex,
+        patchName: patchToLoad.name.trim().isNotEmpty
+            ? patchToLoad.name.trim()
+            : 'Slot ${slotIndex.toString().padLeft(2, '0')}',
+        patch: patchToLoad,
+      );
 
       // 3. Load patch into active editor buffer without echoing back
       _isHandlingIncoming = true;
       try {
         loadPatch(patchToLoad);
-        connectionController.setActiveHardwareSlotIndex(slotIndex);
+        connectionController.setActiveHardwareSlotIndex(
+          slotIndex,
+          syncEditorPatchProgramNumber: false,
+        );
       } finally {
         _isHandlingIncoming = false;
       }
@@ -540,11 +654,26 @@ class PatchEditorController extends ChangeNotifier {
         }
       }
     } catch (e) {
-      _errorMessage = 'Failed to load hardware slot $slotIndex: $e';
+      if (notifyHardware) {
+        _errorMessage = 'Failed to load hardware slot $slotIndex: $e';
+      }
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Sets a standardized error message when attempting to write a preset from
+  /// an incompatible hardware generation onto the connected pedal.
+  void reportCrossGenerationWriteError({
+    required DeviceFamily patchDevice,
+    required DeviceFamily targetDevice,
+  }) {
+    _errorMessage =
+        'Cannot write ${patchDevice.displayName} patch to ${targetDevice.displayName}: '
+        'incompatible hardware generation '
+        '(${patchDevice.generation.displayName} vs ${targetDevice.generation.displayName}).';
+    notifyListeners();
   }
 
   /// Writes and saves [patchToSave] (or active patch) to persistent hardware memory slot [slotIndex] (0–99).
@@ -553,6 +682,17 @@ class PatchEditorController extends ChangeNotifier {
     if (target == null) {
       _errorMessage = 'No patch loaded to save to hardware slot.';
       notifyListeners();
+      return;
+    }
+
+    final targetFamily = connectionController.activeFamily;
+    if (targetFamily != DeviceFamily.unknown &&
+        target.deviceFamily != DeviceFamily.unknown &&
+        !target.deviceFamily.isSameGeneration(targetFamily)) {
+      reportCrossGenerationWriteError(
+        patchDevice: target.deviceFamily,
+        targetDevice: targetFamily,
+      );
       return;
     }
 
@@ -603,6 +743,151 @@ class PatchEditorController extends ChangeNotifier {
       rethrow;
     } finally {
       _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Duplicates the active patch under [newName] without overwriting the original.
+  ///
+  /// When a [PatchLibraryController] is supplied or bound via [setLibraryController],
+  /// persists the duplicated preset to the library before loading it into the editor.
+  Future<Patch?> saveCopyAs(
+    String newName, {
+    PatchLibraryController? libraryController,
+  }) async {
+    final current = _patch;
+    if (current == null) return null;
+
+    final maxLen = connectionController.activeFamily.maxNameLength;
+    final trimmed = newName.trim();
+    final fallbackName = '${current.name} Copy';
+    final rawName = trimmed.isEmpty ? fallbackName : trimmed;
+    final resolvedName =
+        rawName.length > maxLen ? rawName.substring(0, maxLen).trimRight() : rawName;
+
+    final targetLib = libraryController ?? _libraryController;
+    final Patch copy;
+    if (targetLib != null) {
+      copy = await targetLib.duplicatePatch(current, newName: resolvedName);
+    } else {
+      final now = DateTime.now();
+      copy = Patch(
+        id: 'copy_${now.microsecondsSinceEpoch}',
+        name: resolvedName,
+        deviceFamily: current.deviceFamily,
+        programNumber: null,
+        slots: current.slots,
+        tags: current.tags,
+        author: current.author,
+        notes: current.notes,
+        updatedAt: now,
+        metadata: current.metadata,
+      );
+    }
+
+    loadPatch(copy);
+    return copy;
+  }
+
+  /// Cancels an active batch hardware bank restore operation.
+  void cancelBankRestore() {
+    if (_isRestoringBank) {
+      _cancelBankRestore = true;
+      _bankRestoreStatus = 'Bank restore canceled';
+      notifyListeners();
+    }
+  }
+
+  /// Sequentially writes [patches] to hardware memory slots starting at [startSlotIndex],
+  /// verifying per-slot hardware ACKs and reporting incremental progress.
+  ///
+  /// Returns the number of slots written before completion or cancellation.
+  Future<int> restoreBankSlots({
+    required List<Patch> patches,
+    int startSlotIndex = 0,
+    Duration interSlotDelay = const Duration(milliseconds: 10),
+  }) async {
+    if (!transport.isConnected) {
+      _errorMessage = 'Cannot restore hardware bank: MIDI device is not connected.';
+      notifyListeners();
+      throw StateError(_errorMessage!);
+    }
+    if (patches.isEmpty) {
+      return 0;
+    }
+
+    final targetFamily = connectionController.activeFamily;
+    final compatiblePatches = patches.where((p) {
+      if (targetFamily == DeviceFamily.unknown ||
+          p.deviceFamily == DeviceFamily.unknown) {
+        return true;
+      }
+      return p.deviceFamily.isSameGeneration(targetFamily);
+    }).toList();
+
+    if (compatiblePatches.isEmpty) {
+      _errorMessage =
+          'Cannot restore hardware bank: no patches compatible with ${targetFamily.displayName} (${targetFamily.generation.displayName}).';
+      notifyListeners();
+      return 0;
+    }
+
+    final totalMemorySlots = targetFamily.totalMemorySlots;
+    final clampedStart = startSlotIndex.clamp(0, totalMemorySlots - 1);
+    final availableSlots = totalMemorySlots - clampedStart;
+    final count = min(compatiblePatches.length, availableSlots);
+    if (count <= 0) {
+      return 0;
+    }
+
+    _isRestoringBank = true;
+    _cancelBankRestore = false;
+    _bankRestoreCompletedCount = 0;
+    _bankRestoreTotalCount = count;
+    _bankRestoreProgress = 0.0;
+    _bankRestoreStatus = 'Preparing bank restore ($count slots)...';
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      for (int i = 0; i < count; i++) {
+        if (_cancelBankRestore || !transport.isConnected) {
+          break;
+        }
+
+        final targetSlot = clampedStart + i;
+        final patch = compatiblePatches[i];
+        _bankRestoreStatus =
+            'Restoring slot #${targetSlot.toString().padLeft(2, '0')} (${i + 1}/$count): ${patch.name}';
+        _bankRestoreProgress = i / count;
+        notifyListeners();
+
+        await savePatchToDeviceSlot(targetSlot, patch);
+        _bankRestoreCompletedCount = i + 1;
+        _bankRestoreProgress = _bankRestoreCompletedCount / count;
+        notifyListeners();
+
+        if (interSlotDelay > Duration.zero &&
+            i + 1 < count &&
+            !_cancelBankRestore) {
+          await Future<void>.delayed(interSlotDelay);
+        }
+      }
+
+      if (_cancelBankRestore) {
+        _bankRestoreStatus =
+            'Bank restore canceled ($_bankRestoreCompletedCount/$count written)';
+      } else {
+        _bankRestoreStatus =
+            'Restored $_bankRestoreCompletedCount/$count hardware slots';
+      }
+      return _bankRestoreCompletedCount;
+    } catch (e) {
+      _errorMessage = 'Batch bank restore failed: $e';
+      _bankRestoreStatus = _errorMessage;
+      rethrow;
+    } finally {
+      _isRestoringBank = false;
       notifyListeners();
     }
   }
@@ -1215,32 +1500,39 @@ class PatchEditorController extends ChangeNotifier {
     if (_isSyncingStructure) return;
 
     if (patch != null) {
-      // Do not allow unsolicited patch dumps from pedal to revert active uncommitted local edits
-      if (_isDirty) return;
       final prog = patch.programNumber ??
           connectionController.activeHardwareSlotIndex ??
           _patch?.programNumber;
       final resolved = prog != null ? patch.copyWith(programNumber: prog) : patch;
       _patch = resolved;
       _isDirty = false;
+      _selectedSlotIndex = 0;
+      _errorMessage = null;
       _resetSessionBaseline(resolved);
+      if (prog != null) {
+        connectionController.setActiveHardwareSlotIndex(
+          prog,
+          syncEditorPatchProgramNumber: false,
+        );
+      }
       notifyListeners();
       return;
     }
 
     if (programNumber != null) {
-      connectionController.setActiveHardwareSlotIndex(programNumber);
-      if (_patch != null && _patch!.programNumber == programNumber) {
-        return;
-      }
-      if (_patch != null && _patch!.programNumber == null) {
-        // Initial connection or unassigned edit buffer: assign the slot number directly
-        _patch = _patch!.copyWith(programNumber: programNumber);
+      connectionController.setActiveHardwareSlotIndex(
+        programNumber,
+        syncEditorPatchProgramNumber: false,
+      );
+      if (connectionController.isConnected) {
+        // Hardware-initiated patch change: notifyHardware MUST be false to avoid echo loops
+        unawaited(loadPatchFromDeviceSlot(programNumber, notifyHardware: false));
+      } else {
+        if (_patch != null) {
+          _patch = _patch!.copyWith(programNumber: programNumber);
+        }
         notifyListeners();
-        return;
       }
-      // Hardware-initiated patch change: notifyHardware MUST be false to avoid echo loops
-      unawaited(loadPatchFromDeviceSlot(programNumber, notifyHardware: false));
       return;
     }
 
@@ -1286,7 +1578,14 @@ class PatchEditorController extends ChangeNotifier {
   }
 
   @override
+  void notifyListeners() {
+    if (_isDisposed) return;
+    super.notifyListeners();
+  }
+
+  @override
   void dispose() {
+    _isDisposed = true;
     connectionController.setEditorController(null);
     _midiSubscription?.cancel();
     super.dispose();

@@ -48,10 +48,12 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
   bool _isBusy = false;
   String? _fsError;
   String? _selectedFilePath;
+  final Set<String> _selectedBrowserFilePaths = {};
 
   ImportBatchResult? _result;
   final Set<int> _selectedIndices = {};
   bool _alsoSaveOnLoad = false;
+  bool _alsoLoadIntoEditor = false;
 
   @override
   void initState() {
@@ -99,6 +101,7 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
       _isBusy = true;
       _fsError = null;
       _currentDir = dirPath;
+      _selectedBrowserFilePaths.clear();
     });
 
     try {
@@ -144,6 +147,60 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
     _applyImportResult(res);
   }
 
+  void _toggleBrowserFile(String path) {
+    setState(() {
+      if (_selectedBrowserFilePaths.contains(path)) {
+        _selectedBrowserFilePaths.remove(path);
+      } else {
+        _selectedBrowserFilePaths.add(path);
+      }
+    });
+  }
+
+  void _toggleSelectAllFiles() {
+    final filePaths = _dirEntries
+        .where((e) => !e.isDirectory)
+        .map((e) => e.path)
+        .toList();
+    if (filePaths.isEmpty) return;
+    setState(() {
+      final allChecked =
+          filePaths.every((path) => _selectedBrowserFilePaths.contains(path));
+      if (allChecked) {
+        _selectedBrowserFilePaths.clear();
+      } else {
+        _selectedBrowserFilePaths
+          ..clear()
+          ..addAll(filePaths);
+      }
+    });
+  }
+
+  Future<void> _decodeSelectedFiles() async {
+    final selectedPaths = _dirEntries
+        .where((e) => !e.isDirectory && _selectedBrowserFilePaths.contains(e.path))
+        .map((e) => e.path)
+        .toList();
+    if (selectedPaths.isEmpty) return;
+
+    setState(() {
+      _isBusy = true;
+      _selectedFilePath = selectedPaths.length == 1 ? selectedPaths.first : null;
+    });
+
+    var aggregate = const ImportBatchResult();
+    for (final filePath in selectedPaths) {
+      final res = await _importer.importFile(
+        filePath,
+        fileSystem: _fileSystem,
+        activeDeviceFamily: _activeFamily,
+      );
+      aggregate = aggregate.merge(res);
+    }
+    if (!mounted) return;
+    _applyImportResult(aggregate);
+  }
+
   Future<void> _importCurrentFolder() async {
     if (_currentDir.isEmpty) return;
     setState(() {
@@ -182,6 +239,7 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
     setState(() {
       _isBusy = false;
       _result = res;
+      _alsoLoadIntoEditor = false;
       _selectedIndices
         ..clear()
         ..addAll(List<int>.generate(res.entries.length, (i) => i));
@@ -217,11 +275,23 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
     setState(() => _isBusy = true);
     try {
       final saved = await widget.libraryController.importEntries(selected);
+      if (_alsoLoadIntoEditor && selected.length == 1 && saved.isNotEmpty) {
+        final entry = selected.first;
+        final patchToLoad = saved.first;
+        final connection = widget.editorController.connectionController;
+        if (!connection.isConnected &&
+            entry.isDeviceMismatch(connection.activeFamily) &&
+            entry.inferredDeviceFamily != DeviceFamily.unknown) {
+          connection.selectDeviceFamily(entry.inferredDeviceFamily);
+        }
+        widget.editorController.loadPatch(patchToLoad);
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Added ${saved.length} patch${saved.length == 1 ? '' : 'es'} to library',
+            'Imported ${saved.length} patch${saved.length == 1 ? '' : 'es'} to library'
+            '${(_alsoLoadIntoEditor && selected.length == 1) ? ' and loaded into editor' : ''}',
           ),
           duration: const Duration(seconds: 2),
         ),
@@ -356,6 +426,20 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
               if (selected.length == 1) ...[
                 const SizedBox(height: 6),
                 CheckboxListTile(
+                  key: const Key('import_also_load_into_editor_checkbox'),
+                  value: _alsoLoadIntoEditor,
+                  onChanged: (v) =>
+                      setState(() => _alsoLoadIntoEditor = v ?? false),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  activeColor: StudioTheme.colorModulation,
+                  title: const Text(
+                    'Also load into Editor',
+                    style: TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
+                ),
+                CheckboxListTile(
                   key: const Key('import_also_save_checkbox'),
                   value: _alsoSaveOnLoad,
                   onChanged: (v) => setState(() => _alsoSaveOnLoad = v ?? false),
@@ -398,8 +482,8 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
           icon: const Icon(Icons.library_add, size: 16),
           label: Text(
             selected.length > 1
-                ? 'Add to Library (${selected.length})'
-                : 'Add to Library',
+                ? 'Import to Library (${selected.length})'
+                : 'Import to Library',
           ),
           style: ElevatedButton.styleFrom(
             backgroundColor: StudioTheme.colorModulation,
@@ -625,6 +709,38 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
               onPressed:
                   _isBusy || _currentDir.isEmpty ? null : _importCurrentFolder,
             ),
+            if (_dirEntries.any((e) => !e.isDirectory)) ...[
+              TextButton.icon(
+                key: const Key('import_browser_select_all_files_button'),
+                icon: const Icon(Icons.select_all, size: 14),
+                label: Text(
+                  _dirEntries
+                          .where((e) => !e.isDirectory)
+                          .every((e) => _selectedBrowserFilePaths.contains(e.path))
+                      ? 'Deselect All Files'
+                      : 'Select All Files',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                onPressed: _isBusy ? null : _toggleSelectAllFiles,
+              ),
+              if (_selectedBrowserFilePaths.isNotEmpty)
+                ElevatedButton.icon(
+                  key: const Key('import_browser_decode_selected_button'),
+                  icon: const Icon(Icons.playlist_add_check, size: 14),
+                  label: Text(
+                    'Decode Selected (${_selectedBrowserFilePaths.length})',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: StudioTheme.colorDynamics,
+                    foregroundColor: Colors.black,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    minimumSize: Size.zero,
+                  ),
+                  onPressed: _isBusy ? null : _decodeSelectedFiles,
+                ),
+            ],
           ],
         ),
         const SizedBox(height: 8),
@@ -672,21 +788,40 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
                           itemBuilder: (context, index) {
                             final entry = _dirEntries[index];
                             final isSelected = _selectedFilePath == entry.path;
+                            final isMultiChecked =
+                                !entry.isDirectory &&
+                                _selectedBrowserFilePaths.contains(entry.path);
                             return ListTile(
                               key: Key('import_fs_entry_${entry.name}'),
                               dense: true,
-                              selected: isSelected,
+                              selected: isSelected || isMultiChecked,
                               selectedTileColor: StudioTheme.colorModulation
                                   .withValues(alpha: 0.14),
-                              leading: Icon(
-                                entry.isDirectory
-                                    ? Icons.folder
-                                    : _iconForFileName(entry.name),
-                                size: 18,
-                                color: entry.isDirectory
-                                    ? StudioTheme.colorFilterEq
-                                    : StudioTheme.colorModulation,
-                              ),
+                              leading: entry.isDirectory
+                                  ? const Icon(
+                                      Icons.folder,
+                                      size: 18,
+                                      color: StudioTheme.colorFilterEq,
+                                    )
+                                  : Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Checkbox(
+                                          key: Key('import_browser_file_checkbox_${entry.name}'),
+                                          value: isMultiChecked,
+                                          onChanged: _isBusy
+                                              ? null
+                                              : (_) => _toggleBrowserFile(entry.path),
+                                          visualDensity: VisualDensity.compact,
+                                          activeColor: StudioTheme.colorModulation,
+                                        ),
+                                        Icon(
+                                          _iconForFileName(entry.name),
+                                          size: 18,
+                                          color: StudioTheme.colorModulation,
+                                        ),
+                                      ],
+                                    ),
                               title: Text(
                                 entry.name,
                                 maxLines: 1,

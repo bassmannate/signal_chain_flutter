@@ -32,11 +32,13 @@ class PatchLibraryController extends ChangeNotifier {
   DeviceFamily? _deviceFilter;
   String _searchQuery = '';
   final Set<String> _selectedTags = {};
+  final Set<String> _availableTags = {};
 
   List<Patch> _patches = [];
   bool _isLoading = false;
   String? _errorMessage;
   ExportFormat? _defaultExportFormat;
+  String? _lastExportDirectory;
 
   PatchLibraryController({
     required this.repository,
@@ -50,7 +52,11 @@ class PatchLibraryController extends ChangeNotifier {
         exportRegistry = exportRegistry ?? ExportAdapterRegistry.standard(),
         exportFileWriter = exportFileWriter ?? const ExportFileWriter(),
         importer = importer ?? PatchImporter.standard(),
-        importFileSystem = importFileSystem ?? const LocalImportFileSystem(),
+        importFileSystem = importFileSystem ??
+            ((const bool.fromEnvironment('FLUTTER_TEST') ||
+                    Platform.environment['FLUTTER_TEST'] == 'true')
+                ? InMemoryImportFileSystem()
+                : const LocalImportFileSystem()),
         _deviceFilter = initialDeviceFilter;
 
   /// Currently filtered list of presets in the library.
@@ -65,6 +71,12 @@ class PatchLibraryController extends ChangeNotifier {
   /// Currently selected tag filters.
   Set<String> get selectedTags => Set.unmodifiable(_selectedTags);
 
+  /// All distinct tags present across the library repository, sorted alphabetically.
+  List<String> get availableTags {
+    final sorted = _availableTags.toList()..sort();
+    return List.unmodifiable(sorted);
+  }
+
   /// True while reading or writing to storage.
   bool get isLoading => _isLoading;
 
@@ -74,9 +86,13 @@ class PatchLibraryController extends ChangeNotifier {
   /// Persisted default export format, or null if not yet set.
   ExportFormat? get defaultExportFormat => _defaultExportFormat;
 
-  /// Loads persisted user preferences (such as [defaultExportFormat]).
+  /// Persisted last-selected destination directory for exports/backups, or null.
+  String? get lastExportDirectory => _lastExportDirectory;
+
+  /// Loads persisted user preferences (such as [defaultExportFormat] and [lastExportDirectory]).
   Future<void> loadPreferences() async {
     _defaultExportFormat = await preferencesRepository.getDefaultExportFormat();
+    _lastExportDirectory = await preferencesRepository.getLastExportDirectory();
     notifyListeners();
   }
 
@@ -84,6 +100,14 @@ class PatchLibraryController extends ChangeNotifier {
   Future<void> setDefaultExportFormat(ExportFormat? format) async {
     _defaultExportFormat = format;
     await preferencesRepository.setDefaultExportFormat(format);
+    notifyListeners();
+  }
+
+  /// Persists [directoryPath] as the default export directory (or clears it if null).
+  Future<void> setLastExportDirectory(String? directoryPath) async {
+    final trimmed = directoryPath?.trim();
+    _lastExportDirectory = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+    await preferencesRepository.setLastExportDirectory(_lastExportDirectory);
     notifyListeners();
   }
 
@@ -125,11 +149,23 @@ class PatchLibraryController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _patches = await repository.getAllPatches(
-        deviceFilter: _deviceFilter,
-        searchQuery: _searchQuery.trim().isEmpty ? null : _searchQuery.trim(),
-        tagsFilter: _selectedTags.isEmpty ? null : _selectedTags,
-      );
+      final hasFilters = _deviceFilter != null ||
+          _searchQuery.trim().isNotEmpty ||
+          _selectedTags.isNotEmpty;
+      final allPatches = await repository.getAllPatches();
+      _availableTags
+        ..clear()
+        ..addAll(allPatches.expand((p) => p.tags));
+
+      if (!hasFilters) {
+        _patches = allPatches;
+      } else {
+        _patches = await repository.getAllPatches(
+          deviceFilter: _deviceFilter,
+          searchQuery: _searchQuery.trim().isEmpty ? null : _searchQuery.trim(),
+          tagsFilter: _selectedTags.isEmpty ? null : _selectedTags,
+        );
+      }
     } catch (e) {
       _errorMessage = 'Failed to load presets: $e';
     } finally {
@@ -187,6 +223,73 @@ class PatchLibraryController extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+  }
+
+  /// Saves a duplicate copy of [source] under [newName] with a collision-safe ID,
+  /// leaving the original preset untouched.
+  Future<Patch> duplicatePatch(
+    Patch source, {
+    required String newName,
+  }) async {
+    final resolvedName =
+        newName.trim().isEmpty ? '${source.name} Copy' : newName.trim();
+    final existing = await repository.getAllPatches();
+    final usedIds = existing.map((p) => p.id).toSet();
+    final now = DateTime.now();
+    final stem = ExportAdapter.sanitizeFileStem(resolvedName, fallback: 'patch');
+    var candidateId = 'copy_${stem}_${now.microsecondsSinceEpoch}';
+    int suffix = 1;
+    while (usedIds.contains(candidateId)) {
+      candidateId = 'copy_${stem}_${now.microsecondsSinceEpoch}_$suffix';
+      suffix++;
+    }
+
+    final copy = Patch(
+      id: candidateId,
+      name: resolvedName,
+      deviceFamily: source.deviceFamily,
+      programNumber: null,
+      slots: source.slots,
+      tags: source.tags,
+      author: source.author,
+      notes: source.notes,
+      updatedAt: now,
+      metadata: source.metadata,
+    );
+
+    await savePatch(copy);
+    return copy;
+  }
+
+  /// Saves a hardware bank slot patch into the local library under a unique ID.
+  Future<Patch> saveHardwareSlotToLibrary(
+    Patch slotPatch, {
+    int? slotIndex,
+  }) async {
+    final existing = await repository.getAllPatches();
+    final usedIds = existing.map((p) => p.id).toSet();
+    final now = DateTime.now();
+    final resolvedSlot = slotIndex ?? slotPatch.programNumber;
+    final stem = ExportAdapter.sanitizeFileStem(slotPatch.name, fallback: 'slot');
+    final slotTag = resolvedSlot != null
+        ? resolvedSlot.toString().padLeft(2, '0')
+        : 'hw';
+    var candidateId = 'hw_slot_${slotTag}_${stem}_${now.microsecondsSinceEpoch}';
+    int suffix = 1;
+    while (usedIds.contains(candidateId)) {
+      candidateId =
+          'hw_slot_${slotTag}_${stem}_${now.microsecondsSinceEpoch}_$suffix';
+      suffix++;
+    }
+
+    final saved = slotPatch.copyWith(
+      id: candidateId,
+      programNumber: resolvedSlot,
+      updatedAt: now,
+    );
+
+    await savePatch(saved);
+    return saved;
   }
 
   /// Deletes a patch by [id] and refreshes the list.

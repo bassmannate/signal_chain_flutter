@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:signal_chain_flutter/core/export/export_file_writer.dart';
 import 'package:signal_chain_flutter/core/export/export_format.dart';
 import 'package:signal_chain_flutter/core/export/export_payload.dart';
+import 'package:signal_chain_flutter/core/import/import_file_system.dart';
 import 'package:signal_chain_flutter/core/storage/app_preferences_repository.dart';
 import 'package:signal_chain_flutter/core/storage/in_memory_patch_library_repository.dart';
 import 'package:signal_chain_flutter/features/library/patch_export_dialog.dart';
@@ -152,5 +153,73 @@ void main() {
     expect(fakeWriter.writes.single.payload.format, equals(ExportFormat.nativeJson));
     expect(fakeWriter.writes.single.nameOverride, equals('UI_Slap.json'));
     expect(find.textContaining('Exported to /memory/SignalChainExports/UI_Slap.json'), findsOneWidget);
+  });
+
+  testWidgets('folder browser picks or creates custom directory and persists lastExportDirectory', (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final fs = InMemoryImportFileSystem(
+      initialDirectories: const ['/memory/Documents/SignalChainExports/TourBackups'],
+    );
+    final prefs = InMemoryPreferencesRepository();
+    final fakeWriter = _InMemoryExportFileWriter();
+    final controller = PatchLibraryController(
+      repository: InMemoryPatchLibraryRepository(initialPatches: [zoomPatch]),
+      preferencesRepository: prefs,
+      exportFileWriter: fakeWriter,
+      importFileSystem: fs,
+    );
+    addTearDown(controller.dispose);
+    await controller.loadPreferences();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PatchExportDialog.patch(
+            libraryController: controller,
+            patch: zoomPatch,
+            fileSystemOverride: fs,
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Open folder browser and verify existing subfolder appears
+    await tester.tap(find.byKey(const Key('export_browse_folder_button')));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const Key('export_folder_browser_panel')), findsOneWidget);
+    expect(find.byKey(const Key('export_subfolder_item_TourBackups')), findsOneWidget);
+
+    // Create a new subfolder and confirm
+    await tester.tap(find.byKey(const Key('export_new_folder_button')));
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.enterText(
+      find.byKey(const Key('export_new_folder_name_field')),
+      'StudioSet',
+    );
+    await tester.tap(find.byKey(const Key('export_new_folder_confirm_button')));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Save export and verify targetDir & persisted preference
+    await tester.tap(find.byKey(const Key('export_save_button')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(fakeWriter.writes.length, equals(1));
+    expect(
+      fakeWriter.writes.single.targetDir?.path,
+      equals('/memory/Documents/SignalChainExports/StudioSet'),
+    );
+    expect(
+      controller.lastExportDirectory,
+      equals('/memory/Documents/SignalChainExports/StudioSet'),
+    );
+    expect(
+      await prefs.getLastExportDirectory(),
+      equals('/memory/Documents/SignalChainExports/StudioSet'),
+    );
   });
 }

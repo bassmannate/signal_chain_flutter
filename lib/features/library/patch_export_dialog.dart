@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/export/export_format.dart';
 import '../../core/export/export_payload.dart';
+import '../../core/import/import_file_system.dart';
 import '../../models/patch.dart';
 import '../theme/studio_theme.dart';
 import 'patch_library_controller.dart';
@@ -19,6 +20,7 @@ class PatchExportDialog extends StatefulWidget {
   final String title;
   final String defaultLibraryName;
   final Directory? exportDirectoryOverride;
+  final ImportFileSystem? fileSystemOverride;
 
   const PatchExportDialog._({
     super.key,
@@ -28,6 +30,7 @@ class PatchExportDialog extends StatefulWidget {
     required this.title,
     this.defaultLibraryName = 'signal_chain_library',
     this.exportDirectoryOverride,
+    this.fileSystemOverride,
   });
 
   factory PatchExportDialog.patch({
@@ -35,6 +38,7 @@ class PatchExportDialog extends StatefulWidget {
     required PatchLibraryController libraryController,
     required Patch patch,
     Directory? exportDirectoryOverride,
+    ImportFileSystem? fileSystemOverride,
   }) {
     return PatchExportDialog._(
       key: key,
@@ -42,6 +46,7 @@ class PatchExportDialog extends StatefulWidget {
       singlePatch: patch,
       title: 'Export: ${patch.name}',
       exportDirectoryOverride: exportDirectoryOverride,
+      fileSystemOverride: fileSystemOverride,
     );
   }
 
@@ -52,6 +57,7 @@ class PatchExportDialog extends StatefulWidget {
     String title = 'Export Preset Library',
     String defaultLibraryName = 'signal_chain_library',
     Directory? exportDirectoryOverride,
+    ImportFileSystem? fileSystemOverride,
   }) {
     return PatchExportDialog._(
       key: key,
@@ -60,6 +66,7 @@ class PatchExportDialog extends StatefulWidget {
       title: title,
       defaultLibraryName: defaultLibraryName,
       exportDirectoryOverride: exportDirectoryOverride,
+      fileSystemOverride: fileSystemOverride,
     );
   }
 
@@ -73,6 +80,18 @@ class _PatchExportDialogState extends State<PatchExportDialog> {
   late bool _setAsDefault;
   late ExportPayload _payload;
   late final TextEditingController _nameController;
+  late final TextEditingController _dirController;
+  late final TextEditingController _newFolderController;
+  late final ImportFileSystem _fileSystem;
+
+  String _currentDir = '';
+  bool _hasCustomDirectory = false;
+  bool _showFolderBrowser = false;
+  bool _isBrowsing = false;
+  String? _browseError;
+  List<ImportQuickLocation> _quickLocations = const [];
+  List<ImportFsEntry> _subfolders = const [];
+  bool _showNewFolderInput = false;
   bool _isSaving = false;
 
   bool get _isLibraryMode => widget.libraryPatches != null;
@@ -80,12 +99,16 @@ class _PatchExportDialogState extends State<PatchExportDialog> {
   @override
   void initState() {
     super.initState();
+    _fileSystem =
+        widget.fileSystemOverride ?? widget.libraryController.importFileSystem;
+
     final registry = widget.libraryController.exportRegistry;
     if (_isLibraryMode) {
       _availableFormats = registry.allAdapters.map((a) => a.format).toList();
     } else {
       final family = widget.singlePatch!.deviceFamily;
-      _availableFormats = registry.adaptersForDevice(family).map((a) => a.format).toList();
+      _availableFormats =
+          registry.adaptersForDevice(family).map((a) => a.format).toList();
     }
 
     if (_availableFormats.isEmpty) {
@@ -103,11 +126,98 @@ class _PatchExportDialogState extends State<PatchExportDialog> {
 
     _payload = _buildPayload(_selectedFormat);
     _nameController = TextEditingController(text: _payload.suggestedName);
+
+    final initialDir = widget.exportDirectoryOverride?.path ??
+        widget.libraryController.lastExportDirectory;
+    _hasCustomDirectory = initialDir != null && initialDir.trim().isNotEmpty;
+    _currentDir = initialDir?.trim() ?? '';
+    _dirController = TextEditingController(text: _currentDir);
+    _newFolderController = TextEditingController();
+    _initDirectory();
+  }
+
+  Future<void> _initDirectory() async {
+    try {
+      final quick = await _fileSystem.getQuickLocations();
+      String startDir = _currentDir;
+      if (startDir.isEmpty) {
+        startDir = await _fileSystem.resolveDefaultImportDirectory();
+      }
+      if (!mounted) return;
+      setState(() {
+        _quickLocations = quick;
+        _currentDir = startDir;
+        if (_dirController.text.isEmpty) {
+          _dirController.text = startDir;
+        }
+      });
+    } catch (_) {
+      // Leave user editable field ready even if quick locations cannot be read
+    }
+  }
+
+  Future<void> _loadDirectory(String path, {bool markCustom = true}) async {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) return;
+    setState(() {
+      _isBrowsing = true;
+      _browseError = null;
+      _currentDir = trimmed;
+      _dirController.text = trimmed;
+      if (markCustom) {
+        _hasCustomDirectory = true;
+      }
+    });
+
+    try {
+      final entries = await _fileSystem.listDirectory(trimmed);
+      if (!mounted) return;
+      setState(() {
+        _subfolders = entries.where((e) => e.isDirectory).toList();
+        _isBrowsing = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _subfolders = const [];
+        _browseError = 'Directory not listed ($e) — will be created on save.';
+        _isBrowsing = false;
+      });
+    }
+  }
+
+  Future<void> _navigateUp() async {
+    final current = _dirController.text.trim().isNotEmpty
+        ? _dirController.text.trim()
+        : _currentDir;
+    if (current.isEmpty) return;
+    final parent = await _fileSystem.parentDirectory(current);
+    if (parent != null && mounted) {
+      await _loadDirectory(parent);
+    }
+  }
+
+  Future<void> _createNewFolder() async {
+    final folderName = _newFolderController.text.trim();
+    if (folderName.isEmpty) return;
+    final sanitized = folderName.replaceAll('/', '_').replaceAll('\\', '_');
+    final base = _dirController.text.trim().isNotEmpty
+        ? _dirController.text.trim()
+        : _currentDir;
+    final sep = _fileSystem.pathSeparator;
+    final targetPath = base.endsWith(sep) ? '$base$sanitized' : '$base$sep$sanitized';
+    await _fileSystem.createDirectory(targetPath);
+    if (!mounted) return;
+    _newFolderController.clear();
+    setState(() => _showNewFolderInput = false);
+    await _loadDirectory(targetPath);
   }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _dirController.dispose();
+    _newFolderController.dispose();
     super.dispose();
   }
 
@@ -151,9 +261,17 @@ class _PatchExportDialogState extends State<PatchExportDialog> {
       if (_setAsDefault) {
         await widget.libraryController.setDefaultExportFormat(_selectedFormat);
       }
+      final typedDir = _dirController.text.trim();
+      final effectiveTargetDir = widget.exportDirectoryOverride ??
+          (_hasCustomDirectory && typedDir.isNotEmpty
+              ? Directory(typedDir)
+              : null);
+      if (_hasCustomDirectory && typedDir.isNotEmpty) {
+        await widget.libraryController.setLastExportDirectory(typedDir);
+      }
       final savedPath = await widget.libraryController.saveExportToFile(
         _payload,
-        targetDir: widget.exportDirectoryOverride,
+        targetDir: effectiveTargetDir,
         nameOverride: _nameController.text,
       );
       if (!mounted) return;
@@ -278,6 +396,204 @@ class _PatchExportDialogState extends State<PatchExportDialog> {
                   isDense: true,
                 ),
               ),
+              const SizedBox(height: 10),
+
+              // Destination Folder Path + Browse Toggle
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: const Key('export_destination_dir_field'),
+                      controller: _dirController,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        color: Colors.white,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Destination Folder',
+                        border: OutlineInputBorder(),
+                        filled: true,
+                        fillColor: StudioTheme.surface,
+                        isDense: true,
+                      ),
+                      onChanged: (value) {
+                        _currentDir = value.trim();
+                        _hasCustomDirectory = true;
+                      },
+                      onSubmitted: (value) => _loadDirectory(value),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  OutlinedButton.icon(
+                    key: const Key('export_browse_folder_button'),
+                    icon: Icon(
+                      _showFolderBrowser ? Icons.folder_open : Icons.folder,
+                      size: 16,
+                    ),
+                    label: Text(
+                      _showFolderBrowser ? 'Hide' : 'Browse...',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () {
+                      final next = !_showFolderBrowser;
+                      setState(() => _showFolderBrowser = next);
+                      if (next) {
+                        _loadDirectory(
+                          _dirController.text.isNotEmpty
+                              ? _dirController.text
+                              : _currentDir,
+                          markCustom: _hasCustomDirectory,
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+              if (_showFolderBrowser) ...[
+                const SizedBox(height: 8),
+                Container(
+                  key: const Key('export_folder_browser_panel'),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: StudioTheme.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: StudioTheme.surfaceBorder),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_quickLocations.isNotEmpty)
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: _quickLocations.map((loc) {
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: ActionChip(
+                                  key: Key('export_quick_loc_${loc.label}'),
+                                  label: Text(
+                                    loc.label,
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                  onPressed: () => _loadDirectory(loc.path),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          OutlinedButton.icon(
+                            key: const Key('export_dir_up_button'),
+                            icon: const Icon(Icons.arrow_upward, size: 14),
+                            label: const Text('..', style: TextStyle(fontSize: 12)),
+                            onPressed: _navigateUp,
+                          ),
+                          OutlinedButton.icon(
+                            key: const Key('export_dir_go_button'),
+                            icon: const Icon(Icons.refresh, size: 14),
+                            label: const Text('Open', style: TextStyle(fontSize: 12)),
+                            onPressed: () => _loadDirectory(_dirController.text),
+                          ),
+                          OutlinedButton.icon(
+                            key: const Key('export_new_folder_button'),
+                            icon: const Icon(Icons.create_new_folder_outlined, size: 14),
+                            label: const Text('New Folder', style: TextStyle(fontSize: 12)),
+                            onPressed: () => setState(
+                              () => _showNewFolderInput = !_showNewFolderInput,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_showNewFolderInput) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                key: const Key('export_new_folder_name_field'),
+                                controller: _newFolderController,
+                                style: const TextStyle(fontSize: 12, color: Colors.white),
+                                decoration: const InputDecoration(
+                                  hintText: 'New folder name...',
+                                  isDense: true,
+                                  border: OutlineInputBorder(),
+                                  filled: true,
+                                  fillColor: StudioTheme.surfaceElevated,
+                                ),
+                                onSubmitted: (_) => _createNewFolder(),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            ElevatedButton(
+                              key: const Key('export_new_folder_confirm_button'),
+                              onPressed: _createNewFolder,
+                              child: const Text('Create', style: TextStyle(fontSize: 12)),
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (_browseError != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          _browseError!,
+                          style: const TextStyle(fontSize: 11, color: Colors.amberAccent),
+                        ),
+                      ],
+                      const SizedBox(height: 6),
+                      Material(
+                        type: MaterialType.transparency,
+                        child: SizedBox(
+                          height: 110,
+                          child: _isBrowsing
+                              ? const Center(child: CircularProgressIndicator())
+                              : _subfolders.isEmpty
+                                  ? const Center(
+                                      child: Text(
+                                        'No subfolders here',
+                                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      itemCount: _subfolders.length,
+                                      itemBuilder: (context, index) {
+                                        final folder = _subfolders[index];
+                                        return ListTile(
+                                          key: Key('export_subfolder_item_${folder.name}'),
+                                          dense: true,
+                                          leading: const Icon(
+                                            Icons.folder,
+                                            size: 16,
+                                            color: StudioTheme.colorFilterEq,
+                                          ),
+                                          title: Text(
+                                            folder.name,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.white,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          trailing: const Icon(
+                                            Icons.chevron_right,
+                                            size: 16,
+                                            color: Colors.grey,
+                                          ),
+                                          onTap: () => _loadDirectory(folder.path),
+                                        );
+                                      },
+                                    ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
 
               // Compatibility Warning Banner

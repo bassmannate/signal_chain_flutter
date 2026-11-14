@@ -1,3 +1,15 @@
+/// Hardware generation families used to enforce preset-to-pedal compatibility.
+enum DeviceGeneration {
+  zoomMsPlus('Zoom MS+ Series'),
+  zoomFour('Zoom Four Series'),
+  zoomOn('Zoom On Series'),
+  line6Pod('Line 6 POD Series'),
+  unknown('Unknown Generation');
+
+  final String displayName;
+  const DeviceGeneration(this.displayName);
+}
+
 /// Enumeration of supported hardware processor families and models.
 enum DeviceFamily {
   zoomMs50gPlus(
@@ -50,6 +62,26 @@ enum DeviceFamily {
 
   /// Returns true if this device is a Line 6 Bass Pod Pro.
   bool get isLine6BassPodPro => this == line6BassPodPro;
+
+  /// Hardware generation this device family belongs to.
+  DeviceGeneration get generation {
+    switch (this) {
+      case DeviceFamily.zoomMs50gPlus:
+      case DeviceFamily.zoomMs60bPlus:
+      case DeviceFamily.zoomMs70cdrPlus:
+      case DeviceFamily.zoomMs200dPlus:
+        return DeviceGeneration.zoomMsPlus;
+      case DeviceFamily.line6BassPodPro:
+        return DeviceGeneration.line6Pod;
+      case DeviceFamily.unknown:
+        return DeviceGeneration.unknown;
+    }
+  }
+
+  /// Returns true if both families belong to the same known hardware generation
+  /// (for example, MS-50G+ and MS-60B+ share [DeviceGeneration.zoomMsPlus]).
+  bool isSameGeneration(DeviceFamily other) =>
+      generation != DeviceGeneration.unknown && generation == other.generation;
 
   /// Maximum patch name character limit supported by this hardware family.
   ///

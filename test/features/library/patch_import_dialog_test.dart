@@ -397,5 +397,176 @@ void main() {
       tester.view.resetPhysicalSize();
     }
   });
+
+  testWidgets('multi-file selection batch decodes and Import to Library bypasses active editor patch',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final fs = InMemoryImportFileSystem();
+    final slapBytes = exportRegistry
+        .adapterFor(ExportFormat.nativeJson)
+        .exportPatch(zoom60bPatch)
+        .bytes;
+    final lushBytes = exportRegistry
+        .adapterFor(ExportFormat.symbiosisZptc)
+        .exportPatch(zoom70cdrPatch)
+        .bytes;
+    fs.addFile('/memory/Documents/SignalChainExports/Batch/slap.json', slapBytes);
+    fs.addFile('/memory/Documents/SignalChainExports/Batch/lush.70cdrp.zptc', lushBytes);
+
+    final ctx = createControllers(fs: fs);
+    addTearDown(() {
+      ctx.editorController.dispose();
+      ctx.connectionController.dispose();
+      ctx.libraryController.dispose();
+    });
+
+    const activePatch = Patch(
+      id: 'active_editor_patch',
+      name: 'Active Stage Patch',
+      deviceFamily: DeviceFamily.zoomMs60bPlus,
+    );
+    ctx.editorController.loadPatch(activePatch);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showDialog(
+                  context: context,
+                  builder: (_) => PatchImportDialog(
+                    libraryController: ctx.libraryController,
+                    editorController: ctx.editorController,
+                    fileSystemOverride: fs,
+                    initialDirectoryOverride:
+                        '/memory/Documents/SignalChainExports/Batch',
+                  ),
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.tap(find.byKey(const Key('import_browser_select_all_files_button')));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.byKey(const Key('import_browser_decode_selected_button')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('import_browser_decode_selected_button')));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('UI 60B Slap'), findsOneWidget);
+    expect(find.text('UI 70CDR Lush'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('import_add_library_button')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(ctx.libraryController.patches.length, equals(2));
+    expect(ctx.editorController.patch?.name, equals('Active Stage Patch'));
+  });
+
+  testWidgets('single-patch Import to Library bypasses editor by default and honors Also load into Editor checkbox',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final fs = InMemoryImportFileSystem();
+    final slapBytes = exportRegistry
+        .adapterFor(ExportFormat.nativeJson)
+        .exportPatch(zoom60bPatch)
+        .bytes;
+    fs.addFile('/memory/Documents/SignalChainExports/slap.json', slapBytes);
+
+    final ctx = createControllers(fs: fs);
+    addTearDown(() {
+      ctx.editorController.dispose();
+      ctx.connectionController.dispose();
+      ctx.libraryController.dispose();
+    });
+
+    const activePatch = Patch(
+      id: 'active_editor_patch',
+      name: 'Active Stage Patch',
+      deviceFamily: DeviceFamily.zoomMs60bPlus,
+    );
+    ctx.editorController.loadPatch(activePatch);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showDialog(
+                  context: context,
+                  builder: (_) => PatchImportDialog(
+                    libraryController: ctx.libraryController,
+                    editorController: ctx.editorController,
+                    fileSystemOverride: fs,
+                  ),
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // 1. Default behavior: Import to Library without touching editor
+    await tester.tap(find.text('Open'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.tap(find.byKey(const Key('import_fs_entry_slap.json')));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final alsoLoadCheckbox = tester.widget<CheckboxListTile>(
+      find.byKey(const Key('import_also_load_into_editor_checkbox')),
+    );
+    expect(alsoLoadCheckbox.value, isFalse);
+
+    await tester.tap(find.byKey(const Key('import_add_library_button')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(ctx.libraryController.patches.length, equals(1));
+    expect(ctx.editorController.patch?.name, equals('Active Stage Patch'));
+
+    // 2. Opt-in: check "Also load into Editor" -> imports AND loads into editor
+    await tester.tap(find.text('Open'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.tap(find.byKey(const Key('import_fs_entry_slap.json')));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.ensureVisible(
+      find.byKey(const Key('import_also_load_into_editor_checkbox')),
+    );
+    await tester.tap(
+      find.byKey(const Key('import_also_load_into_editor_checkbox')),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+
+    await tester.tap(find.byKey(const Key('import_add_library_button')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(ctx.libraryController.patches.length, equals(2));
+    expect(ctx.editorController.patch?.name, equals('UI 60B Slap'));
+  });
 }
 

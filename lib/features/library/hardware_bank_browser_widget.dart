@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../models/bank_slot_descriptor.dart';
+import '../../models/device_family.dart';
 import '../connection/device_connection_controller.dart';
 import '../editor/patch_editor_controller.dart';
 import '../editor/write_to_slot_dialog.dart';
 import '../theme/studio_theme.dart';
+import 'bank_manager_dialog.dart';
+import 'bank_restore_dialog.dart';
 import 'patch_export_dialog.dart';
 import 'patch_library_controller.dart';
 
@@ -112,11 +115,46 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
                     ),
                     if (widget.libraryController != null) ...[
                       IconButton(
+                        key: const Key('open_bank_manager_from_hw_button'),
+                        icon: const Icon(Icons.swap_horiz, size: 18, color: StudioTheme.colorFilterEq),
+                        tooltip: 'Open Side-by-Side Bank Manager',
+                        padding: const EdgeInsets.all(2),
+                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                        style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                        onPressed: () => BankManagerDialog.show(
+                          context,
+                          libraryController: widget.libraryController!,
+                          editorController: widget.editorController,
+                          connectionController: widget.connectionController,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        key: const Key('restore_hardware_bank_button'),
+                        icon: const Icon(Icons.playlist_play, size: 19, color: StudioTheme.colorFilterEq),
+                        tooltip: isConnected
+                            ? 'Restore Bank...'
+                            : 'Connect device to restore bank',
+                        padding: const EdgeInsets.all(2),
+                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                        style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                        onPressed: (isConnected && !widget.editorController.isRestoringBank)
+                            ? () => BankRestoreDialog.show(
+                                  context,
+                                  libraryController: widget.libraryController!,
+                                  editorController: widget.editorController,
+                                  connectionController: widget.connectionController,
+                                )
+                            : null,
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
                         key: const Key('export_hardware_bank_button'),
-                        icon: const Icon(Icons.ios_share, size: 18, color: StudioTheme.colorFilterEq),
+                        icon: const Icon(Icons.ios_share, size: 17, color: StudioTheme.colorFilterEq),
                         tooltip: 'Backup Loaded Bank',
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(2),
+                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                        style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
                         onPressed: bankSlots.any((s) => s.patch != null)
                             ? () {
                                 final loadedPatches = bankSlots
@@ -135,26 +173,28 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
                               }
                             : null,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 4),
                     ],
                     if (isSyncing)
                       IconButton(
                         key: const Key('cancel_bank_sync_button'),
-                        icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
+                        icon: const Icon(Icons.close, size: 17, color: Colors.redAccent),
                         tooltip: 'Cancel Sync',
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(2),
+                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                        style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
                         onPressed: () => widget.connectionController.cancelBankSync(),
                       )
                     else
                       IconButton(
                         key: const Key('sync_device_bank_button'),
-                        icon: const Icon(Icons.sync, size: 20, color: StudioTheme.colorFilterEq),
+                        icon: const Icon(Icons.sync, size: 18, color: StudioTheme.colorFilterEq),
                         tooltip: isConnected
                             ? 'Sync Device Bank (0–99)'
                             : 'Connect device to sync bank',
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(2),
+                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                        style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
                         onPressed: isConnected
                             ? () => widget.connectionController.syncDeviceBank()
                             : null,
@@ -200,6 +240,51 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // Batch Bank Restore Progress Indicator
+              if (widget.editorController.isRestoringBank) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            LinearProgressIndicator(
+                              key: const Key('hw_bank_restore_progress_bar'),
+                              value: widget.editorController.bankRestoreProgress > 0
+                                  ? widget.editorController.bankRestoreProgress
+                                  : null,
+                              backgroundColor: StudioTheme.surfaceBorder,
+                              valueColor: const AlwaysStoppedAnimation<Color>(
+                                StudioTheme.colorFilterEq,
+                              ),
+                              minHeight: 4,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              widget.editorController.bankRestoreStatus ??
+                                  'Restoring hardware slots...',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 10, color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        key: const Key('hw_cancel_bank_restore_button'),
+                        icon: const Icon(Icons.stop, size: 16, color: Colors.orangeAccent),
+                        tooltip: 'Cancel Bank Restore',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: widget.editorController.cancelBankRestore,
                       ),
                     ],
                   ),
@@ -303,117 +388,196 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
     required bool isLoading,
     required bool isConnected,
   }) {
-    return Card(
-      key: Key('bank_slot_${slot.index}'),
-      color: isActive ? StudioTheme.surfaceBorder : StudioTheme.surfaceElevated,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(6),
-        side: BorderSide(
-          color: isActive ? StudioTheme.colorFilterEq : StudioTheme.surfaceBorder,
-          width: isActive ? 1.5 : 1.0,
-        ),
+    final activeFamily = widget.connectionController.activeFamily;
+    final slotPatch = slot.patch;
+
+    return DragTarget<LibraryPatchDragPayload>(
+      onWillAcceptWithDetails: (_) => true,
+      onAcceptWithDetails: (details) => handleLibraryPatchDropToSlot(
+        context,
+        payload: details.data,
+        slotIndex: slot.index,
+        connectionController: widget.connectionController,
+        editorController: widget.editorController,
       ),
-      margin: const EdgeInsets.symmetric(vertical: 3),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(6),
-        onTap: isConnected && !isLoading ? () => _loadSlot(slot.index) : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            children: [
-              // Slot Index Pill
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isActive
-                      ? StudioTheme.colorFilterEq.withValues(alpha: 0.2)
-                      : StudioTheme.surface,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: isActive ? StudioTheme.colorFilterEq : StudioTheme.surfaceBorder,
-                  ),
-                ),
-                child: Text(
-                  slot.formattedSlotIndex,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'monospace',
-                    color: isActive ? StudioTheme.colorFilterEq : Colors.white70,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
+      builder: (context, candidateData, _) {
+        final hoverPayload =
+            candidateData.isNotEmpty ? candidateData.first : null;
+        final isHovering = hoverPayload != null;
+        final isCrossGenHover = isHovering &&
+            activeFamily != DeviceFamily.unknown &&
+            hoverPayload.patch.deviceFamily != DeviceFamily.unknown &&
+            !hoverPayload.patch.deviceFamily.isSameGeneration(activeFamily);
+        final isMismatchHover = isHovering &&
+            !isCrossGenHover &&
+            activeFamily != DeviceFamily.unknown &&
+            hoverPayload.patch.deviceFamily != activeFamily;
 
-              // Bank-Program info (e.g. 1-1)
-              Text(
-                '(${slot.bankAndProgramNumber})',
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontFamily: 'monospace',
-                  color: Colors.grey,
-                ),
-              ),
-              const SizedBox(width: 8),
+        final borderColor = isCrossGenHover
+            ? Colors.redAccent
+            : isMismatchHover
+                ? Colors.orangeAccent
+                : isHovering
+                    ? StudioTheme.colorFilterEq
+                    : isActive
+                        ? StudioTheme.colorFilterEq
+                        : StudioTheme.surfaceBorder;
 
-              // Slot Name & Status
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      slot.name,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
-                        color: slot.isEmpty ? Colors.grey : Colors.white,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (isActive)
-                      const Text(
-                        'ACTIVE IN EDITOR',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          color: StudioTheme.colorFilterEq,
+        final card = Card(
+          key: Key('bank_slot_${slot.index}'),
+          color: isHovering
+              ? (isCrossGenHover
+                  ? Colors.redAccent.withValues(alpha: 0.14)
+                  : isMismatchHover
+                      ? Colors.orangeAccent.withValues(alpha: 0.14)
+                      : StudioTheme.colorFilterEq.withValues(alpha: 0.14))
+              : isActive
+                  ? StudioTheme.surfaceBorder
+                  : StudioTheme.surfaceElevated,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(6),
+            side: BorderSide(
+              color: borderColor,
+              width: (isHovering || isActive) ? 1.5 : 1.0,
+            ),
+          ),
+          margin: const EdgeInsets.symmetric(vertical: 3),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: isConnected && !isLoading ? () => _loadSlot(slot.index) : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      // Slot Index Pill
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isActive
+                              ? StudioTheme.colorFilterEq.withValues(alpha: 0.2)
+                              : StudioTheme.surface,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: isActive ? StudioTheme.colorFilterEq : StudioTheme.surfaceBorder,
+                          ),
+                        ),
+                        child: Text(
+                          slot.formattedSlotIndex,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'monospace',
+                            color: isActive ? StudioTheme.colorFilterEq : Colors.white70,
+                          ),
                         ),
                       ),
-                  ],
-                ),
-              ),
+                      const SizedBox(width: 8),
 
-              // Loading or Actions
-              if (isLoading)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: StudioTheme.colorFilterEq),
-                )
-              else ...[
-                // Load button
-                IconButton(
-                  key: Key('load_slot_${slot.index}_button'),
-                  icon: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
-                  tooltip: 'Load into Editor',
-                  padding: const EdgeInsets.all(4),
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  onPressed: isConnected ? () => _loadSlot(slot.index) : null,
-                ),
-                // Quick Write button
-                IconButton(
-                  key: Key('write_slot_${slot.index}_button'),
-                  icon: const Icon(Icons.save, size: 16, color: StudioTheme.colorModulation),
-                  tooltip: 'Write current patch to Slot ${slot.formattedSlotIndex}',
-                  padding: const EdgeInsets.all(4),
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  onPressed: isConnected ? () => _quickWriteToSlot(slot.index) : null,
-                ),
-              ],
-            ],
+                      // Bank-Program info (e.g. 1-1)
+                      Text(
+                        '(${slot.bankAndProgramNumber})',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontFamily: 'monospace',
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Slot Name & Status
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              slot.name,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                                color: slot.isEmpty ? Colors.grey : Colors.white,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (isActive)
+                              const Text(
+                                'ACTIVE IN EDITOR',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: StudioTheme.colorFilterEq,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+
+                      // Loading or Actions
+                      if (isLoading)
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: StudioTheme.colorFilterEq),
+                        )
+                      else ...[
+                        // Load button
+                        IconButton(
+                          key: Key('load_slot_${slot.index}_button'),
+                          icon: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+                          tooltip: 'Load into Editor',
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          onPressed: isConnected ? () => _loadSlot(slot.index) : null,
+                        ),
+                        // Quick Write button
+                        IconButton(
+                          key: Key('write_slot_${slot.index}_button'),
+                          icon: const Icon(Icons.save, size: 16, color: StudioTheme.colorModulation),
+                          tooltip: 'Write current patch to Slot ${slot.formattedSlotIndex}',
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          onPressed: isConnected ? () => _quickWriteToSlot(slot.index) : null,
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (isCrossGenHover || isMismatchHover)
+                    Padding(
+                      key: Key('hw_slot_mismatch_warning_${slot.index}'),
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        isCrossGenHover
+                            ? 'Blocked (incompatible gen): ${hoverPayload.patch.deviceFamily.displayName} → ${activeFamily.displayName}'
+                            : 'Device mismatch: ${hoverPayload.patch.deviceFamily.displayName} → ${activeFamily.displayName}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isCrossGenHover ? Colors.redAccent : Colors.orangeAccent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+
+        if (slotPatch == null || slot.isEmpty) {
+          return card;
+        }
+        return buildAdaptiveDraggable<HardwareSlotDragPayload>(
+          context,
+          data: HardwareSlotDragPayload(slot: slot, patch: slotPatch),
+          feedback: buildPresetDragFeedback(
+            slotPatch.name,
+            'Hardware Slot #${slot.formattedSlotIndex}',
+          ),
+          childWhenDragging: Opacity(opacity: 0.45, child: card),
+          child: card,
+        );
+      },
     );
   }
 
@@ -438,6 +602,32 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
   }
 
   Future<void> _quickWriteToSlot(int slotIndex) async {
+    final activePatch = widget.editorController.patch;
+    final activeFamily = widget.connectionController.activeFamily;
+    if (activePatch != null &&
+        activeFamily != DeviceFamily.unknown &&
+        activePatch.deviceFamily != activeFamily) {
+      if (activePatch.deviceFamily != DeviceFamily.unknown &&
+          !activePatch.deviceFamily.isSameGeneration(activeFamily)) {
+        widget.editorController.reportCrossGenerationWriteError(
+          patchDevice: activePatch.deviceFamily,
+          targetDevice: activeFamily,
+        );
+        await showGenerationIncompatibleDialog(
+          context,
+          patch: activePatch,
+          targetFamily: activeFamily,
+        );
+        return;
+      }
+      final mismatchProceed = await confirmDeviceMismatchDrop(
+        context,
+        patch: activePatch,
+        targetFamily: activeFamily,
+      );
+      if (!mismatchProceed || !mounted) return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -466,14 +656,16 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
 
     if (confirmed == true && mounted) {
       await widget.editorController.savePatchToDeviceSlot(slotIndex);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Successfully wrote patch to Slot $slotIndex!'),
-            backgroundColor: StudioTheme.colorFilterEq,
+      if (!mounted) return;
+      final err = widget.editorController.errorMessage;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            err ?? 'Successfully wrote patch to Slot $slotIndex!',
           ),
-        );
-      }
+          backgroundColor: err != null ? Colors.redAccent : StudioTheme.colorFilterEq,
+        ),
+      );
     }
   }
 }

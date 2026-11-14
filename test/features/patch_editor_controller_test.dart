@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:signal_chain_flutter/core/midi/midi_message.dart';
 import 'package:signal_chain_flutter/core/midi/midi_port_descriptor.dart';
 import 'package:signal_chain_flutter/core/midi/mock_midi_transport.dart';
 import 'package:signal_chain_flutter/features/connection/device_connection_controller.dart';
@@ -364,7 +365,8 @@ void main() {
       expect(editorController.isDirty, isFalse);
     });
 
-    test('applyExternalHardwareUpdate with programNumber assigns slot to unassigned initial patch without reload', () async {
+    test('applyExternalHardwareUpdate with programNumber assigns slot to unassigned initial patch without reload when offline', () async {
+      await transport.disconnect();
       transport.clearSentMessages();
       expect(editorController.patch?.programNumber, isNull);
 
@@ -373,7 +375,7 @@ void main() {
       expect(editorController.patch?.programNumber, equals(7));
       expect(connectionController.activeHardwareSlotIndex, equals(7));
       expect(editorController.isDirty, isFalse);
-      // No outbound requests triggered because initial patch was assigned in-place
+      // No outbound requests triggered when disconnected
       expect(transport.sentMessages.isEmpty, isTrue);
     });
 
@@ -477,6 +479,96 @@ void main() {
 
       expect(editorController.patch!.slots[0].parameters[0].currentValue, equals(8.0));
       expect(editorController.canUndo, isFalse);
+    });
+
+    test('physical pedal 64 26 00 00 switches active patch from cached bank with zero MIDI echo even when dirty', () async {
+      // Simulate loading slot 3 via Bank Manager and making a dirty edit
+      final slot3Patch = sampleZoomPatch.copyWith(name: 'Bank Loaded 3', programNumber: 3);
+      editorController.loadPatch(slot3Patch);
+      await editorController.updateParameter(0, 0, 9);
+      expect(editorController.isDirty, isTrue);
+
+      final slot14Patch = sampleZoomPatch.copyWith(name: 'Chorus Clean', programNumber: 14);
+      connectionController.updateBankSlot(
+        14,
+        patchName: 'Chorus Clean',
+        patch: slot14Patch,
+      );
+
+      transport.clearSentMessages();
+      // Zoom 64 26 00 00: bank=1, prog=4 -> slot 14
+      transport.simulateIncomingMessage(
+        MidiMessage.sysEx([0x52, 0x00, 0x6E, 0x64, 0x26, 0x00, 0x00, 0x01, 0x00, 0x04, 0x00]),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(connectionController.activeHardwareSlotIndex, equals(14));
+      expect(editorController.patch?.name, equals('Chorus Clean'));
+      expect(editorController.patch?.programNumber, equals(14));
+      expect(editorController.isDirty, isFalse);
+      expect(transport.sentMessages, isEmpty);
+    });
+
+    test('physical pedal 64 26 00 00 fetches uncached slot from hardware without echoing slot select messages', () async {
+      const zoomProtocol = ZoomMsPlusProtocol();
+      final uncachedPatch = sampleZoomPatch.copyWith(name: 'Uncached Slap', programNumber: 14);
+
+      transport.registerResponder(
+        (req) => req.isSysEx && req.data.length >= 6 && req.data[4] == 0x46,
+        (req) => zoomProtocol.buildSavePatchToSlotMessage(uncachedPatch, 14),
+      );
+
+      transport.clearSentMessages();
+      transport.simulateIncomingMessage(
+        MidiMessage.sysEx([0x52, 0x00, 0x6E, 0x64, 0x26, 0x00, 0x00, 0x01, 0x00, 0x04, 0x00]),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(connectionController.activeHardwareSlotIndex, equals(14));
+      expect(editorController.patch?.name, equals('Uncached Slap'));
+      expect(editorController.patch?.programNumber, equals(14));
+      // Only outgoing SysEx slot read request (0x46) should be sent; zero CC/PC echo
+      expect(transport.sentMessages.any((m) => m.isProgramChange || m.isControlChange), isFalse);
+      expect(transport.sentMessages.where((m) => m.data.length >= 5 && m.data[4] == 0x46).length, equals(1));
+    });
+
+    test('physical pedal Bank Select CC 32 + Program Change switches active patch in editor', () async {
+      final slot23Patch = sampleZoomPatch.copyWith(name: 'Bank2 Slot3', programNumber: 23);
+      connectionController.updateBankSlot(
+        23,
+        patchName: 'Bank2 Slot3',
+        patch: slot23Patch,
+      );
+
+      transport.clearSentMessages();
+      transport.simulateIncomingMessage(
+        MidiMessage.controlChange(channel: 0, controller: 32, value: 2),
+      );
+      transport.simulateIncomingMessage(
+        MidiMessage.programChange(channel: 0, program: 3),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(connectionController.activeHardwareSlotIndex, equals(23));
+      expect(editorController.patch?.name, equals('Bank2 Slot3'));
+      expect(editorController.patch?.programNumber, equals(23));
+      expect(transport.sentMessages, isEmpty);
+    });
+
+    test('savePatchToDeviceSlot hard-blocks cross-generation patch writes with zero MIDI output', () async {
+      connectionController.updateBankSlot(
+        2,
+        patchName: 'Old Slot 2',
+        patch: sampleZoomPatch.copyWith(programNumber: 2),
+      );
+      transport.clearSentMessages();
+
+      await editorController.savePatchToDeviceSlot(2, sampleLine6Patch);
+
+      expect(editorController.errorMessage, contains('incompatible hardware generation'));
+      expect(transport.sentMessages, isEmpty);
+      expect(connectionController.bankSlots[2].name, equals('Old Slot 2'));
+      expect(connectionController.bankSlots[2].patch?.name, equals('Funk Master'));
     });
   });
 }

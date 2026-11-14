@@ -38,6 +38,16 @@ class ExportFileWriter {
     }
   }
 
+  /// Resolves an export directory from [customDirectoryPath] if non-empty,
+  /// otherwise falls back to [resolveDefaultExportDirectory].
+  static Directory resolveExportDirectory({String? customDirectoryPath}) {
+    final trimmed = customDirectoryPath?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) {
+      return Directory(trimmed);
+    }
+    return resolveDefaultExportDirectory();
+  }
+
   /// Writes [payload] to [targetDir] using [nameOverride] if provided.
   ///
   /// For [ExportPayload.isDirectoryExport], creates a subdirectory and writes all

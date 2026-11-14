@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../library/save_copy_as_dialog.dart';
 import '../theme/studio_theme.dart';
 import 'patch_diff_dialog.dart';
 import 'patch_edit_history.dart';
@@ -245,6 +246,48 @@ class _PatchMetadataHeaderWidgetState extends State<PatchMetadataHeaderWidget> {
                   // Undo / Redo & A/B Compare Controls
                   _buildHistoryAndCompareControls(context),
 
+                  // "Save Copy As..." Button (compact icon on narrow phones to avoid extra row wrap)
+                  if (isCompact)
+                    IconButton(
+                      key: const Key('save_copy_as_button'),
+                      icon: const Icon(
+                        Icons.copy,
+                        size: 16,
+                        color: StudioTheme.colorFilterEq,
+                      ),
+                      tooltip: 'Save Copy As...',
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                      style: IconButton.styleFrom(
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => _showSaveCopyAsDialog(context),
+                    )
+                  else
+                    OutlinedButton.icon(
+                      key: const Key('save_copy_as_button'),
+                      icon: const Icon(
+                        Icons.copy,
+                        size: 14,
+                        color: StudioTheme.colorFilterEq,
+                      ),
+                      label: const Text(
+                        'Save Copy As...',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: StudioTheme.colorFilterEq,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: StudioTheme.colorFilterEq),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                      onPressed: () => _showSaveCopyAsDialog(context),
+                    ),
+
                   // "Write to Hardware Slot..." Button
                   OutlinedButton.icon(
                     key: const Key('write_to_hardware_slot_button'),
@@ -423,6 +466,29 @@ class _PatchMetadataHeaderWidgetState extends State<PatchMetadataHeaderWidget> {
       builder: (_) => WriteToSlotDialog(
         editorController: widget.controller,
         connectionController: widget.controller.connectionController,
+      ),
+    );
+  }
+
+  Future<void> _showSaveCopyAsDialog(BuildContext context) async {
+    final currentName = widget.controller.patch?.name ?? 'Untitled Patch';
+    final newName = await SaveCopyAsDialog.show(
+      context,
+      initialName: '$currentName Copy',
+      title: 'Save Copy As...',
+    );
+    if (newName == null) return;
+
+    final copy = await widget.controller.saveCopyAs(newName);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          copy != null
+              ? 'Saved copy "${copy.name}" to library'
+              : (widget.controller.errorMessage ?? 'No active patch or library attached'),
+        ),
+        backgroundColor: copy != null ? StudioTheme.surfaceElevated : Colors.redAccent,
       ),
     );
   }

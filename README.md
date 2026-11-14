@@ -26,7 +26,13 @@ Total Zoom MS Plus catalog coverage: **578** typed effect definitions across all
 
 ---
 
-## Key Features (Through Milestone 16)
+## Key Features (Through Milestone 17.1)
+
+- **Physical Pedal Patch-Switch Sync & Hardware Generation Locks:** Incoming pedal patch switches (`64 26 00 00`, Bank Select CC `0`/`32` + PC, and `64 12 01` dumps) immediately update the active hardware slot and editor buffer with zero MIDI echo (`notifyHardware: false`); hardware generation locks (`DeviceGeneration`) hard-block incompatible cross-generation writes (e.g., Line 6 ↔ Zoom MS Plus) while allowing same-generation cross-model writes (e.g., MS-50G+ → MS-60B+) after confirmation.
+
+- **Drag-and-Drop Bank Manager, Custom Export Browser & File-Based Batch Restore:** Side-by-side `BankManagerDialog` pairing searchable, family/tag-filterable local presets with hardware bank slots (`Draggable` on desktop, `LongPressDraggable` on mobile touchscreens) with bidirectional drag-and-drop transfer, generation compatibility enforcement, sequential **"Restore Bank..."** (`BankRestoreDialog`) from local multi-select, **From File / Folder** disk backups (`.json`, `.syx`, `.zptc`, Symbiosis batch folders) without duplicating library presets, or pasted bundles, interactive destination folder browsing + `lastExportDirectory` persistence in `PatchExportDialog`, and **"Save Copy As..."** preset duplication (`SaveCopyAsDialog`) in `PatchMetadataHeaderWidget` and `PatchLibraryDrawerOrPanel`.
+
+- **Multi-File Patch Import & Library-Only Mode:** `PatchImportDialog` supports checking multiple individual patch files in a folder for batch decode and defaults **"Import to Library"** to bypass the active editor buffer (with an explicit opt-in `"Also load into Editor"` toggle for single patches).
 
 - **Native Cross-Platform Hardware USB MIDI:** Zero-dependency hardware MIDI transports for Linux ALSA (`LinuxAlsaMidiTransport`), Android USB Host OTG (`AndroidMidiTransport`), and Windows WinMM (`WinMmMidiTransport` via pure `dart:ffi` to `winmm.dll` and `kernel32.dll`, with endpoint pairing, `NativeCallable.listener` SysEx ring reassembly, and `MIDIHDR` SysEx transmission).
 

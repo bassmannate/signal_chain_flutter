@@ -5,9 +5,11 @@ import '../../models/patch.dart';
 import '../../models/patch_diff.dart';
 import '../editor/patch_diff_dialog.dart';
 import '../editor/patch_editor_controller.dart';
+import '../editor/write_to_slot_dialog.dart';
 import '../setlist/setlist_browser_widget.dart';
 import '../setlist/setlist_controller.dart';
 import '../theme/studio_theme.dart';
+import 'bank_manager_dialog.dart';
 import 'hardware_bank_browser_widget.dart';
 import 'patch_export_dialog.dart';
 import 'patch_import_dialog.dart';
@@ -262,6 +264,24 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                       ),
                     ),
                     IconButton(
+                      key: const Key('open_bank_manager_button'),
+                      icon: const Icon(
+                        Icons.swap_horiz,
+                        size: 20,
+                        color: StudioTheme.colorFilterEq,
+                      ),
+                      tooltip: 'Open Side-by-Side Bank Manager',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => BankManagerDialog.show(
+                        context,
+                        libraryController: libraryController,
+                        editorController: editorController,
+                        connectionController: editorController.connectionController,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
                       key: const Key('export_library_button'),
                       icon: const Icon(
                         Icons.ios_share,
@@ -360,37 +380,83 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                       selected: selectedFamily == DeviceFamily.line6BassPodPro,
                       onSelected: (_) => libraryController.setDeviceFilter(DeviceFamily.line6BassPodPro),
                     ),
+                    if (libraryController.availableTags.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      for (final tag in libraryController.availableTags) ...[
+                        FilterChip(
+                          key: Key('library_tag_chip_$tag'),
+                          label: Text('#$tag'),
+                          selected: libraryController.selectedTags.contains(tag),
+                          onSelected: (_) => libraryController.toggleTag(tag),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                    ],
                   ],
                 ),
               ),
               const Divider(color: StudioTheme.surfaceBorder, height: 1),
 
-              // Preset List
+              // Preset List + Hardware Slot Drop Target
               Expanded(
-                child: libraryController.isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : patches.isEmpty
-                        ? Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Text(
-                                libraryController.searchQuery.isNotEmpty || selectedFamily != null
-                                    ? 'No presets matching filters'
-                                    : 'Library is empty',
-                                style: const TextStyle(color: Colors.grey, fontSize: 13),
-                              ),
-                            ),
-                          )
-                        : ListView.separated(
-                            key: const Key('preset_list_view'),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            itemCount: patches.length,
-                            separatorBuilder: (context, index) => const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final patch = patches[index];
-                              return _buildPatchCard(context, patch);
-                            },
-                          ),
+                child: DragTarget<HardwareSlotDragPayload>(
+                  key: const Key('library_panel_drop_zone'),
+                  onWillAcceptWithDetails: (_) => true,
+                  onAcceptWithDetails: (details) => handleHardwareSlotDropToLibrary(
+                    context,
+                    payload: details.data,
+                    libraryController: libraryController,
+                  ),
+                  builder: (context, candidateData, _) {
+                    final isHovering = candidateData.isNotEmpty;
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: isHovering
+                            ? StudioTheme.colorModulation.withValues(alpha: 0.08)
+                            : Colors.transparent,
+                        border: isHovering
+                            ? Border.all(
+                                color: StudioTheme.colorModulation,
+                                width: 1.5,
+                              )
+                            : null,
+                      ),
+                      child: libraryController.isLoading
+                          ? const Center(child: CircularProgressIndicator())
+                          : patches.isEmpty
+                              ? Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Text(
+                                      libraryController.searchQuery.isNotEmpty ||
+                                              selectedFamily != null ||
+                                              libraryController.selectedTags.isNotEmpty
+                                          ? 'No presets matching filters'
+                                          : 'Library is empty',
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  key: const Key('preset_list_view'),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
+                                  itemCount: patches.length,
+                                  separatorBuilder: (context, index) =>
+                                      const SizedBox(height: 8),
+                                  itemBuilder: (context, index) {
+                                    final patch = patches[index];
+                                    return _buildPatchCard(context, patch);
+                                  },
+                                ),
+                    );
+                  },
+                ),
               ),
             ],
           );
@@ -400,7 +466,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
     final isZoom = patch.deviceFamily.isZoomMsPlus;
     final deviceColor = isZoom ? StudioTheme.colorDynamics : StudioTheme.colorAmpCab;
 
-    return Container(
+    final card = Container(
       key: Key('preset_card_${patch.id}'),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -521,6 +587,24 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                     },
                   ),
 
+                // Save Copy As...
+                IconButton(
+                  key: Key('duplicate_patch_${patch.id}_button'),
+                  icon: const Icon(Icons.copy, size: 16, color: Colors.grey),
+                  tooltip: 'Save Copy As...',
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => promptAndDuplicateLibraryPatch(
+                    context,
+                    libraryController: libraryController,
+                    source: patch,
+                  ),
+                ),
+
                 // Export JSON / SysEx
                 IconButton(
                   key: Key('export_patch_${patch.id}_button'),
@@ -533,6 +617,20 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   onPressed: () => _exportPatch(context, patch),
+                ),
+
+                // Write to Hardware Slot
+                IconButton(
+                  key: Key('write_patch_${patch.id}_button'),
+                  icon: const Icon(Icons.save_alt, size: 16, color: StudioTheme.colorFilterEq),
+                  tooltip: 'Write to Hardware Slot',
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => _writePatchToSlot(context, patch),
                 ),
 
                 // Delete
@@ -577,6 +675,17 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
         ],
       ),
     );
+
+    return buildAdaptiveDraggable<LibraryPatchDragPayload>(
+      context,
+      data: LibraryPatchDragPayload(patch),
+      feedback: buildPresetDragFeedback(
+        patch.name,
+        patch.deviceFamily.displayName,
+      ),
+      childWhenDragging: Opacity(opacity: 0.45, child: card),
+      child: card,
+    );
   }
 
   Future<void> _addToActiveSetlist(BuildContext context, Patch patch) async {
@@ -611,6 +720,41 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
       builder: (_) => PatchExportDialog.patch(
         libraryController: libraryController,
         patch: patch,
+      ),
+    );
+  }
+
+  Future<void> _writePatchToSlot(BuildContext context, Patch patch) async {
+    final connection = editorController.connectionController;
+    final targetFamily = connection.activeFamily;
+    if (targetFamily != DeviceFamily.unknown && patch.deviceFamily != targetFamily) {
+      if (patch.deviceFamily != DeviceFamily.unknown &&
+          !patch.deviceFamily.isSameGeneration(targetFamily)) {
+        editorController.reportCrossGenerationWriteError(
+          patchDevice: patch.deviceFamily,
+          targetDevice: targetFamily,
+        );
+        await showGenerationIncompatibleDialog(
+          context,
+          patch: patch,
+          targetFamily: targetFamily,
+        );
+        return;
+      }
+      final proceed = await confirmDeviceMismatchDrop(
+        context,
+        patch: patch,
+        targetFamily: targetFamily,
+      );
+      if (!proceed || !context.mounted) return;
+    }
+
+    await showDialog<bool>(
+      context: context,
+      builder: (_) => WriteToSlotDialog(
+        editorController: editorController,
+        connectionController: connection,
+        patchOverride: patch,
       ),
     );
   }

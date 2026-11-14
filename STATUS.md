@@ -1,12 +1,46 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 16 Complete (Windows Native WinMM MIDI Transport via `dart:ffi`)  
-**Active Milestone:** Milestone 16 Complete / Ready for Windows Hardware Verification  
-**Last Updated:** 2026-11-13
+**Current Status:** Milestone 17.1 Complete (Hardware Patch-Switch Fix, Generation Compatibility Locks, Export Folder Browser, File-Based Bank Restore & Multi-File Library Import)  
+**Active Milestone:** Milestone 17.1 Complete  
+**Last Updated:** 2026-11-14
 
 ---
 
 ## 1. Milestone Roadmap
+
+### 🟢 Milestone 17.1: Hardware Patch-Switch Fix, Generation Compatibility Locks, Export Folder Browser, File-Based Bank Restore & Multi-File Library Import
+*Status:* **Completed**
+- [x] **Physical Pedal Patch-Switch Regression Fix (`lib/features/connection/device_connection_controller.dart`, `lib/features/editor/patch_editor_controller.dart`):**
+  * Fixed the patch-switch flow so incoming Zoom `64 26 00 00`, Bank Select CC `0`/`32` + Program Change, and `64 12 01` events preserve `syncEditorPatchProgramNumber: false` until the target patch loads, remove stale `programNumber` / `_isDirty` early returns, immediately update `activeHardwareSlotIndex`, and load the target slot (cached fast path or uncached `currentPatchTimeout` / `buildCurrentPatchRequest` fallback) with `notifyHardware: false` (zero MIDI echo) and `_isDisposed` async safety.
+- [x] **Hardware Generation Compatibility Locks (`lib/models/device_family.dart`, dialogs & controllers):**
+  * Added `DeviceGeneration` (`zoomMsPlus`, `zoomFour`, `zoomOn`, `line6Pod`, `unknown`), `generation` getter, and `isSameGeneration` helper on `DeviceFamily`.
+  * Hard-blocked incompatible cross-generation writes (`showGenerationIncompatibleDialog`, banner in `WriteToSlotDialog`, and `PatchEditorController.savePatchToDeviceSlot` / `restoreBankSlots` guards) with no "Write Anyway" bypass, while preserving `confirmDeviceMismatchDrop` warnings for same-generation cross-model writes (e.g., MS-50G+ → MS-60B+).
+- [x] **Interactive Export Folder Browser & Preference Persistence (`lib/features/library/patch_export_dialog.dart`, `lib/core/export/export_file_writer.dart`, `lib/core/storage/app_preferences_repository.dart`, `lib/core/import/import_file_system.dart`):**
+  * Added browsable destination folder selection (`..`, subfolder navigation, quick locations, editable full path, and `"New Folder"` creation via `ImportFileSystem.createDirectory`) plus persisted `lastExportDirectory` in `AppPreferencesRepository` / `FileSystemPreferencesRepository` and `ExportFileWriter.resolveExportDirectory`.
+- [x] **File- & Folder-Based Batch Bank Restore (`lib/features/library/bank_restore_dialog.dart`):**
+  * Added **"From File / Folder"** source tab backed by `ImportFileSystem` & `PatchImporter`, filtering incompatible hardware generations and restoring backups (`.json`, `.syx`, `.zptc`, Symbiosis folders) directly to hardware slots without duplicating Local Library entries.
+- [x] **Multi-File Import & Editor-Bypass `"Import to Library"` (`lib/features/library/patch_import_dialog.dart`):**
+  * Added per-file checkboxes, `"Select All Files"`, and `"Decode Selected"` batch preview in the File & Folder Browser, and updated `"Import to Library"` to bypass `PatchEditorController` by default (with an opt-in `"Also load into Editor"` checkbox for single patches, unchecked by default).
+- [x] **Regression & `FakeAsync`-Safe Widget Tests:**
+  * Added 11 net new tests (325 total passing across `test/features/patch_editor_controller_test.dart`, `test/features/library/bank_manager_and_restore_test.dart`, `test/core/storage/preferences_repository_test.dart`, `test/features/library/patch_export_dialog_test.dart`, and `test/features/library/patch_import_dialog_test.dart`).
+
+---
+
+### 🟢 Milestone 17: Drag-and-Drop Library-to-Pedal Bank Manager & Batch Slot Restore
+*Status:* **Completed**
+- [x] **Side-by-Side Drag-and-Drop Bank Manager (`lib/features/library/bank_manager_dialog.dart`):**
+  * Implemented responsive side-by-side `BankManagerDialog` pairing searchable, `DeviceFamily`- and tag-filterable **Local Presets** with connected **Hardware Bank Slots** (`0..totalMemorySlots - 1`).
+  * Implemented adaptive `Draggable` (desktop) / `LongPressDraggable` (Android/iOS touchscreens) via shared `buildAdaptiveDraggable`, supporting both local-preset-to-hardware-slot writes (`PatchEditorController.savePatchToDeviceSlot`) and reverse hardware-slot-to-local-library saves (`PatchLibraryController.saveHardwareSlotToLibrary`).
+  * Added clear hover highlights and a device-family mismatch confirmation dialog (`confirmDeviceMismatchDrop`) when dropping a patch built for a different pedal family.
+  * Wired bidirectional drag/drop, tag chips, and Bank Manager launch buttons into `PatchLibraryDrawerOrPanel` and `HardwareBankBrowserWidget`.
+- [x] **Batch Hardware Bank Restore (`lib/features/library/bank_restore_dialog.dart`, `PatchEditorController.restoreBankSlots`):**
+  * Added **"Restore Bank..."** action in `HardwareBankBrowserWidget` and `BankManagerDialog` supporting multi-selected local presets or JSON/SysEx bundles starting at a chosen slot index, sequential hardware writes with live progress bar, and mid-restore cancellation (`cancelBankRestore`).
+- [x] **Quick "Save Copy As..." Duplication (`lib/features/library/save_copy_as_dialog.dart`):**
+  * Added **"Save Copy As..."** (`PatchEditorController.saveCopyAs` and `PatchLibraryController.duplicatePatch`) in `PatchMetadataHeaderWidget` and `PatchLibraryDrawerOrPanel` (plus `BankManagerDialog`) to duplicate presets under a new name without overwriting originals.
+- [x] **Unit & `FakeAsync`-Safe Widget Tests (`test/features/library/bank_manager_and_restore_test.dart`):**
+  * Added 9 tests (314 total) covering controller duplication/save-from-slot/batch-restore cancellation, matching & mismatched drag-and-drop to hardware slots, reverse slot-to-library drag-and-drop, `BankRestoreDialog` progress & cancellation, and `"Save Copy As..."` workflows.
+
+---
 
 ### 🟢 Milestone 16: Windows Native WinMM MIDI Transport (`dart:ffi`)
 *Status:* **Completed**
@@ -603,5 +637,5 @@
 | **State Controllers** | Complete | `DeviceConnectionController` (Bank sync), `PatchEditorController` (Undo/Redo, A/B Compare, Name/Tempo/Slots), `PatchLibraryController` |
 | **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget` (RTL order), `RotaryKnobWidget`, `SlotInspectorWidget`, `PatchDiffDialog`, `HardwareBankBrowserWidget`, `WriteToSlotDialog`, `PatchLibraryDrawerOrPanel` |
 | **Static Analysis** | Passing (0 issues) | Verified via `flutter analyze --no-pub` |
-| **Unit & Widget Tests** | 305 Passing (100%) | 296 prior + 9 Milestone 16 tests (`test/core/midi/windows_winmm_midi_transport_test.dart`) |
+| **Unit & Widget Tests** | 325 Passing (100%) | 314 prior + 11 net new Milestone 17.1 regression & widget tests |
 
