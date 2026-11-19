@@ -8,6 +8,15 @@ Built with a **100% pure Dart/Flutter foundation** and **zero external pub depen
 
 ---
 
+## Screenshots
+Main editor
+<img width="1280" height="754" alt="image" src="https://github.com/user-attachments/assets/db79f5c5-623b-43dd-b439-9da23df3eb59" />
+
+Stage mode
+<img width="1277" height="744" alt="image" src="https://github.com/user-attachments/assets/9267da72-b55f-4525-9cae-de1120da5ba8" />
+
+
+
 ## Supported Hardware & Verification Status
 
 | Device | Protocol / Family | Effect Catalog | Verification Status |
