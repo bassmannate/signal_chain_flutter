@@ -7,7 +7,7 @@ import '../export_adapter.dart';
 import '../export_format.dart';
 import '../export_payload.dart';
 
-/// Exports Zoom MS Plus patches as standard 848-byte binary `PTCF` (`.zptc`) files.
+/// Exports Zoom MS Plus and Zoom Four patches as standard 848-byte binary `PTCF` (`.zptc`) files.
 class ZoomPtcfExportAdapter extends ExportAdapter {
   const ZoomPtcfExportAdapter();
 
@@ -15,11 +15,13 @@ class ZoomPtcfExportAdapter extends ExportAdapter {
   ExportFormat get format => ExportFormat.zoomPtcf;
 
   @override
-  bool supportsDevice(DeviceFamily family) => family.isZoomMsPlus;
+  bool supportsDevice(DeviceFamily family) => family.isZoom6E;
 
   /// Encodes [patch] into a fixed 848-byte zero-padded `PTCF` binary buffer.
   static Uint8List encodePaddedPtcf(Patch patch) {
-    final protocol = ZoomMsPlusProtocol(defaultFamily: patch.deviceFamily);
+    final protocol = patch.deviceFamily.isZoomFour
+        ? ZoomFourProtocol.forFamily(patch.deviceFamily)
+        : ZoomMsPlusProtocol(defaultFamily: patch.deviceFamily);
     final rawPtcf = protocol.encodePtcf(patch);
     final padded = Uint8List(ZoomMsPlusProtocol.msPlusPtcfSlotLength);
     final copyLen = rawPtcf.length < padded.length ? rawPtcf.length : padded.length;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../library/save_copy_as_dialog.dart';
 import '../theme/studio_theme.dart';
@@ -24,6 +25,9 @@ class PatchMetadataHeaderWidget extends StatefulWidget {
 class _PatchMetadataHeaderWidgetState extends State<PatchMetadataHeaderWidget> {
   late final TextEditingController _nameController;
   final FocusNode _nameFocusNode = FocusNode();
+  late final TextEditingController _tempoController;
+  late final FocusNode _tempoFocusNode;
+  bool _isEditingTempo = false;
 
   @override
   void initState() {
@@ -31,6 +35,11 @@ class _PatchMetadataHeaderWidgetState extends State<PatchMetadataHeaderWidget> {
     _nameController = TextEditingController(
       text: widget.controller.patch?.name ?? '',
     );
+    _tempoController = TextEditingController(
+      text: '${widget.controller.patch?.tempo ?? 120}',
+    );
+    _tempoFocusNode = FocusNode(onKeyEvent: _handleTempoKeyEvent)
+      ..addListener(_onTempoFocusChanged);
   }
 
   @override
@@ -40,12 +49,86 @@ class _PatchMetadataHeaderWidgetState extends State<PatchMetadataHeaderWidget> {
     if (!_nameFocusNode.hasFocus && _nameController.text != currentName) {
       _nameController.text = currentName;
     }
+    final currentTempo = '${widget.controller.patch?.tempo ?? 120}';
+    if (!_isEditingTempo &&
+        !_tempoFocusNode.hasFocus &&
+        _tempoController.text != currentTempo) {
+      _tempoController.text = currentTempo;
+    }
+  }
+
+  KeyEventResult _handleTempoKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape) {
+      _cancelTempoEdit();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _onTempoFocusChanged() {
+    if (!_tempoFocusNode.hasFocus && _isEditingTempo) {
+      _commitTempoEdit();
+    }
+  }
+
+  void _startTempoEdit(int currentTempo) {
+    final text = '$currentTempo';
+    setState(() {
+      _isEditingTempo = true;
+      _tempoController.value = TextEditingValue(
+        text: text,
+        selection: TextSelection(baseOffset: 0, extentOffset: text.length),
+      );
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_isEditingTempo) return;
+      _tempoFocusNode.requestFocus();
+      _tempoController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _tempoController.text.length,
+      );
+    });
+  }
+
+  void _commitTempoEdit() {
+    if (!_isEditingTempo) return;
+    _isEditingTempo = false;
+
+    final parsed = int.tryParse(_tempoController.text.trim());
+    if (parsed != null) {
+      final clamped = parsed.clamp(40, 250);
+      widget.controller.updatePatchTempo(clamped);
+    }
+
+    _tempoController.text = '${widget.controller.patch?.tempo ?? 120}';
+    if (_tempoFocusNode.hasFocus) {
+      _tempoFocusNode.unfocus();
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _cancelTempoEdit() {
+    if (!_isEditingTempo) return;
+    _isEditingTempo = false;
+    _tempoController.text = '${widget.controller.patch?.tempo ?? 120}';
+    if (_tempoFocusNode.hasFocus) {
+      _tempoFocusNode.unfocus();
+    }
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _nameFocusNode.dispose();
+    _tempoFocusNode.removeListener(_onTempoFocusChanged);
+    _tempoFocusNode.dispose();
+    _tempoController.dispose();
     super.dispose();
   }
 
@@ -173,23 +256,78 @@ class _PatchMetadataHeaderWidgetState extends State<PatchMetadataHeaderWidget> {
                     children: [
                       const Icon(Icons.speed, size: 16, color: StudioTheme.colorFilterEq),
                       const SizedBox(width: 4),
-                      Container(
-                        key: const Key('patch_tempo_display'),
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: StudioTheme.surface,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: StudioTheme.surfaceBorder),
-                        ),
-                        child: Text(
-                          '$currentTempo BPM',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: StudioTheme.colorFilterEq,
+                      if (_isEditingTempo)
+                        Container(
+                          key: const Key('patch_tempo_display'),
+                          width: 68,
+                          constraints: const BoxConstraints(minWidth: 64),
+                          decoration: BoxDecoration(
+                            color: StudioTheme.surface,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: StudioTheme.colorFilterEq),
+                          ),
+                          child: TextField(
+                            key: const Key('patch_tempo_textfield'),
+                            controller: _tempoController,
+                            focusNode: _tempoFocusNode,
+                            autofocus: true,
+                            maxLength: 3,
+                            keyboardType: TextInputType.number,
+                            textInputAction: TextInputAction.done,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: StudioTheme.colorFilterEq,
+                            ),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              counterText: '',
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 4,
+                              ),
+                              border: InputBorder.none,
+                            ),
+                            onSubmitted: (_) => _commitTempoEdit(),
+                            onTapOutside: (_) => _commitTempoEdit(),
+                          ),
+                        )
+                      else
+                        Tooltip(
+                          message: 'Click to edit tempo (40–250 BPM)',
+                          child: MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            child: GestureDetector(
+                              key: const Key('patch_tempo_display'),
+                              onTap: () => _startTempoEdit(currentTempo),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: StudioTheme.surface,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: StudioTheme.surfaceBorder,
+                                  ),
+                                ),
+                                child: Text(
+                                  '$currentTempo BPM',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: StudioTheme.colorFilterEq,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
                       IconButton(
                         key: const Key('tempo_decrement_button'),
                         icon: const Icon(Icons.remove, size: 16, color: Colors.grey),

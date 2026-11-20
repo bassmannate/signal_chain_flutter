@@ -24,8 +24,10 @@ void main() {
     expect(find.text('DISCONNECTED'), findsOneWidget);
     expect(find.byKey(const Key('midi_port_dropdown')), findsOneWidget);
     expect(find.text('Zoom MS-60B+'), findsWidgets);
-    expect(find.byKey(const Key('pull_patch_button')), findsOneWidget);
-    expect(find.byKey(const Key('push_patch_button')), findsOneWidget);
+    expect(find.byKey(const Key('pull_patch_button')), findsNothing);
+    expect(find.byKey(const Key('push_patch_button')), findsNothing);
+    expect(find.text('Pull Patch'), findsNothing);
+    expect(find.text('Push Patch'), findsNothing);
     expect(find.byKey(const Key('save_to_library_button')), findsOneWidget);
 
     // 2. Verify SignalChainStripWidget elements

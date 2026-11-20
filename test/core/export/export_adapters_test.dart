@@ -77,9 +77,26 @@ void main() {
   );
 
   group('ExportAdapterRegistry & Device Filtering', () {
-    test('exposes all 5 formats for Zoom MS Plus devices', () {
+    test('exposes all 5 Zoom MS Plus formats for Zoom MS-60B+', () {
       final adapters = registry.adaptersForDevice(DeviceFamily.zoomMs60bPlus);
-      expect(adapters.map((a) => a.format), containsAll(ExportFormat.values));
+      expect(
+        adapters.map((a) => a.format).toList(),
+        equals([
+          ExportFormat.nativeJson,
+          ExportFormat.zoomPtcf,
+          ExportFormat.symbiosisZptc,
+          ExportFormat.zoomMultistompStudio,
+          ExportFormat.rawSysEx,
+        ]),
+      );
+    });
+
+    test('exposes ToneLib .zb1f alongside Zoom 0x6E formats for Zoom B1X FOUR', () {
+      final adapters = registry.adaptersForDevice(DeviceFamily.zoomB1xFour);
+      expect(
+        adapters.map((a) => a.format),
+        containsAll(ExportFormat.values),
+      );
     });
 
     test('filters out Zoom-only formats for Line 6 Bass POD Pro', () {

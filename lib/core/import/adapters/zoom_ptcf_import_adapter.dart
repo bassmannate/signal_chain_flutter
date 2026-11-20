@@ -100,15 +100,16 @@ class ZoomPtcfImportAdapter extends ImportAdapter {
       );
     }
 
-    if (numEffects == 0 || numEffects > ZoomMsPlusProtocol.defaultMaxSlots) {
-      warnings.add('Unusual PTCF effect slot count ($numEffects).');
-    }
-
-    // Resolve Zoom MS Plus family from explicit override, target mask, or hint.
+    // Resolve Zoom 0x6E family (Four series vs MS Plus) from explicit override, target mask, or hint.
     final DeviceFamily defaultFamily;
-    if (forcedFamily != null && forcedFamily.isZoomMsPlus) {
+    if (forcedFamily != null && forcedFamily.isZoom6E) {
       defaultFamily = forcedFamily;
-      if ((targetMask & ZoomMsPlusProtocol.ptcfTargetMs60bPlus) != 0 &&
+      if ((targetMask & ZoomMsPlusProtocol.ptcfTargetZoomFourMask) != 0 &&
+          !forcedFamily.isZoomFour) {
+        warnings.add(
+          'PTCF target mask indicates Zoom Four series, but filename specifies ${forcedFamily.displayName}; using ${forcedFamily.displayName}.',
+        );
+      } else if ((targetMask & ZoomMsPlusProtocol.ptcfTargetMs60bPlus) != 0 &&
           forcedFamily != DeviceFamily.zoomMs60bPlus) {
         warnings.add(
           'PTCF target mask indicates MS-60B+, but filename specifies ${forcedFamily.displayName}; using ${forcedFamily.displayName}.',
@@ -118,6 +119,15 @@ class ZoomPtcfImportAdapter extends ImportAdapter {
         warnings.add(
           'PTCF target mask indicates MS-50G+/70CDR+/200D+, but filename specifies MS-60B+; using MS-60B+.',
         );
+      }
+    } else if ((targetMask & ZoomMsPlusProtocol.ptcfTargetZoomFourMask) != 0) {
+      if (targetDeviceHint != null &&
+          targetDeviceHint.isZoomFour &&
+          (targetMask & (targetDeviceHint.zoomFourProfile?.ptcfTargetMask ?? 0)) != 0) {
+        defaultFamily = targetDeviceHint;
+      } else {
+        defaultFamily = ZoomFourProfile.fromPtcfTarget(targetMask)?.deviceFamily ??
+            DeviceFamily.zoomB1xFour;
       }
     } else if ((targetMask & ZoomMsPlusProtocol.ptcfTargetMs60bPlus) != 0) {
       defaultFamily = DeviceFamily.zoomMs60bPlus;
@@ -134,7 +144,7 @@ class ZoomPtcfImportAdapter extends ImportAdapter {
         }
       }
     } else {
-      defaultFamily = (targetDeviceHint != null && targetDeviceHint.isZoomMsPlus)
+      defaultFamily = (targetDeviceHint != null && targetDeviceHint.isZoom6E)
           ? targetDeviceHint
           : DeviceFamily.zoomMs60bPlus;
       warnings.add(
@@ -142,8 +152,17 @@ class ZoomPtcfImportAdapter extends ImportAdapter {
       );
     }
 
+    final maxSlots = defaultFamily.isZoomFour
+        ? ZoomFourProtocol.maxSlots
+        : ZoomMsPlusProtocol.defaultMaxSlots;
+    if (numEffects == 0 || numEffects > maxSlots) {
+      warnings.add('Unusual PTCF effect slot count ($numEffects).');
+    }
+
     try {
-      final protocol = ZoomMsPlusProtocol(defaultFamily: defaultFamily);
+      final protocol = defaultFamily.isZoomFour
+          ? ZoomFourProtocol.forFamily(defaultFamily)
+          : ZoomMsPlusProtocol(defaultFamily: defaultFamily);
       var patch = protocol.decodePtcf(
         bytes,
         programNumber: fallbackProgramNumber,

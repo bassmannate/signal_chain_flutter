@@ -8,6 +8,7 @@ import '../editor/patch_editor_controller.dart';
 import '../editor/write_to_slot_dialog.dart';
 import '../setlist/setlist_browser_widget.dart';
 import '../setlist/setlist_controller.dart';
+import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/studio_theme.dart';
 import 'bank_manager_dialog.dart';
 import 'hardware_bank_browser_widget.dart';
@@ -74,7 +75,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
             children: [
               // Segmented Tab Toggle: [Local Presets] | [Hardware Bank] | [Setlists]
               Container(
-                margin: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+                margin: const EdgeInsets.fromLTRB(12, 6, 12, 2),
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
                   color: StudioTheme.surfaceElevated,
@@ -246,7 +247,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
       children: [
               // Header
               Padding(
-                padding: const EdgeInsets.only(left: 14, right: 14, top: 16, bottom: 8),
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
                 child: Row(
                   children: [
                     const Icon(Icons.library_music, size: 18, color: StudioTheme.colorModulation),
@@ -280,7 +281,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                         connectionController: editorController.connectionController,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     IconButton(
                       key: const Key('export_library_button'),
                       icon: const Icon(
@@ -302,7 +303,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                                 ),
                               ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     IconButton(
                       key: const Key('import_preset_button'),
                       icon: const Icon(
@@ -315,7 +316,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                       constraints: const BoxConstraints(),
                       onPressed: () => _showImportDialog(context),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
@@ -338,7 +339,7 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
 
               // Search Bar
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 child: TextField(
                   key: const Key('library_search_input'),
                   decoration: InputDecoration(
@@ -352,49 +353,58 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                           )
                         : null,
                     isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
                   ),
                   onChanged: (text) => libraryController.setSearchQuery(text),
                 ),
               ),
 
               // Device Family Filter Chips
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              HorizontalMouseScrollView(
+                key: const Key('library_filters_horizontal_scroll'),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                 child: Row(
                   children: [
                     FilterChip(
                       label: const Text('All'),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       selected: selectedFamily == null,
                       onSelected: (_) => libraryController.setDeviceFilter(null),
                     ),
                     const SizedBox(width: 6),
                     FilterChip(
                       label: const Text('MS-60B+'),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       selected: selectedFamily == DeviceFamily.zoomMs60bPlus,
                       onSelected: (_) => libraryController.setDeviceFilter(DeviceFamily.zoomMs60bPlus),
                     ),
                     const SizedBox(width: 6),
                     FilterChip(
+                      label: const Text('B1X FOUR'),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      selected: selectedFamily == DeviceFamily.zoomB1xFour,
+                      onSelected: (_) => libraryController.setDeviceFilter(DeviceFamily.zoomB1xFour),
+                    ),
+                    const SizedBox(width: 6),
+                    FilterChip(
                       label: const Text('Bass Pod Pro'),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       selected: selectedFamily == DeviceFamily.line6BassPodPro,
                       onSelected: (_) => libraryController.setDeviceFilter(DeviceFamily.line6BassPodPro),
                     ),
-                    if (libraryController.availableTags.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      for (final tag in libraryController.availableTags) ...[
-                        FilterChip(
-                          key: Key('library_tag_chip_$tag'),
-                          label: Text('#$tag'),
-                          selected: libraryController.selectedTags.contains(tag),
-                          onSelected: (_) => libraryController.toggleTag(tag),
-                        ),
-                        const SizedBox(width: 6),
-                      ],
-                    ],
                   ],
                 ),
               ),
+
+              // Multi-Select Tag Checkbox Dropdown
+              _buildTagFilterBar(context),
               const Divider(color: StudioTheme.surfaceBorder, height: 1),
 
               // Preset List + Hardware Slot Drop Target
@@ -443,8 +453,8 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                               : ListView.separated(
                                   key: const Key('preset_list_view'),
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 10,
+                                    horizontal: 12,
+                                    vertical: 6,
                                   ),
                                   itemCount: patches.length,
                                   separatorBuilder: (context, index) =>
@@ -462,8 +472,154 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
           );
   }
 
+  static String _buildTagFilterSummary(Set<String> selectedTags) {
+    if (selectedTags.isEmpty) return 'All Tags';
+    if (selectedTags.length == 1) return selectedTags.first;
+    return 'Tags (${selectedTags.length})';
+  }
+
+  Widget _buildTagFilterBar(BuildContext context) {
+    final availableTags = libraryController.availableTags;
+    final selectedTags = libraryController.selectedTags;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: MenuAnchor(
+              key: const Key('library_tags_menu_anchor'),
+              style: MenuStyle(
+                backgroundColor: WidgetStateProperty.all(
+                  StudioTheme.surfaceElevated,
+                ),
+              ),
+              menuChildren: [
+                if (selectedTags.isNotEmpty)
+                  MenuItemButton(
+                    key: const Key('library_clear_tags_menu_item'),
+                    closeOnActivate: false,
+                    leadingIcon: const Icon(
+                      Icons.clear_all,
+                      size: 16,
+                      color: StudioTheme.colorModulation,
+                    ),
+                    onPressed: () => libraryController.clearTags(),
+                    child: const Text(
+                      'Clear tags',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                if (availableTags.isEmpty)
+                  const MenuItemButton(
+                    onPressed: null,
+                    child: Text(
+                      'No tags in library',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  )
+                else
+                  for (final tag in availableTags)
+                    CheckboxMenuButton(
+                      key: Key('library_tag_checkbox_$tag'),
+                      closeOnActivate: false,
+                      value: selectedTags.contains(tag),
+                      onChanged: (_) => libraryController.toggleTag(tag),
+                      child: Text(
+                        '#$tag',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+              ],
+              builder: (context, controller, child) {
+                return OutlinedButton(
+                  key: const Key('library_tags_dropdown_button'),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: StudioTheme.surfaceElevated,
+                    side: BorderSide(
+                      color: selectedTags.isNotEmpty
+                          ? StudioTheme.colorModulation
+                          : StudioTheme.surfaceBorder,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: () {
+                    if (controller.isOpen) {
+                      controller.close();
+                    } else {
+                      controller.open();
+                    }
+                  },
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.label_outline,
+                        size: 15,
+                        color: selectedTags.isNotEmpty
+                            ? StudioTheme.colorModulation
+                            : Colors.grey,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _buildTagFilterSummary(selectedTags),
+                          key: const Key('library_tags_summary_text'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: selectedTags.isNotEmpty
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                            color: selectedTags.isNotEmpty
+                                ? Colors.white
+                                : Colors.white70,
+                          ),
+                        ),
+                      ),
+                      Icon(
+                        controller.isOpen
+                            ? Icons.arrow_drop_up
+                            : Icons.arrow_drop_down,
+                        size: 18,
+                        color: Colors.grey,
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          if (selectedTags.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            TextButton.icon(
+              key: const Key('library_clear_tags_button'),
+              icon: const Icon(Icons.close, size: 14),
+              label: const Text('Clear tags', style: TextStyle(fontSize: 11)),
+              style: TextButton.styleFrom(
+                foregroundColor: StudioTheme.colorModulation,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                minimumSize: const Size(0, 34),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: () => libraryController.clearTags(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildPatchCard(BuildContext context, Patch patch) {
-    final isZoom = patch.deviceFamily.isZoomMsPlus;
+    final isZoom = patch.deviceFamily.isZoom6E;
     final deviceColor = isZoom ? StudioTheme.colorDynamics : StudioTheme.colorAmpCab;
 
     final card = Container(

@@ -7,6 +7,7 @@ import '../../models/device_family.dart';
 import '../../models/patch.dart';
 import '../connection/device_connection_controller.dart';
 import '../editor/patch_editor_controller.dart';
+import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/studio_theme.dart';
 import 'bank_manager_dialog.dart';
 import 'patch_library_controller.dart';
@@ -701,8 +702,7 @@ class _BankRestoreDialogState extends State<BankRestoreDialog> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_quickLocations.isNotEmpty)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          HorizontalMouseScrollView(
             child: Row(
               children: _quickLocations.map((loc) {
                 return Padding(

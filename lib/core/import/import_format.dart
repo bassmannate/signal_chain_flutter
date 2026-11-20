@@ -28,6 +28,13 @@ enum ImportFormat {
     fileExtensions: ['.zptc'],
     isBinary: true,
   ),
+  zoomFourZb1f(
+    storageKey: 'zoomFourZb1f',
+    displayName: 'ToneLib Zoom Four (.zb1f / .zg1f)',
+    subtitle: 'ToneLib XML/PTCF patch container for Zoom B1X/B1/G1X/G1 FOUR',
+    fileExtensions: ['.zb1f', '.zg1f'],
+    isBinary: false,
+  ),
   rawSysEx(
     storageKey: 'rawSysEx',
     displayName: 'Raw SysEx (.syx)',

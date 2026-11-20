@@ -37,17 +37,27 @@ class BankSlotDescriptor {
     this.metadata = const {},
   });
 
-  /// 2-digit padded slot index (e.g., "00", "01", "99").
-  String get formattedSlotIndex => index.toString().padLeft(2, '0');
+  /// Hardware patch label (`"10"`..`"59"` for Zoom Four, `"00"`..`"99"` otherwise).
+  String get hardwarePatchLabel => deviceFamily.formatHardwarePatchLabel(index);
 
-  /// Bank and patch index format (e.g., Zoom format "1-1" to "10-10").
+  /// 2-digit padded slot index (`"10"`..`"59"` for Zoom Four, `"00"`..`"99"` otherwise).
+  String get formattedSlotIndex => deviceFamily.isZoomFour
+      ? ZoomFourProfile.formatPatchLabel(index)
+      : index.toString().padLeft(2, '0');
+
+  /// Bank and patch index format (e.g. MS+ `"1-1"` to `"10-10"`, Zoom Four `"1-0"` to `"5-9"`).
   String get bankAndProgramNumber {
+    if (deviceFamily.isZoomFour) {
+      final bank = (index ~/ ZoomFourProfile.patchesPerBank) + 1;
+      final prog = index % ZoomFourProfile.patchesPerBank;
+      return '$bank-$prog';
+    }
     final bank = (index ~/ 10) + 1;
     final prog = (index % 10) + 1;
     return '$bank-$prog';
   }
 
-  /// Human-readable slot label (e.g., "#00 (1-1)").
+  /// Human-readable slot label (e.g., `"#00 (1-1)"` or `"#10 (1-0)"`).
   String get slotLabel => '#$formattedSlotIndex ($bankAndProgramNumber)';
 
   BankSlotDescriptor copyWith({

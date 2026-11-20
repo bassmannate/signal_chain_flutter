@@ -12,6 +12,7 @@ import '../../models/device_family.dart';
 import '../../models/patch_diff.dart';
 import '../editor/patch_diff_dialog.dart';
 import '../editor/patch_editor_controller.dart';
+import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/studio_theme.dart';
 import 'patch_library_controller.dart';
 
@@ -608,8 +609,7 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
       children: [
         // Quick Location Chips
         if (_quickLocations.isNotEmpty)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          HorizontalMouseScrollView(
             child: Row(
               children: _quickLocations.map((loc) {
                 final isSelected = _currentDir == loc.path;

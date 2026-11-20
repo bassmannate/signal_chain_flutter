@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/effect_slot.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
+import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/responsive_layout.dart';
 import '../theme/studio_theme.dart';
 import 'effect_bank_palette_widget.dart';
@@ -23,6 +24,7 @@ class SignalChainStripWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final viewportSize = MediaQuery.sizeOf(context);
     final isCompactOrShort = viewportSize.width < 600 || viewportSize.height < 640;
+    const double scrollbarGutter = 14.0;
     final double stripHeight = viewportSize.height <= 600
         ? 148.0
         : (isCompactOrShort ? 156.0 : 172.0);
@@ -57,19 +59,22 @@ class SignalChainStripWidget extends StatelessWidget {
             border: Border.all(color: StudioTheme.surfaceBorder),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Metadata Header (Patch Name TextField, Tempo Slider/Input, Write to Slot)
-              PatchMetadataHeaderWidget(controller: controller),
+          child: Builder(
+            builder: (context) {
+              final isRtl = controller.connectionController.activeFamily.isSignalChainRightToLeft;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Metadata Header (Patch Name TextField, Tempo Slider/Input, Write to Slot)
+                  PatchMetadataHeaderWidget(controller: controller),
 
-              // Subheader
-              Padding(
-                padding: const EdgeInsets.only(left: 14, right: 14, top: 6, bottom: 2),
-                child: Row(
-                  children: [
-                    const Icon(Icons.arrow_back, size: 14, color: Colors.grey),
+                  // Subheader
+                  Padding(
+                    padding: const EdgeInsets.only(left: 14, right: 14, top: 6, bottom: 2),
+                    child: Row(
+                      children: [
+                        Icon(isRtl ? Icons.arrow_back : Icons.arrow_forward, size: 14, color: Colors.grey),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
@@ -114,23 +119,34 @@ class SignalChainStripWidget extends StatelessWidget {
 
               // Slot Cards, Insertion Zones, & Add Card (Right-to-Left pedalboard order)
               SizedBox(
-                height: stripHeight,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
+                height: stripHeight + scrollbarGutter,
+                child: HorizontalMouseScrollView(
+                  key: const Key('signal_chain_horizontal_scroll'),
+                  scrollbarGutter: scrollbarGutter,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: _buildRtlSignalChainElements(
-                      context,
-                      patch.slots,
-                      canAdd,
-                      badgeHeight: badgeHeight,
-                      cardHeight: stripHeight - 12.0,
-                    ),
+                    children: isRtl
+                        ? _buildRtlSignalChainElements(
+                            context,
+                            patch.slots,
+                            canAdd,
+                            badgeHeight: badgeHeight,
+                            cardHeight: stripHeight - 12.0,
+                          )
+                        : _buildLtrSignalChainElements(
+                            context,
+                            patch.slots,
+                            canAdd,
+                            badgeHeight: badgeHeight,
+                            cardHeight: stripHeight - 12.0,
+                          ),
                   ),
                 ),
               ),
-            ],
+                ],
+              );
+            },
           ),
         );
       },
@@ -148,11 +164,11 @@ class SignalChainStripWidget extends StatelessWidget {
     final numSlots = slots.length;
 
     // 1. Output Jack / Badge (Far Left)
-    elements.add(_buildOutBadge(badgeHeight));
+    elements.add(_buildOutBadge(badgeHeight, isRtl: true));
 
     // 2. Connector & Add Slot Card (if canAdd)
     if (canAdd) {
-      elements.add(_buildCableConnector());
+      elements.add(_buildCableConnector(isRtl: true));
       elements.add(_buildAddEffectCard(context));
     }
 
@@ -180,17 +196,62 @@ class SignalChainStripWidget extends StatelessWidget {
     elements.add(_buildInsertionZone(0, badgeHeight: badgeHeight));
 
     // 5. Input Jack / Badge (Far Right)
-    elements.add(_buildInBadge(badgeHeight));
+    elements.add(_buildInBadge(badgeHeight, isRtl: true));
 
     return elements;
   }
 
-  Widget _buildInBadge(double height) {
+  List<Widget> _buildLtrSignalChainElements(
+    BuildContext context,
+    List<EffectSlot> slots,
+    bool canAdd, {
+    required double badgeHeight,
+    required double cardHeight,
+  }) {
+    final elements = <Widget>[];
+    final numSlots = slots.length;
+
+    // 1. Input Jack / Badge (Far Left)
+    elements.add(_buildInBadge(badgeHeight, isRtl: false));
+
+    // 2. Insertion zone 0 (between IN and slot 0)
+    elements.add(_buildInsertionZone(0, badgeHeight: badgeHeight));
+
+    // 3. Stompbox slots in LTR order (from slot 0 to slot N-1) with insertion zones
+    for (int i = 0; i < numSlots; i++) {
+      final slot = slots[i];
+      final isSelected = controller.selectedSlotIndex == i;
+      elements.add(
+        _buildStompboxSlot(
+          context,
+          slot,
+          i,
+          isSelected,
+          numSlots,
+          cardHeight: cardHeight,
+        ),
+      );
+      elements.add(_buildInsertionZone(i + 1, badgeHeight: badgeHeight));
+    }
+
+    // 4. Add Slot Card & Connector (if canAdd)
+    if (canAdd) {
+      elements.add(_buildAddEffectCard(context));
+      elements.add(_buildCableConnector(isRtl: false));
+    }
+
+    // 5. Output Jack / Badge (Far Right)
+    elements.add(_buildOutBadge(badgeHeight, isRtl: false));
+
+    return elements;
+  }
+
+  Widget _buildInBadge(double height, {required bool isRtl}) {
     return Center(
       child: Container(
         width: 56,
         height: height,
-        margin: const EdgeInsets.only(left: 4),
+        margin: isRtl ? const EdgeInsets.only(left: 4) : const EdgeInsets.only(right: 4),
         decoration: BoxDecoration(
           color: StudioTheme.surfaceElevated.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(8),
@@ -199,7 +260,11 @@ class SignalChainStripWidget extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.arrow_back, size: 18, color: StudioTheme.colorModulation),
+            Icon(
+              isRtl ? Icons.arrow_back : Icons.arrow_forward,
+              size: 18,
+              color: StudioTheme.colorModulation,
+            ),
             const SizedBox(height: 8),
             const Text(
               'IN',
@@ -225,12 +290,12 @@ class SignalChainStripWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildOutBadge(double height) {
+  Widget _buildOutBadge(double height, {required bool isRtl}) {
     return Center(
       child: Container(
         width: 56,
         height: height,
-        margin: const EdgeInsets.only(right: 4),
+        margin: isRtl ? const EdgeInsets.only(right: 4) : const EdgeInsets.only(left: 4),
         decoration: BoxDecoration(
           color: StudioTheme.surfaceElevated.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(8),
@@ -239,7 +304,11 @@ class SignalChainStripWidget extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.arrow_back, size: 18, color: StudioTheme.colorAmpCab),
+            Icon(
+              isRtl ? Icons.arrow_back : Icons.arrow_forward,
+              size: 18,
+              color: StudioTheme.colorAmpCab,
+            ),
             const SizedBox(height: 8),
             const Text(
               'OUT',
@@ -316,17 +385,19 @@ class SignalChainStripWidget extends StatelessWidget {
                       ],
                     ),
                   )
-                : _buildCableConnector(),
+                : _buildCableConnector(
+                    isRtl: controller.connectionController.activeFamily.isSignalChainRightToLeft,
+                  ),
           ),
         );
       },
     );
   }
 
-  Widget _buildCableConnector() {
-    return const Center(
+  Widget _buildCableConnector({required bool isRtl}) {
+    return Center(
       child: Icon(
-        Icons.arrow_back,
+        isRtl ? Icons.arrow_back : Icons.arrow_forward,
         size: 11,
         color: StudioTheme.surfaceBorderFocused,
       ),
@@ -553,21 +624,32 @@ class SignalChainStripWidget extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Move Left (towards Output in RTL)
+                // Move Left (towards Output in RTL, towards Input in LTR)
                 Tooltip(
                   message: 'Move Left',
                   child: InkWell(
                     key: Key('move_slot_left_$index'),
                     borderRadius: BorderRadius.circular(4),
-                    onTap: index < totalSlots - 1 && controller.canReorderSlots
-                        ? () => controller.swapEffectSlots(index, index + 1)
+                    onTap: (family.isSignalChainRightToLeft
+                            ? index < totalSlots - 1
+                            : index > 0) &&
+                        controller.canReorderSlots
+                        ? () => controller.swapEffectSlots(
+                              index,
+                              family.isSignalChainRightToLeft
+                                  ? index + 1
+                                  : index - 1,
+                            )
                         : null,
                     child: Padding(
                       padding: const EdgeInsets.all(5),
                       child: Icon(
                         Icons.arrow_back,
                         size: 16,
-                        color: index < totalSlots - 1 && controller.canReorderSlots
+                        color: (family.isSignalChainRightToLeft
+                                    ? index < totalSlots - 1
+                                    : index > 0) &&
+                                controller.canReorderSlots
                             ? Colors.white70
                             : Colors.white24,
                       ),
@@ -613,21 +695,32 @@ class SignalChainStripWidget extends StatelessWidget {
                   ),
                 ),
 
-                // Move Right (towards Input in RTL)
+                // Move Right (towards Input in RTL, towards Output in LTR)
                 Tooltip(
                   message: 'Move Right',
                   child: InkWell(
                     key: Key('move_slot_right_$index'),
                     borderRadius: BorderRadius.circular(4),
-                    onTap: index > 0 && controller.canReorderSlots
-                        ? () => controller.swapEffectSlots(index, index - 1)
+                    onTap: (family.isSignalChainRightToLeft
+                            ? index > 0
+                            : index < totalSlots - 1) &&
+                        controller.canReorderSlots
+                        ? () => controller.swapEffectSlots(
+                              index,
+                              family.isSignalChainRightToLeft
+                                  ? index - 1
+                                  : index + 1,
+                            )
                         : null,
                     child: Padding(
                       padding: const EdgeInsets.all(5),
                       child: Icon(
                         Icons.arrow_forward,
                         size: 16,
-                        color: index > 0 && controller.canReorderSlots
+                        color: (family.isSignalChainRightToLeft
+                                    ? index > 0
+                                    : index < totalSlots - 1) &&
+                                controller.canReorderSlots
                             ? Colors.white70
                             : Colors.white24,
                       ),

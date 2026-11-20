@@ -234,47 +234,77 @@ class _EffectBankPaletteWidgetState extends State<EffectBankPaletteWidget> {
                 ),
               ),
 
-              // Category Filter Chips
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
+              // Category Filter Dropdown
+              Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                child: Row(
-                  children: categories.map((cat) {
-                    final isSelected = _selectedCategory == cat;
+                child: DropdownButtonFormField<String>(
+                  key: const Key('palette_category_dropdown'),
+                  initialValue: _selectedCategory,
+                  isDense: true,
+                  isExpanded: true,
+                  dropdownColor: StudioTheme.surfaceElevated,
+                  decoration: InputDecoration(
+                    labelText: 'Category',
+                    labelStyle: const TextStyle(fontSize: 11, color: Colors.grey),
+                    filled: true,
+                    fillColor: StudioTheme.surfaceElevated,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: const BorderSide(color: StudioTheme.surfaceBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: const BorderSide(color: StudioTheme.surfaceBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: const BorderSide(color: StudioTheme.colorModulation),
+                    ),
+                  ),
+                  style: const TextStyle(fontSize: 12, color: Colors.white),
+                  items: categories.map((cat) {
                     final catColor = cat == 'All'
                         ? StudioTheme.colorModulation
                         : StudioTheme.getCategoryColor(cat);
-
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
-                        key: Key('palette_chip_$cat'),
-                        label: Text(
-                          cat,
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            color: isSelected ? Colors.white : Colors.grey,
+                    return DropdownMenuItem<String>(
+                      key: Key('palette_category_item_$cat'),
+                      value: cat,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: catColor,
+                            ),
                           ),
-                        ),
-                        selected: isSelected,
-                        selectedColor: catColor.withValues(alpha: 0.35),
-                        backgroundColor: StudioTheme.surfaceElevated,
-                        side: BorderSide(
-                          color: isSelected ? catColor : StudioTheme.surfaceBorder,
-                          width: isSelected ? 1.5 : 1.0,
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                        visualDensity: VisualDensity.compact,
-                        showCheckmark: false,
-                        onSelected: (selected) {
-                          if (selected) {
-                            setState(() => _selectedCategory = cat);
-                          }
-                        },
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              cat,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _selectedCategory = val);
+                    }
+                  },
                 ),
               ),
 

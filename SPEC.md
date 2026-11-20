@@ -195,6 +195,27 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
 
 ---
 
+### 3.2A Zoom Four Series Protocol (`lib/protocols/zoom_four_protocol.dart`, `lib/protocols/ptcf_codec.dart`)
+
+#### Supported Devices (`DeviceGeneration.zoomFour`)
+- **Zoom B1X FOUR** (Identity byte `0x0F`, PTCF target `0x00000080`, `hasExpressionPedal: true`)
+- **Zoom B1 FOUR** (Identity byte `0x0E`, PTCF target `0x00000040`, `hasExpressionPedal: false`)
+- **Zoom G1X FOUR** (Identity byte `0x0D`, PTCF target `0x00000020`, `hasExpressionPedal: true`)
+- **Zoom G1 FOUR** (Identity byte `0x0C`, PTCF target `0x00000010`, `hasExpressionPedal: false`)
+
+#### Protocol & Hardware Differences vs. MS Plus
+1. **Shared `0x6E` Transport & `PTCF` Container:** Shares `F0 52 00 6E ... F7` SysEx opcodes (`0x50`/`0x53`/`0x45`/`0x46`/`64 12`/`64 13`/`64 20 00`/`64 0B`/`64 0C`) and 848-byte unpacked `PTCF` container managed via `PtcfCodec` and `ZoomFourProtocol` (extending `ZoomMsPlusProtocol`).
+2. **Slot & Bank Constraints:**
+   - **5 Effect Slots maximum** (`ZoomFourProtocol.maxSlots == 5`; `isSlotBypass`/`isParameterEdit` reject `slotIndex >= 5` and `encodePtcf`/`decodePtcf` clamp to 5 slots).
+   - **50 User Memory Patches** (`0..49`), displayed on hardware as **`10`–`59`** across 5 banks (`10–19`, `20–29`, `30–39`, `40–49`, `50–59`, `displayOffset: 10`).
+3. **Identity Disambiguation & Generation Isolation:**
+   - Detected via USB port strings (`"ZOOM B1X FOUR"`, `"ZOOM B1 FOUR"`, `"ZOOM G1X FOUR"`, `"ZOOM G1 FOUR"`) via `ZoomFourProfile.fromPortName` prior to generic `"zoom"` fallbacks, and via `0x6E` Universal Identity Reply sub-model bytes `0x0C`–`0x0F` (preserving port-detected `zoomFour` identity if an unrecognized `0x6E` reply arrives).
+   - Mapped to `DeviceGeneration.zoomFour`, hard-blocking cross-generation writes against `DeviceGeneration.zoomMsPlus` while permitting same-generation writes between `B1 FOUR` and `B1X FOUR`.
+4. **ToneLib Container (`.zb1f` / `.zg1f`):**
+   - `ZoomFourZb1fExportAdapter` / `ZoomFourZb1fImportAdapter` wrap the 848-byte `PTCF` buffer (Base64 or Hex encoded inside `<ZoomPatch>/<PatchData>`) with XML metadata (`device`, `generation="zoomFour"`, `hasExpressionPedal`, `<Name>`, `<Description>`).
+
+---
+
 ### 3.3 Line 6 Bass Pod Pro Protocol (`lib/protocols/line6_bass_pod_pro_protocol.dart`)
 
 #### Supported Device
@@ -259,6 +280,7 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
   * **Zoom MS-50G+:** 106 effects (`zoom_ms50g_plus_catalog_data.dart`)
   * **Zoom MS-70CDR+:** 150 effects (`zoom_ms70cdr_plus_catalog_data.dart`)
   * **Zoom MS-200D+:** 224 effects with full-name overlay (`zoom_ms200d_plus_catalog_data.dart`)
+- `ZoomFourCatalog` (`lib/data/zoom_four_catalog.dart`): 99 authoritative ZDL7 B1X FOUR effect definitions (`tool/reference/zoom-b1x-four-list.txt`) across Dynamics, Filter, Overdrive / Distortion, Amp, Cabinet, Modulation, SFX, Delay, Reverb, and Pedal (`PDL Vol`, `BassWah`, `PDL Reso`, `Ba PDLPit`, `Ba PDLMnP`, `Output VP`) categories. Non-expression models (`B1 FOUR`, `G1 FOUR`) omit the 6 `'Pedal'` entries (93 effects) in picker listings based on `ZoomFourProfile.hasExpressionPedal`. Strictly isolated from MS Plus catalogs (`0x01000040` = `ZNR` on B1X FOUR vs `DualComp` on MS-60B+; unmapped IDs format as `Unknown (0xXXXXXXXX)`).
 - `Line6BassPodProCatalog`: Complete 16 Amp models, 16 Cabinet models, Compressor/Noise Gate, and 16 built-in Effects matching hardware tables.
   * Spans all 11 hardware categories: Dynamics, Filter / EQ, Drive / Distortion, Preamp, Amp Model, Modulation, Pitch / Octave, Bass Synth, Special / SFX, Delay, Reverb.
   * Provides high-level browsing APIs: `getByIntId(int)`, `getById(String)`, `getByCategory(String)`, `categories`, and `search(query, {category})`.
@@ -267,8 +289,10 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
 
 ## 4. Immutable Domain Models (`lib/models/`)
 
-### 4.1 Device Models (`lib/models/device_family.dart`)
-- `DeviceFamily`: Enum (`zoomMs50gPlus`, `zoomMs60bPlus`, `zoomMs70cdrPlus`, `zoomMs200dPlus`, `line6BassPodPro`, `unknown`).
+### 4.1 Device Models (`lib/models/device_family.dart`, `lib/models/zoom_four_profile.dart`)
+- `DeviceFamily`: Enum (`zoomMs50gPlus`, `zoomMs60bPlus`, `zoomMs70cdrPlus`, `zoomMs200dPlus`, `zoomB1xFour`, `zoomB1Four`, `zoomG1xFour`, `zoomG1Four`, `line6BassPodPro`, `unknown`).
+  * Helper getters: `isZoomMsPlus`, `isZoomFour`, `isZoom6E`, `hasExpressionPedal`, `zoomFourProfile`, `hardwarePatchDisplayOffset`, `formatHardwarePatchLabel`, `generation`, `isSameGeneration`.
+  * `ZoomFourProfile`: Hardware profile enum (`b1xFour`, `b1Four`, `g1xFour`, `g1Four`) encapsulating 5-slot / 50-patch / `10`–`59` numbering, `hasExpressionPedal`, `subModelId`, `ptcfTargetMask`, `.zb1f`/`.zg1f` extension, and Symbiosis suffix.
   * Stable string key serialization via `toJson()` and fallback-safe `fromJson()`.
 
 ### 4.2 Patch & Chain Models (`lib/models/patch.dart`, `lib/models/effect_slot.dart`)
@@ -332,8 +356,13 @@ All protocol modules are implemented in pure Dart using `dart:typed_data` (`Uint
     final Patch? patch;
     final Map<String, dynamic> metadata;
 
-    String get formattedSlotIndex => index.toString().padLeft(2, '0');
-    String get bankAndProgramNumber => '${(index ~/ 10) + 1}-${(index % 10) + 1}';
+    String get hardwarePatchLabel => deviceFamily.formatHardwarePatchLabel(index);
+    String get formattedSlotIndex => deviceFamily.isZoomFour
+        ? ZoomFourProfile.formatPatchLabel(index)
+        : index.toString().padLeft(2, '0');
+    String get bankAndProgramNumber => deviceFamily.isZoomFour
+        ? '${(index ~/ 10) + 1}-${index % 10}'
+        : '${(index ~/ 10) + 1}-${(index % 10) + 1}';
     String get slotLabel => '#$formattedSlotIndex ($bankAndProgramNumber)';
   }
   ```
@@ -357,7 +386,7 @@ Implemented using Flutter's built-in `ChangeNotifier` and clean constructor depe
 - `DeviceConnectionController`: Manages available MIDI ports, active connection state, active `DeviceFamily`, and resolved `DeviceProtocol` (`ZoomMsPlusProtocol` or `Line6BassPodProProtocol`). Performs Universal Identity Request handshake with port name fallback heuristics, executes hardware initialization sequences (sending `0x53` to exit lock-screen PC Mode and `0x50` to enable live parameter edits on Zoom MS Plus pedals, never `0x52`), and handles clean disconnection.
 - Known Port Auto-Selection & Hot-Plug: Scans discovered port names on startup and `refreshPorts()` against known patterns (`ZOOM`, `MS Plus`, `MS-60B`, `MS-50G`, `MS-70CDR`, `MS-200D`, `Bass POD`, `Line 6`). Runs a periodic hot-plug poll every 2 seconds when disconnected from real hardware to auto-connect as soon as a matching device is plugged in, and cleanly disconnects when the active hardware device is unplugged.
 - Asynchronous Bank Synchronization (`syncDeviceBank`): Non-blocking fetch of all persistent memory bank slots (0–99), safely catching per-slot timeouts, reporting live progress percentage and status, and updating `bankSlots` incrementally without locking the UI. Incoming `0x45` slot dumps strictly update `bankSlots` using `extractSlotIndex` and never overwrite or cycle the active editor buffer.
-- `ConnectionBarWidget`: Top studio toolbar with status badge, port selector dropdown, device family picker, hardware sync actions ("Pull Patch" / "Push Patch"), and "Save to Library" button.
+- `ConnectionBarWidget`: Top studio toolbar with status badge, port selector dropdown, device family picker, hardware tuner toggle, Stage Mode toggle, and "Save to Library" button.
 
 ### 6.2 Patch Editor Module (`lib/features/editor/`)
 - `PatchEditorController`: Holds active `Patch?`, inspected `selectedSlotIndex`, dirty state tracking, bounded 50-step `PatchEditHistory` (Undo/Redo with gesture & time-window coalescing), `CompareSlot` (`A`/`B`) tone comparison state, and incoming MIDI message stream subscription.
