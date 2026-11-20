@@ -1,12 +1,30 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 18.1 Complete (Landscape Stage Mode Re-Layout & Verified Zoom MS Plus 7-Byte Tuner SysEx Fix)  
-**Active Milestone:** Milestone 18.1 Complete  
+**Current Status:** Milestone 19A Complete (Zoom B1X FOUR / B1 FOUR Hardware Protocol, Catalog & ToneLib .zb1f Support)  
+**Active Milestone:** Milestone 19A Complete  
 **Last Updated:** 2026-11-14
 
 ---
 
 ## 1. Milestone Roadmap
+
+### 🟢 Milestone 19A: Zoom B1X FOUR / B1 FOUR Hardware Protocol & Catalog Support (`DeviceGeneration.zoomFour`)
+*Status:* **Completed**
+- [x] **Hardware Profiles & Sub-Model Detection (`lib/models/zoom_four_profile.dart`, `device_family.dart`, `bank_slot_descriptor.dart`, `patch.dart`):**
+  * Added `ZoomFourProfile` (`b1xFour`, `b1Four`, `g1xFour`, `g1Four`) with 5-slot maximum, 50 persistent patches numbered `10`–`59` (`10–19` through `50–59`), `hasExpressionPedal` capability flag, PTCF target bitmasks (`0x10`–`0x80`), and sub-model IDs (`0x0C`–`0x0F`, with `0x1C`–`0x1F` aliases).
+  * Registered `DeviceFamily.zoomB1xFour`, `zoomB1Four`, `zoomG1xFour`, `zoomG1Four` under `DeviceGeneration.zoomFour` with `isZoomFour`, `isZoom6E`, `hasExpressionPedal`, `formatHardwarePatchLabel`, `totalMemorySlots = 50`, and `Patch.generation`.
+- [x] **Zoom B1X FOUR Effect Catalog (`lib/data/zoom_four_catalog.dart`, `effect_catalog.dart`, `zoom_ms_plus_catalog.dart`):**
+  * Authored all 99 authoritative ZDL7 B1X FOUR effects (`tool/reference/zoom-b1x-four-list.txt`, 93 on B1 FOUR omitting the 6 `0x0b*` Pedal effects) spanning Dynamics & Filter (`SlowATTCK`, `ZNR`, `OptComp`, `160 Comp`, `DualComp`, `BassA-Wah`, `Z Tron`, etc.), Overdrive / Distortion (`Bass DRV`, `D.I Plus`, `Dark Pre`, `Bass BB`, `NYC Muff`, `BassMetal`, etc.), Amps & Cabinets (`AMPG SVT`, `FlipTop`, `BMAN100`, `AG 750`, `SMR400`, `TE400SMX`, `SVT8x10`, `AM1x15`, `FD-B4x12`, `AG4x10TW`, `SMR4x10TW`, `TE4x10`, etc.), Modulation / SFX (`BassStCho`, `CloneCho`, `BaVinFLNG`, `BassPhase`, `Ba Octave`, `StdSyn`, `Defret`, `Bomber`, etc.), Delay / Reverb (`Delay`, `AnalogDly`, `TapeEcho`, `Hall`, `Room`, `Plate`, etc.), and Expression Pedal (`PDL Vol`, `BassWah`, `PDL Reso`, `Ba PDLPit`, `Ba PDLMnP`, `Output VP`), with strict ZDL7-vs-MS+ catalog isolation.
+  * Registered all Four-series catalogs in `EffectCatalogRegistry` (plus `getByName`) and `ZoomMsPlusCatalog`, omitting `'Pedal'` effects for non-expression models (`B1 FOUR`, `G1 FOUR`).
+- [x] **`0x6E` Protocol Adaptation, `PtcfCodec` & `ZoomFourProtocol` (`lib/protocols/`):**
+  * Added `ZoomFourProtocol` (`maxSlots = 5`, `totalPatches = 50`, `displayOffset = 10`, hardware label formatting/parsing) and `PtcfCodec` (`encode`, `encodePadded`, `decode`, `detectGeneration`) while updating `ZoomMsPlusProtocol` identity parsing (`0x0C`–`0x0F` + `0x1C`–`0x1F`), PTCF target routing (`ptcfTargetZoomFourMask`), 5-slot clamping, strict `zoomFour` `_lookupEffectName` isolation (`Unknown (0xXXXXXXXX)`), and slot bounds checks on bypass/parameter SysEx.
+- [x] **ToneLib `.zb1f` / `.zg1f` Export & Import (`lib/core/export/`, `lib/core/import/`):**
+  * Added `ExportFormat.zoomFourZb1f`, `ZoomFourZb1fExportAdapter`, `ImportFormat.zoomFourZb1f`, and `ZoomFourZb1fImportAdapter` with UTF-8 XML + Base64/Hex `PTCF` support; updated `ZoomPtcf*`, `Symbiosis*` (`.b1xf.zptc` / `.b1f.zptc` / `.g1xf.zptc` / `.g1f.zptc`), `ZoomMultistompStudio*`, `RawSysEx*`, and `PatchImporter` (`supportedExtensions` + XML text detection).
+- [x] **Controllers, UI & Automated Test Verification:**
+  * Updated `DeviceConnectionController` (USB detection avoiding MS+ collision, handshake fallback, `ZoomFourProtocol` resolution, `10–59` slot naming), `PatchEditorController` (`isZoom6E`), `SetlistController` (`isSameGeneration`), `ConnectionBarWidget`, library/bank filter chips (`B1X FOUR`), and `StudioTheme` (`Pedal` category color).
+  * Verified with clean `flutter analyze --no-pub` (0 issues) and full `flutter test --no-pub --reporter failures-only` (343 passing tests, including `test/milestone_19a_zoom_b1x_four_test.dart` and updated `test/core/export/export_adapters_test.dart`).
+
+---
 
 ### 🟢 Milestone 18.1: Landscape Stage Mode Re-Layout & Verified Zoom MS Plus 7-Byte Tuner SysEx Fix
 *Status:* **Completed**
@@ -664,13 +682,13 @@
 | **Legacy Source Code** | Audited | Reference mappings in `tool/reference/zoom-effect-mappings-ms60bp.json` |
 | **Directory Scaffolding** | Complete | Clean architecture layers maintained |
 | **Core MIDI Transport** | Complete | `MidiTransport`, `MidiMessage`, `MockMidiTransport`, `LinuxAlsaMidiTransport`, `AndroidMidiTransport`, `WinMmMidiTransport`, `CompositeMidiTransport` |
-| **Domain Models** | Complete | `DeviceFamily`, `ParameterDescriptor`, `EffectSlot`, `Patch`, `PatchDiff`, `BankSlotDescriptor` |
-| **SysEx & Protocol Engine** | Complete | `SysexCodec`, `ZoomMsPlusProtocol` (Memory slots 0–99 read/write), `Line6BassPodProProtocol` (`0x02` family byte, 80-byte MSB-first nibbles, 36 slots) |
-| **Effect Catalogs** | Complete (578 Zoom + 50 Line 6) | `EffectDefinition`, `EffectCatalogRegistry`, `ZoomMsPlusCatalog` (MS-60B+ 98, MS-50G+ 106, MS-70CDR+ 150, MS-200D+ 224), `Line6BassPodProCatalog` |
+| **Domain Models** | Complete | `DeviceFamily`, `ZoomFourProfile`, `ParameterDescriptor`, `EffectSlot`, `Patch`, `PatchDiff`, `BankSlotDescriptor` |
+| **SysEx & Protocol Engine** | Complete | `SysexCodec`, `ZoomMsPlusProtocol`, `ZoomFourProtocol` (`5` slots, `10`–`59` numbering), `PtcfCodec`, `Line6BassPodProProtocol` |
+| **Effect Catalogs** | Complete (578 MS+ + 99 Four + 50 Line 6) | `EffectDefinition`, `EffectCatalogRegistry`, `ZoomMsPlusCatalog` (MS-60B+ 98, MS-50G+ 106, MS-70CDR+ 150, MS-200D+ 224), `ZoomFourCatalog` (B1X FOUR 99 / B1 FOUR 93), `Line6BassPodProCatalog` |
 | **Catalog Generator** | Complete | Deterministic pure-Dart script `tool/generate_zoom_catalog.dart` |
 | **Persistence Repositories** | Complete | `PatchLibraryRepository`, `InMemoryPatchLibraryRepository`, `FileSystemPatchLibraryRepository`, `AppPreferencesRepository` |
 | **State Controllers** | Complete | `DeviceConnectionController` (Bank sync), `PatchEditorController` (Undo/Redo, A/B Compare, Name/Tempo/Slots), `PatchLibraryController` |
 | **Studio UI & Widgets** | Complete | `StudioTheme`, `ConnectionBarWidget`, `SignalChainStripWidget` (RTL order), `RotaryKnobWidget`, `SlotInspectorWidget`, `PatchDiffDialog`, `HardwareBankBrowserWidget`, `WriteToSlotDialog`, `PatchLibraryDrawerOrPanel` |
 | **Static Analysis** | Passing (0 issues) | Verified via `flutter analyze --no-pub` |
-| **Unit & Widget Tests** | 330 Passing (100%) | 326 prior + 4 new Milestone 18 tuner & landscape Stage Mode tests |
+| **Unit & Widget Tests** | 345 Passing (100%) | 330 prior + 14 Milestone 19A B1X FOUR / ZoomFour / ZDL7 isolation tests + 1 `.zb1f` registry test |
 

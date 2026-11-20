@@ -436,7 +436,7 @@ class SetlistController extends ChangeNotifier {
 
   static bool _isCompatibleDevice(DeviceFamily patchFamily, DeviceFamily active) {
     if (patchFamily == active) return true;
-    if (patchFamily.isZoomMsPlus && active.isZoomMsPlus) return true;
+    if (patchFamily.isSameGeneration(active)) return true;
     return false;
   }
 

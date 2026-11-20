@@ -2,6 +2,7 @@ import '../../models/device_family.dart';
 import 'adapters/native_json_export_adapter.dart';
 import 'adapters/raw_sysex_export_adapter.dart';
 import 'adapters/symbiosis_export_adapter.dart';
+import 'adapters/zoom_four_zb1f_export_adapter.dart';
 import 'adapters/zoom_multistomp_studio_export_adapter.dart';
 import 'adapters/zoom_ptcf_export_adapter.dart';
 import 'export_adapter.dart';
@@ -14,7 +15,7 @@ class ExportAdapterRegistry {
   ExportAdapterRegistry({required List<ExportAdapter> adapters})
       : _adapters = {for (final a in adapters) a.format: a};
 
-  /// Standard built-in registry with all 5 supported export formats.
+  /// Standard built-in registry with all supported export formats.
   factory ExportAdapterRegistry.standard() {
     return ExportAdapterRegistry(
       adapters: const [
@@ -22,6 +23,7 @@ class ExportAdapterRegistry {
         ZoomPtcfExportAdapter(),
         SymbiosisExportAdapter(),
         ZoomMultistompStudioExportAdapter(),
+        ZoomFourZb1fExportAdapter(),
         RawSysExExportAdapter(),
       ],
     );

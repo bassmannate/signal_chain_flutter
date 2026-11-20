@@ -1,6 +1,7 @@
 export '../../catalog/zoom_ms_plus_catalog_data.dart';
 
 import '../../catalog/zoom_ms_plus_catalog_data.dart';
+import '../../data/zoom_four_catalog.dart';
 import '../../models/device_family.dart';
 import 'effect_catalog.dart';
 
@@ -22,6 +23,11 @@ class ZoomMsPlusCatalog {
         return zoomMs70cdrPlusCatalogData;
       case DeviceFamily.zoomMs200dPlus:
         return zoomMs200dPlusCatalogData;
+      case DeviceFamily.zoomB1xFour:
+      case DeviceFamily.zoomB1Four:
+      case DeviceFamily.zoomG1xFour:
+      case DeviceFamily.zoomG1Four:
+        return ZoomFourCatalog.effectsForFamily(family);
       case DeviceFamily.zoomMs60bPlus:
       case DeviceFamily.line6BassPodPro:
       case DeviceFamily.unknown:

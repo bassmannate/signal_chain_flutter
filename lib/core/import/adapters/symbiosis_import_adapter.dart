@@ -7,7 +7,7 @@ import '../import_format.dart';
 import 'zoom_ptcf_import_adapter.dart';
 
 /// Imports Symbiosis model-suffixed `.zptc` files (`.60bp.zptc`, `.50gp.zptc`,
-/// `.70cdrp.zptc`, `.200dp.zptc`).
+/// `.70cdrp.zptc`, `.200dp.zptc`, `.b1xf.zptc`, `.b1f.zptc`, `.g1xf.zptc`, `.g1f.zptc`).
 class SymbiosisImportAdapter extends ImportAdapter {
   const SymbiosisImportAdapter();
 
@@ -16,6 +16,10 @@ class SymbiosisImportAdapter extends ImportAdapter {
     '.50gp.zptc': DeviceFamily.zoomMs50gPlus,
     '.70cdrp.zptc': DeviceFamily.zoomMs70cdrPlus,
     '.200dp.zptc': DeviceFamily.zoomMs200dPlus,
+    '.b1xf.zptc': DeviceFamily.zoomB1xFour,
+    '.b1f.zptc': DeviceFamily.zoomB1Four,
+    '.g1xf.zptc': DeviceFamily.zoomG1xFour,
+    '.g1f.zptc': DeviceFamily.zoomG1Four,
   };
 
   @override

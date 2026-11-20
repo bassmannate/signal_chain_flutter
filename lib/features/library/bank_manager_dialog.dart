@@ -5,6 +5,7 @@ import '../../models/device_family.dart';
 import '../../models/patch.dart';
 import '../connection/device_connection_controller.dart';
 import '../editor/patch_editor_controller.dart';
+import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/responsive_layout.dart';
 import '../theme/studio_theme.dart';
 import 'bank_restore_dialog.dart';
@@ -704,8 +705,7 @@ class _BankManagerDialogState extends State<BankManagerDialog> {
                   onChanged: widget.libraryController.setSearchQuery,
                 ),
               ),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
+              HorizontalMouseScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 child: Row(
                   children: [
@@ -720,6 +720,13 @@ class _BankManagerDialogState extends State<BankManagerDialog> {
                       selected: selectedFamily == DeviceFamily.zoomMs60bPlus,
                       onSelected: (_) => widget.libraryController
                           .setDeviceFilter(DeviceFamily.zoomMs60bPlus),
+                    ),
+                    const SizedBox(width: 6),
+                    FilterChip(
+                      label: const Text('B1X FOUR'),
+                      selected: selectedFamily == DeviceFamily.zoomB1xFour,
+                      onSelected: (_) => widget.libraryController
+                          .setDeviceFilter(DeviceFamily.zoomB1xFour),
                     ),
                     const SizedBox(width: 6),
                     FilterChip(

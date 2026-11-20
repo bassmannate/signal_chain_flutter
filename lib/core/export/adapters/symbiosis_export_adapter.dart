@@ -19,7 +19,7 @@ class SymbiosisExportAdapter extends ExportAdapter {
   ExportFormat get format => ExportFormat.symbiosisZptc;
 
   @override
-  bool supportsDevice(DeviceFamily family) => family.isZoomMsPlus;
+  bool supportsDevice(DeviceFamily family) => family.isZoom6E;
 
   /// Returns the Symbiosis model suffix for [family].
   static String modelSuffixFor(DeviceFamily family) {
@@ -32,6 +32,14 @@ class SymbiosisExportAdapter extends ExportAdapter {
         return '.70cdrp.zptc';
       case DeviceFamily.zoomMs200dPlus:
         return '.200dp.zptc';
+      case DeviceFamily.zoomB1xFour:
+        return '.b1xf.zptc';
+      case DeviceFamily.zoomB1Four:
+        return '.b1f.zptc';
+      case DeviceFamily.zoomG1xFour:
+        return '.g1xf.zptc';
+      case DeviceFamily.zoomG1Four:
+        return '.g1f.zptc';
       case DeviceFamily.line6BassPodPro:
       case DeviceFamily.unknown:
         return '.zptc';

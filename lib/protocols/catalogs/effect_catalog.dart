@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 
 import '../../models/device_family.dart';
 import '../../models/parameter_descriptor.dart';
+import '../../data/zoom_four_catalog.dart';
+import '../../data/zoom_zdl7_master_catalog.dart';
 import 'line6_bass_pod_pro_catalog.dart';
 import 'zoom_ms_plus_catalog.dart';
 
@@ -105,6 +107,12 @@ class EffectCatalogRegistry {
     registerAll(ZoomMsPlusCatalog.effectsForFamily(DeviceFamily.zoomMs70cdrPlus));
     registerAll(ZoomMsPlusCatalog.effectsForFamily(DeviceFamily.zoomMs200dPlus));
 
+    // Register dedicated catalogs for Zoom Four series pedals
+    registerAll(ZoomFourCatalog.effectsForFamily(DeviceFamily.zoomB1xFour));
+    registerAll(ZoomFourCatalog.effectsForFamily(DeviceFamily.zoomB1Four));
+    registerAll(ZoomFourCatalog.effectsForFamily(DeviceFamily.zoomG1xFour));
+    registerAll(ZoomFourCatalog.effectsForFamily(DeviceFamily.zoomG1Four));
+
     // Register Line 6 Bass Pod Pro effects
     registerAll(Line6BassPodProCatalog.builtInEffects);
   }
@@ -150,6 +158,12 @@ class EffectCatalogRegistry {
       }
     }
 
+    // 2.5 Extended ZDL7 master lookup for Zoom Four hardware (preserves 99-item native picker)
+    if (family.isZoomFour) {
+      final zdl7 = ZoomZdl7MasterCatalog.lookup(normalized, family);
+      if (zdl7 != null) return zdl7;
+    }
+
     // 3. Fallback definition
     return createFallbackDefinition(family, effectId);
   }
@@ -178,6 +192,19 @@ class EffectCatalogRegistry {
   static List<EffectDefinition> getEffectsForFamily(DeviceFamily family) {
     ensureInitialized();
     return _catalogs[family]?.values.toList() ?? const [];
+  }
+
+  /// Looks up a registered [EffectDefinition] by exact display [name] (case-insensitive)
+  /// within [family].
+  static EffectDefinition? getByName(DeviceFamily family, String name) {
+    ensureInitialized();
+    final target = name.trim().toLowerCase();
+    for (final def in getEffectsForFamily(family)) {
+      if (def.name.toLowerCase() == target) {
+        return def;
+      }
+    }
+    return null;
   }
 
   /// Returns all unique category names registered for a [family].

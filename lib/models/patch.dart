@@ -32,6 +32,12 @@ class Patch {
   /// Active patch tempo in BPM (typically 40–250 BPM, default 120).
   int get tempo => ((metadata['tempo'] as num?)?.round()) ?? 120;
 
+  /// Hardware generation derived from [deviceFamily].
+  DeviceGeneration get deviceGeneration => deviceFamily.generation;
+
+  /// Alias for [deviceGeneration].
+  DeviceGeneration get generation => deviceFamily.generation;
+
   /// Checks whether [candidate] matches the effect chain signature of [target],
   /// ignoring volatile fields like [id], [programNumber], and timestamps.
   ///

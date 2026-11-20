@@ -102,17 +102,17 @@ class PatchEditorController extends ChangeNotifier {
   bool get canAddEffectSlot =>
       _patch != null &&
       _patch!.slots.length < connectionController.activeFamily.maxEffectSlots &&
-      connectionController.activeFamily.isZoomMsPlus;
+      connectionController.activeFamily.isZoom6E;
 
   /// True if slots can be removed from the current patch.
   bool get canRemoveEffectSlot =>
       _patch != null &&
       _patch!.slots.length > 1 &&
-      connectionController.activeFamily.isZoomMsPlus;
+      connectionController.activeFamily.isZoom6E;
 
   /// True if slots can be reordered in the signal chain for this device family.
   bool get canReorderSlots =>
-      connectionController.activeFamily.isZoomMsPlus;
+      connectionController.activeFamily.isZoom6E;
 
   /// Undo/Redo availability and descriptive labels.
   bool get canUndo => _history.canUndo;
@@ -415,7 +415,8 @@ class PatchEditorController extends ChangeNotifier {
 
       if (transport.isConnected && !_isHandlingIncoming) {
         try {
-          final msg = protocol.buildSlotFocusMessage(slotIndex);
+          final hwSlot = _patch!.slots[slotIndex].slotIndex;
+          final msg = protocol.buildSlotFocusMessage(hwSlot);
           if (msg != null) {
             unawaited(transport.send(msg));
           }
@@ -982,8 +983,9 @@ class PatchEditorController extends ChangeNotifier {
     // Dispatch real-time bypass change to hardware if connected
     if (transport.isConnected && !_isHandlingIncoming) {
       try {
+        final hwSlot = updatedSlot.slotIndex;
         final bypassMsg = protocol.buildSlotBypassMessage(
-          slotIndex: slotIndex,
+          slotIndex: hwSlot,
           isEnabled: updatedSlot.isEnabled,
         );
         if (bypassMsg != null) {
@@ -1472,8 +1474,9 @@ class PatchEditorController extends ChangeNotifier {
     // Dispatch real-time parameter change to hardware if connected
     if (transport.isConnected && !_isHandlingIncoming) {
       try {
+        final hwSlot = _patch!.slots[slotIndex].slotIndex;
         final editMsg = protocol.buildParameterEditMessage(
-          slotIndex: slotIndex,
+          slotIndex: hwSlot,
           paramIndex: paramIndex,
           value: newValue,
         );
@@ -1537,24 +1540,31 @@ class PatchEditorController extends ChangeNotifier {
     }
 
     final current = _patch;
-    if (current == null || slotIndex == null || slotIndex < 0 || slotIndex >= current.slots.length) {
+    if (current == null || slotIndex == null) {
+      return;
+    }
+
+    // Map hardware PTCF slotIndex back to UI list index (handles skipped 0x00000001 slots)
+    final matchedIdx = current.slots.indexWhere((s) => s.slotIndex == slotIndex);
+    final resolvedSlotIndex = matchedIdx != -1 ? matchedIdx : slotIndex;
+    if (resolvedSlotIndex < 0 || resolvedSlotIndex >= current.slots.length) {
       return;
     }
 
     _isHandlingIncoming = true;
     try {
       // Always track hardware effect slot focus (e.g. Left/Right pedal buttons or slot-specific tweaks)
-      if (_selectedSlotIndex != slotIndex) {
-        _selectedSlotIndex = slotIndex;
+      if (_selectedSlotIndex != resolvedSlotIndex) {
+        _selectedSlotIndex = resolvedSlotIndex;
         notifyListeners();
       }
 
-      final slot = current.slots[slotIndex];
+      final slot = current.slots[resolvedSlotIndex];
 
       if (isEnabled != null && slot.isEnabled != isEnabled) {
         final updatedSlot = slot.copyWith(isEnabled: isEnabled);
         final newSlots = List<EffectSlot>.from(current.slots);
-        newSlots[slotIndex] = updatedSlot;
+        newSlots[resolvedSlotIndex] = updatedSlot;
         _patch = current.copyWith(slots: newSlots);
         notifyListeners();
       }
@@ -1567,7 +1577,7 @@ class PatchEditorController extends ChangeNotifier {
           newParams[paramIndex] = updatedParam;
           final updatedSlot = slot.copyWith(parameters: newParams);
           final newSlots = List<EffectSlot>.from(current.slots);
-          newSlots[slotIndex] = updatedSlot;
+          newSlots[resolvedSlotIndex] = updatedSlot;
           _patch = current.copyWith(slots: newSlots);
           notifyListeners();
         }

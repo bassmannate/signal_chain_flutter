@@ -8,6 +8,7 @@ import '../../core/export/export_format.dart';
 import '../../core/export/export_payload.dart';
 import '../../core/import/import_file_system.dart';
 import '../../models/patch.dart';
+import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/studio_theme.dart';
 import 'patch_library_controller.dart';
 
@@ -464,8 +465,7 @@ class _PatchExportDialogState extends State<PatchExportDialog> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (_quickLocations.isNotEmpty)
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
+                        HorizontalMouseScrollView(
                           child: Row(
                             children: _quickLocations.map((loc) {
                               return Padding(

@@ -29,6 +29,7 @@ import 'features/library/patch_library_controller.dart';
 import 'features/library/patch_library_drawer_or_panel.dart';
 import 'features/setlist/setlist_controller.dart';
 import 'features/setlist/setlist_performance_view.dart';
+import 'features/theme/horizontal_mouse_scroll_view.dart';
 import 'features/theme/responsive_layout.dart';
 import 'features/theme/studio_theme.dart';
 import 'models/device_family.dart';
@@ -438,6 +439,7 @@ class _SignalChainAppState extends State<SignalChainApp> {
       title: 'Signal Chain Studio',
       debugShowCheckedModeBanner: false,
       theme: StudioTheme.darkTheme,
+      scrollBehavior: const AppScrollBehavior(),
       home: CallbackShortcuts(
         bindings: <ShortcutActivator, VoidCallback>{
           const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () {

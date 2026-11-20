@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/device_family.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
+import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/studio_theme.dart';
 
 /// Modal dialog for browsing, filtering by category, and searching the device effect catalog
@@ -143,45 +144,54 @@ class _EffectPickerDialogState extends State<EffectPickerDialog> {
       ),
     );
 
-    final categoryChips = SizedBox(
-      height: 38,
-      child: ListView.separated(
-        padding: EdgeInsets.symmetric(horizontal: isCompact ? 12 : 16),
-        scrollDirection: Axis.horizontal,
-        itemCount: _categories.length,
-        separatorBuilder: (context, i) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final cat = _categories[i];
-          final isSelected = _selectedCategory == cat;
-          final chipColor = cat == 'ALL'
-              ? StudioTheme.colorModulation
-              : StudioTheme.getCategoryColor(cat);
+    final categoryChips = HorizontalMouseScrollView(
+      key: const Key('effect_picker_categories_scroll'),
+      padding: EdgeInsets.fromLTRB(
+        isCompact ? 12 : 16,
+        2,
+        isCompact ? 12 : 16,
+        0,
+      ),
+      child: Row(
+        children: [
+          for (int i = 0; i < _categories.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            Builder(
+              builder: (context) {
+                final cat = _categories[i];
+                final isSelected = _selectedCategory == cat;
+                final chipColor = cat == 'ALL'
+                    ? StudioTheme.colorModulation
+                    : StudioTheme.getCategoryColor(cat);
 
-          return ChoiceChip(
-            key: Key('category_chip_${cat.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}'),
-            label: Text(
-              cat,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? Colors.white : Colors.grey.shade300,
-              ),
+                return ChoiceChip(
+                  key: Key('category_chip_${cat.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}'),
+                  label: Text(
+                    cat,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      color: isSelected ? Colors.white : Colors.grey.shade300,
+                    ),
+                  ),
+                  selected: isSelected,
+                  selectedColor: chipColor.withValues(alpha: 0.35),
+                  backgroundColor: StudioTheme.surfaceElevated,
+                  side: BorderSide(
+                    color: isSelected ? chipColor : StudioTheme.surfaceBorder,
+                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  showCheckmark: false,
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() => _selectedCategory = cat);
+                    }
+                  },
+                );
+              },
             ),
-            selected: isSelected,
-            selectedColor: chipColor.withValues(alpha: 0.35),
-            backgroundColor: StudioTheme.surfaceElevated,
-            side: BorderSide(
-              color: isSelected ? chipColor : StudioTheme.surfaceBorder,
-            ),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-            showCheckmark: false,
-            onSelected: (selected) {
-              if (selected) {
-                setState(() => _selectedCategory = cat);
-              }
-            },
-          );
-        },
+          ],
+        ],
       ),
     );
 

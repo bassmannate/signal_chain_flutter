@@ -200,6 +200,14 @@ class PatchLibraryController extends ChangeNotifier {
     await refresh();
   }
 
+  /// Clears all selected tag filters and reloads.
+  Future<void> clearTags() async {
+    if (_selectedTags.isNotEmpty) {
+      _selectedTags.clear();
+      await refresh();
+    }
+  }
+
   /// Clears all filters (device, search query, and tags).
   Future<void> clearFilters() async {
     _deviceFilter = null;

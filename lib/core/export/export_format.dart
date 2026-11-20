@@ -44,6 +44,15 @@ enum ExportFormat {
     isBinary: true,
     supportsTextCopy: true,
     isZoomOnly: false,
+  ),
+  zoomFourZb1f(
+    storageKey: 'zoomFourZb1f',
+    displayName: 'ToneLib Zoom Four (.zb1f)',
+    subtitle: 'ToneLib XML/PTCF patch for B1X FOUR / B1 FOUR (.zb1f) & G1X/G1 (.zg1f)',
+    fileExtension: '.zb1f',
+    isBinary: false,
+    supportsTextCopy: true,
+    isZoomOnly: true,
   );
 
   final String storageKey;

@@ -105,6 +105,22 @@ class ConnectionBarWidget extends StatelessWidget {
                       child: Text('Zoom MS-200D+'),
                     ),
                     DropdownMenuItem(
+                      value: DeviceFamily.zoomB1xFour,
+                      child: Text('Zoom B1X FOUR'),
+                    ),
+                    DropdownMenuItem(
+                      value: DeviceFamily.zoomB1Four,
+                      child: Text('Zoom B1 FOUR'),
+                    ),
+                    DropdownMenuItem(
+                      value: DeviceFamily.zoomG1xFour,
+                      child: Text('Zoom G1X FOUR'),
+                    ),
+                    DropdownMenuItem(
+                      value: DeviceFamily.zoomG1Four,
+                      child: Text('Zoom G1 FOUR'),
+                    ),
+                    DropdownMenuItem(
                       value: DeviceFamily.line6BassPodPro,
                       child: Text('Line 6 Bass Pod Pro'),
                     ),
@@ -182,40 +198,6 @@ class ConnectionBarWidget extends StatelessWidget {
                     ],
                   ),
                 ),
-
-              // Pull Patch Button
-              ElevatedButton.icon(
-                key: const Key('pull_patch_button'),
-                icon: const Icon(Icons.download, size: 16),
-                label: const Text('Pull Patch'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: StudioTheme.surfaceElevated,
-                  foregroundColor: Colors.white,
-                  padding: buttonPadding,
-                  visualDensity: isCompact ? VisualDensity.compact : VisualDensity.standard,
-                ),
-                onPressed: isConnected && !editorController.isLoading
-                    ? () => _pullPatch(context)
-                    : null,
-              ),
-
-              // Push Patch Button
-              ElevatedButton.icon(
-                key: const Key('push_patch_button'),
-                icon: const Icon(Icons.upload, size: 16),
-                label: const Text('Push Patch'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: StudioTheme.surfaceElevated,
-                  foregroundColor: Colors.white,
-                  padding: buttonPadding,
-                  visualDensity: isCompact ? VisualDensity.compact : VisualDensity.standard,
-                ),
-                onPressed: isConnected &&
-                        editorController.patch != null &&
-                        !editorController.isLoading
-                    ? () => _pushPatch(context)
-                    : null,
-              ),
 
               // Save to Library Button
               OutlinedButton.icon(
@@ -450,50 +432,6 @@ class ConnectionBarWidget extends StatelessWidget {
         }
       },
     );
-  }
-
-  Future<void> _pullPatch(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    await editorController.pullCurrentPatch();
-    if (context.mounted) {
-      if (editorController.errorMessage != null) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(editorController.errorMessage!),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      } else {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Loaded "${editorController.patch?.name}" from device'),
-            backgroundColor: StudioTheme.colorConnected,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _pushPatch(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    await editorController.pushPatchToDevice();
-    if (context.mounted) {
-      if (editorController.errorMessage != null) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(editorController.errorMessage!),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      } else {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Pushed "${editorController.patch?.name}" to device'),
-            backgroundColor: StudioTheme.colorConnected,
-          ),
-        );
-      }
-    }
   }
 
   Future<void> _saveCurrentToLibrary(BuildContext context) async {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:signal_chain_flutter/core/midi/midi_message.dart';
 import 'package:signal_chain_flutter/core/midi/midi_port_descriptor.dart';
@@ -109,6 +110,217 @@ void main() {
       await tester.pump();
       expect(editorController.patch?.tempo, greaterThan(120));
     });
+
+    testWidgets(
+      'clicking tempo display enters inline edit with pre-selected text, commits valid BPM, updates slider, and sends real-time MIDI',
+      (tester) async {
+        transport.addPort(
+          const MidiPortDescriptor(
+            id: 'sim_tempo_port',
+            name: 'Zoom MS-60B+',
+            isInput: true,
+            isOutput: true,
+          ),
+        );
+        await transport.connect('sim_tempo_port');
+        transport.clearSentMessages();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: StudioTheme.darkTheme,
+            home: Scaffold(
+              body: PatchMetadataHeaderWidget(controller: editorController),
+            ),
+          ),
+        );
+
+        final displayFinder = find.byKey(const Key('patch_tempo_display'));
+        expect(displayFinder, findsOneWidget);
+
+        // Affordance: MouseRegion with click cursor wraps the tempo display
+        final mouseRegion = tester.widget<MouseRegion>(
+          find.ancestor(
+            of: displayFinder,
+            matching: find.byType(MouseRegion),
+          ).first,
+        );
+        expect(mouseRegion.cursor, equals(SystemMouseCursors.click));
+
+        // Tap tempo readout to enter inline editing
+        await tester.tap(displayFinder);
+        await tester.pump();
+        await tester.pump();
+
+        final textFieldFinder = find.byKey(const Key('patch_tempo_textfield'));
+        expect(textFieldFinder, findsOneWidget);
+
+        final containerSize = tester.getSize(displayFinder);
+        expect(containerSize.width, greaterThanOrEqualTo(64.0));
+
+        final textField = tester.widget<TextField>(textFieldFinder);
+        expect(textField.keyboardType, equals(TextInputType.number));
+        expect(textField.maxLength, equals(3));
+        expect(textField.textAlign, equals(TextAlign.center));
+        expect(textField.decoration?.isDense, isTrue);
+        expect(textField.decoration?.counterText, equals(''));
+        expect(
+          textField.inputFormatters,
+          contains(FilteringTextInputFormatter.digitsOnly),
+        );
+        expect(textField.controller?.text, equals('120'));
+        expect(
+          textField.controller?.selection,
+          equals(const TextSelection(baseOffset: 0, extentOffset: 3)),
+        );
+
+        // Verify all 3 digits fit cleanly without horizontal text clipping
+        final editableState = tester.state<EditableTextState>(
+          find.descendant(
+            of: textFieldFinder,
+            matching: find.byType(EditableText),
+          ),
+        );
+        expect(editableState.renderEditable.maxScrollExtent, equals(0.0));
+
+        // Type a 3-digit BPM and verify zero horizontal scroll clipping before submit
+        await tester.enterText(textFieldFinder, '250');
+        await tester.pump();
+        expect(editableState.renderEditable.maxScrollExtent, equals(0.0));
+
+        // Type valid BPM and press Done/Enter
+        await tester.enterText(textFieldFinder, '145');
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pump();
+
+        expect(editorController.patch?.tempo, equals(145));
+        expect(find.byKey(const Key('patch_tempo_textfield')), findsNothing);
+        expect(find.text('145 BPM'), findsOneWidget);
+
+        final slider = tester.widget<Slider>(
+          find.byKey(const Key('patch_tempo_slider')),
+        );
+        expect(slider.value, equals(145.0));
+
+        final messagesFromTextEdit = List<MidiMessage>.from(transport.sentMessages);
+        expect(messagesFromTextEdit, isNotEmpty);
+
+        // Verify the slider triggers the same real-time MIDI sync path
+        transport.clearSentMessages();
+        editorController.updatePatchTempo(146);
+        await tester.pump();
+        expect(transport.sentMessages.length, equals(messagesFromTextEdit.length));
+      },
+    );
+
+    testWidgets(
+      'tempo inline edit clamps out-of-range BPM (40..250) on Enter and focus loss',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: StudioTheme.darkTheme,
+            home: Scaffold(
+              body: Column(
+                children: [
+                  PatchMetadataHeaderWidget(controller: editorController),
+                  const SizedBox(
+                    key: Key('tempo_outside_tap_target'),
+                    width: 100,
+                    height: 40,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        // Lower bound clamping via Enter
+        await tester.tap(find.byKey(const Key('patch_tempo_display')));
+        await tester.pump();
+        await tester.pump();
+        await tester.enterText(
+          find.byKey(const Key('patch_tempo_textfield')),
+          '15',
+        );
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pump();
+
+        expect(editorController.patch?.tempo, equals(40));
+        expect(find.text('40 BPM'), findsOneWidget);
+
+        // Upper bound clamping via focus loss / tap outside
+        await tester.tap(find.byKey(const Key('patch_tempo_display')));
+        await tester.pump();
+        await tester.pump();
+        await tester.enterText(
+          find.byKey(const Key('patch_tempo_textfield')),
+          '320',
+        );
+        await tester.tap(find.byKey(const Key('tempo_outside_tap_target')));
+        await tester.pump();
+
+        expect(editorController.patch?.tempo, equals(250));
+        expect(find.text('250 BPM'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tempo inline edit reverts cleanly on Escape or empty/invalid input without sending MIDI',
+      (tester) async {
+        transport.addPort(
+          const MidiPortDescriptor(
+            id: 'sim_tempo_port',
+            name: 'Zoom MS-60B+',
+            isInput: true,
+            isOutput: true,
+          ),
+        );
+        await transport.connect('sim_tempo_port');
+        transport.clearSentMessages();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: StudioTheme.darkTheme,
+            home: Scaffold(
+              body: PatchMetadataHeaderWidget(controller: editorController),
+            ),
+          ),
+        );
+
+        // 1. Escape cancels without modifying BPM or sending MIDI
+        await tester.tap(find.byKey(const Key('patch_tempo_display')));
+        await tester.pump();
+        await tester.pump();
+        await tester.enterText(
+          find.byKey(const Key('patch_tempo_textfield')),
+          '195',
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
+
+        expect(editorController.patch?.tempo, equals(120));
+        expect(find.text('120 BPM'), findsOneWidget);
+        expect(find.byKey(const Key('patch_tempo_textfield')), findsNothing);
+        expect(editorController.isDirty, isFalse);
+        expect(transport.sentMessages, isEmpty);
+
+        // 2. Empty/non-digit input reverts without modifying BPM or sending MIDI
+        await tester.tap(find.byKey(const Key('patch_tempo_display')));
+        await tester.pump();
+        await tester.pump();
+        await tester.enterText(
+          find.byKey(const Key('patch_tempo_textfield')),
+          'abc',
+        );
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pump();
+
+        expect(editorController.patch?.tempo, equals(120));
+        expect(find.text('120 BPM'), findsOneWidget);
+        expect(find.byKey(const Key('patch_tempo_textfield')), findsNothing);
+        expect(editorController.isDirty, isFalse);
+        expect(transport.sentMessages, isEmpty);
+      },
+    );
 
     testWidgets('Write to Slot button opens WriteToSlotDialog', (tester) async {
       await tester.pumpWidget(

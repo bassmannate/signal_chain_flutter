@@ -1,3 +1,6 @@
+import 'zoom_four_profile.dart';
+export 'zoom_four_profile.dart';
+
 /// Hardware generation families used to enforce preset-to-pedal compatibility.
 enum DeviceGeneration {
   zoomMsPlus('Zoom MS+ Series'),
@@ -32,6 +35,26 @@ enum DeviceFamily {
     manufacturer: 'Zoom',
     maxEffectSlots: 6,
   ),
+  zoomB1xFour(
+    displayName: 'Zoom B1X FOUR',
+    manufacturer: 'Zoom',
+    maxEffectSlots: 5,
+  ),
+  zoomB1Four(
+    displayName: 'Zoom B1 FOUR',
+    manufacturer: 'Zoom',
+    maxEffectSlots: 5,
+  ),
+  zoomG1xFour(
+    displayName: 'Zoom G1X FOUR',
+    manufacturer: 'Zoom',
+    maxEffectSlots: 5,
+  ),
+  zoomG1Four(
+    displayName: 'Zoom G1 FOUR',
+    manufacturer: 'Zoom',
+    maxEffectSlots: 5,
+  ),
   line6BassPodPro(
     displayName: 'Line 6 Bass Pod Pro',
     manufacturer: 'Line 6',
@@ -60,8 +83,41 @@ enum DeviceFamily {
       this == zoomMs70cdrPlus ||
       this == zoomMs200dPlus;
 
+  /// Returns true if this device is part of the Zoom Four series (`B1X/B1/G1X/G1 FOUR`).
+  bool get isZoomFour =>
+      this == zoomB1xFour ||
+      this == zoomB1Four ||
+      this == zoomG1xFour ||
+      this == zoomG1Four;
+
+  /// Returns true if this device speaks the shared Zoom `0x6E` SysEx / PTCF family protocol.
+  bool get isZoom6E => isZoomMsPlus || isZoomFour;
+
+  /// Hardware capability profile when this family belongs to [DeviceGeneration.zoomFour].
+  ZoomFourProfile? get zoomFourProfile => ZoomFourProfile.fromDeviceFamily(this);
+
+  /// Returns true if this hardware model has a built-in expression pedal.
+  bool get hasExpressionPedal => zoomFourProfile?.hasExpressionPedal ?? false;
+
+  /// Zero-based-to-hardware display numbering offset (`10` for Zoom Four, `0` otherwise).
+  int get hardwarePatchDisplayOffset =>
+      isZoomFour ? ZoomFourProfile.defaultPatchDisplayOffset : 0;
+
+  /// Formats a zero-based patch slot index using hardware numbering conventions
+  /// (`"10"`..`"59"` for Zoom Four; `"00"`..`"99"` for MS Plus).
+  String formatHardwarePatchLabel(int slotIndex) => isZoomFour
+      ? ZoomFourProfile.formatPatchLabel(slotIndex)
+      : slotIndex.toString().padLeft(2, '0');
+
   /// Returns true if this device is a Line 6 Bass Pod Pro.
   bool get isLine6BassPodPro => this == line6BassPodPro;
+
+  /// Whether the hardware displays its signal chain Right-to-Left (`MS-60B+` / MS Plus).
+  /// Zoom Four (`B1X FOUR` / `B1 FOUR` / `G1X FOUR` / `G1 FOUR`) and Line 6 display Left-to-Right.
+  bool get isSignalChainRightToLeft => isZoomMsPlus;
+
+  /// Whether the hardware displays its signal chain Left-to-Right.
+  bool get isSignalChainLeftToRight => !isZoomMsPlus;
 
   /// Hardware generation this device family belongs to.
   DeviceGeneration get generation {
@@ -71,6 +127,11 @@ enum DeviceFamily {
       case DeviceFamily.zoomMs70cdrPlus:
       case DeviceFamily.zoomMs200dPlus:
         return DeviceGeneration.zoomMsPlus;
+      case DeviceFamily.zoomB1xFour:
+      case DeviceFamily.zoomB1Four:
+      case DeviceFamily.zoomG1xFour:
+      case DeviceFamily.zoomG1Four:
+        return DeviceGeneration.zoomFour;
       case DeviceFamily.line6BassPodPro:
         return DeviceGeneration.line6Pod;
       case DeviceFamily.unknown:
@@ -85,18 +146,19 @@ enum DeviceFamily {
 
   /// Maximum patch name character limit supported by this hardware family.
   ///
-  /// Zoom MS Plus displays up to 10 characters on the pedal screen;
+  /// Zoom `0x6E` pedals display up to 10 characters on the hardware screen;
   /// Line 6 Bass Pod Pro stores up to 16 ASCII characters.
   int get maxNameLength {
-    if (isZoomMsPlus) return 10;
+    if (isZoom6E) return 10;
     if (isLine6BassPodPro) return 16;
     return 16;
   }
 
   /// Total number of persistent memory bank slots on this hardware.
   ///
-  /// Zoom MS Plus features 100 slots (00 to 99 across 10 banks).
+  /// Zoom MS Plus features 100 slots (00 to 99); Zoom Four features 50 slots (`10` to `59`).
   int get totalMemorySlots {
+    if (isZoomFour) return ZoomFourProfile.defaultTotalPatches;
     if (isZoomMsPlus) return 100;
     if (isLine6BassPodPro) return 36;
     return 100;

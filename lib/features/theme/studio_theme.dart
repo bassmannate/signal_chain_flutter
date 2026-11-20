@@ -69,7 +69,9 @@ class StudioTheme {
     if (cat.contains('pitch') ||
         cat.contains('synth') ||
         cat.contains('octav') ||
-        cat.contains('sfx')) {
+        cat.contains('sfx') ||
+        cat.contains('pedal') ||
+        cat.contains('expr')) {
       return colorPitchSynth;
     }
     return colorBypass;

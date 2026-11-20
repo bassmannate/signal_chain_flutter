@@ -56,8 +56,8 @@ void main() {
 
       // 1. Toolbar controls fit within 390px without horizontal clipping
       expectFitsHorizontally(tester, find.byKey(const Key('midi_port_dropdown')), size.width);
-      expectFitsHorizontally(tester, find.byKey(const Key('pull_patch_button')), size.width);
-      expectFitsHorizontally(tester, find.byKey(const Key('push_patch_button')), size.width);
+      expect(find.byKey(const Key('pull_patch_button')), findsNothing);
+      expect(find.byKey(const Key('push_patch_button')), findsNothing);
       expectFitsHorizontally(tester, find.byKey(const Key('save_to_library_button')), size.width);
       expectFitsHorizontally(tester, find.byKey(const Key('toggle_library_button')), size.width);
 

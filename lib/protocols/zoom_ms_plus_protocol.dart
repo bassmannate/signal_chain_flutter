@@ -10,8 +10,11 @@ import 'catalogs/effect_catalog.dart';
 import 'device_protocol.dart';
 import 'sysex_codec.dart';
 
-/// Pure Dart protocol engine for Zoom MS Plus series pedals
-/// (MS-50G+, MS-60B+, MS-70CDR+, MS-200D+).
+export 'ptcf_codec.dart';
+export 'zoom_four_protocol.dart';
+
+/// Pure Dart protocol engine for Zoom MS Plus and Zoom Four `0x6E` series pedals
+/// (MS-50G+, MS-60B+, MS-70CDR+, MS-200D+, B1X FOUR, B1 FOUR, G1X FOUR, G1 FOUR).
 class ZoomMsPlusProtocol extends DeviceProtocol {
   /// Zoom MIDI Manufacturer ID: 0x52.
   static const int manufacturerId = 0x52;
@@ -20,6 +23,10 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   static const int familyIdByte = 0x6E;
 
   /// Model ID codes (Identity Reply byte 8).
+  static const int modelIdG1Four = 0x0C;
+  static const int modelIdG1xFour = 0x0D;
+  static const int modelIdB1Four = 0x0E;
+  static const int modelIdB1xFour = 0x0F;
   static const int modelIdMs50gPlus = 0x23;
   static const int modelIdMs200dPlus = 0x25;
   static const int modelIdMs70cdrPlus = 0x26;
@@ -34,7 +41,8 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   static const int cmdCurrentPatchDump = 0x12; // with prefix 0x64
   static const int cmdMemoryPatchRequest = 0x46; // with prefix 0x00 0x00
   static const int cmdMemoryPatchDump = 0x45; // with prefix 0x00 0x00
-  static const int cmdParameterEdit = 0x20; // with prefix 0x64 0x20 0x00
+  static const int cmdParameterEdit = 0x20; // MS Plus live edit: 64 20 00
+  static const int cmdZoomFourParameterEdit = 0x03; // Zoom Four live edit: 64 03 00
   static const int cmdParameterAccepted = 0x01; // with prefix 0x64 0x20 0x01
   static const int cmdBankAndProgramV2 = 0x26; // with prefix 0x64 0x26 0x00 0x00
   static const int cmdRequestBankAndProgram = 0x33; // Zoom request current bank and program opcode
@@ -43,7 +51,12 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   static const int cmdTunerOn = 0x0B; // Zoom MS Plus 7-byte Tuner ON (with prefix 0x64)
   static const int cmdTunerOff = 0x0C; // Zoom MS Plus 7-byte Tuner OFF (with prefix 0x64)
 
-  /// Target pedal constants in PTCF header.
+  /// Target pedal constants in PTCF header (per zoom-zt2 `decode_preset.py`).
+  static const int ptcfTargetG1Four = 0x00000010;
+  static const int ptcfTargetG1xFour = 0x00000020;
+  static const int ptcfTargetB1Four = 0x00000040;
+  static const int ptcfTargetB1xFour = 0x00000080;
+  static const int ptcfTargetZoomFourMask = ZoomFourProfile.ptcfTargetAllMask;
   static const int ptcfTargetMs50gPlus = 0x00040000;
   static const int ptcfTargetMs60bPlus = 0x00080000;
 
@@ -59,11 +72,22 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   /// Default maximum number of effect blocks supported on MS Plus series.
   static const int defaultMaxSlots = 6;
 
+  /// Default maximum number of effect blocks supported on Zoom Four series.
+  static const int zoomFourMaxSlots = ZoomFourProfile.defaultMaxSlots;
+
   final DeviceFamily defaultFamily;
 
   const ZoomMsPlusProtocol({
     this.defaultFamily = DeviceFamily.zoomMs60bPlus,
   });
+
+  /// Maximum number of effect slots supported by this protocol instance.
+  int get maxEffectSlots =>
+      defaultFamily.isZoomFour ? zoomFourMaxSlots : defaultMaxSlots;
+
+  /// Live parameter / bypass / effect SysEx subcommand (`0x03` for Zoom Four, `0x20` for MS Plus).
+  int get liveParameterOpcode =>
+      defaultFamily.isZoomFour ? cmdZoomFourParameterEdit : cmdParameterEdit;
 
   @override
   DeviceFamily get supportedFamily => defaultFamily;
@@ -82,6 +106,18 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     if (!matchesIdentityResponse(response)) return DeviceFamily.unknown;
     final modelCode = data[8];
     switch (modelCode) {
+      case modelIdB1xFour:
+      case 0x1F:
+        return DeviceFamily.zoomB1xFour;
+      case modelIdB1Four:
+      case 0x1E:
+        return DeviceFamily.zoomB1Four;
+      case modelIdG1xFour:
+      case 0x1D:
+        return DeviceFamily.zoomG1xFour;
+      case modelIdG1Four:
+      case 0x1C:
+        return DeviceFamily.zoomG1Four;
       case modelIdMs50gPlus:
         return DeviceFamily.zoomMs50gPlus;
       case modelIdMs200dPlus:
@@ -149,14 +185,15 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     required int slotIndex,
     required bool isEnabled,
   }) {
-    // Zoom MS Plus: paramNumber 0 = Effect Bypass (1 = Enabled, 0 = Bypassed)
-    // F0 52 00 6E 64 20 00 <slot> 00 <01/00> 00 00 00 00 F7
+    // Zoom 0x6E: paramNumber 0 = Effect Bypass (1 = Enabled, 0 = Bypassed)
+    // MS Plus:   F0 52 00 6E 64 20 00 <slot> 00 <01/00> 00 00 00 00 F7
+    // Zoom Four: F0 52 00 6E 64 03 00 <slot> 00 <01/00> 00 00 00 00 F7
     return MidiMessage.sysEx([
       manufacturerId,
       0x00,
       familyIdByte,
       0x64,
-      cmdParameterEdit,
+      liveParameterOpcode,
       0x00,
       slotIndex & 0x7F,
       0x00,
@@ -170,6 +207,27 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
 
   @override
   MidiMessage buildEffectTypeMessage(int slotIndex, int effectId) {
+    if (defaultFamily.isZoomFour) {
+      // Zoom Four (B1X FOUR / B1 FOUR / G1X FOUR / G1 FOUR):
+      // F0 52 00 6E 64 03 00 <slot> 01 <fxIdLsb> <fxIdMsb> 00 <groupIdLsb> <groupIdMsb> F7
+      final fxId = effectId & 0xFFFF;
+      final groupId = (effectId >> 16) & 0xFFFF;
+      return MidiMessage.sysEx([
+        manufacturerId,
+        0x00,
+        familyIdByte,
+        0x64,
+        cmdZoomFourParameterEdit,
+        0x00,
+        slotIndex & 0x7F,
+        0x01,
+        fxId & 0x7F,
+        (fxId >> 7) & 0x7F,
+        0x00,
+        groupId & 0x7F,
+        (groupId >> 7) & 0x7F,
+      ]);
+    }
     // Zoom MS Plus: paramNumber 1 = Effect DSP ID
     // 32-bit effectId packed into 5 bytes of 7-bit MIDI data (LSB first)
     // F0 52 00 6E 64 20 00 <slot> 01 <v0> <v1> <v2> <v3> <v4> F7
@@ -254,7 +312,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
       0x00,
       familyIdByte,
       0x64,
-      cmdParameterEdit,
+      liveParameterOpcode,
       0x00,
       slotIndex & 0x7F,
       paramNumber,
@@ -357,7 +415,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
       0x00,
       familyIdByte,
       0x64,
-      cmdParameterEdit,
+      liveParameterOpcode,
       0x00,
       0x64,
       0x01,
@@ -375,14 +433,14 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     if (!message.isSysEx || data.length < 10) return false;
     if (data[1] != manufacturerId || data[2] != 0x00) return false;
 
-    // Zoom MS Plus: F0 52 00 6E 64 20 00 <slot> 00 <val> ... F7
+    // Zoom 0x6E: F0 52 00 6E 64 20 00 <slot> 00 <val> ... F7
     // Must be opcode 64 20 00 (unsolicited edit from pedal) with paramNumber == 0
-    // data[7] is slotIndex (< 6), ensuring device-level opcodes (data[7] == 0x64) are excluded.
+    // data[7] is slotIndex (< maxEffectSlots), ensuring device-level opcodes (data[7] == 0x64) are excluded.
     return data[3] == familyIdByte &&
         data[4] == 0x64 &&
-        data[5] == cmdParameterEdit &&
+        data[5] == liveParameterOpcode &&
         data[6] == 0x00 &&
-        (data[7] & 0x7F) < 6 &&
+        (data[7] & 0x7F) < maxEffectSlots &&
         data[8] == 0x00;
   }
 
@@ -405,7 +463,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     // F0 52 00 6E 64 20 00 64 01 <newEffectSlot> ... F7
     return data[3] == familyIdByte &&
         data[4] == 0x64 &&
-        data[5] == cmdParameterEdit &&
+        data[5] == liveParameterOpcode &&
         data[6] == 0x00 &&
         data[7] == 0x64 &&
         data[8] == 0x01;
@@ -452,13 +510,13 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     // Note: data[6] MUST be 0x00 (unsolicited edit from pedal).
     // data[6] == 0x01 is parameterValueAcceptedV2 ACK from the pedal and must NOT trigger a new edit!
     // data[8] >= 0x02 is a knob parameter (0 = bypass, 1 = effect ID).
-    // data[7] is slotIndex (< 6), ensuring device-level opcodes (data[7] == 0x64) are excluded.
+    // data[7] is slotIndex (< maxEffectSlots), ensuring device-level opcodes (data[7] == 0x64) are excluded.
     final isV2 = data.length >= 10 &&
         data[3] == familyIdByte &&
         data[4] == 0x64 &&
-        data[5] == cmdParameterEdit &&
+        data[5] == liveParameterOpcode &&
         data[6] == 0x00 &&
-        (data[7] & 0x7F) < 6 &&
+        (data[7] & 0x7F) < maxEffectSlots &&
         (data[8] & 0x7F) >= 2;
 
     // Zoom MS V1 format: F0 52 00 <family> 31 <slot> <param> <v_lsb> <v_msb> F7
@@ -481,7 +539,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
       return (slotIndex: slot, paramIndex: param, value: val);
     }
 
-    if (data[4] == 0x64 && data[5] == cmdParameterEdit) {
+    if (data[4] == 0x64 && data[5] == liveParameterOpcode) {
       const offset = 7; // after F0 52 00 6E 64 20 00
       if (data.length < offset + 4) return null; // needs at least slot, param, val_lsb, and F7
 
@@ -645,6 +703,11 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     final version = byteData.getUint32(8, Endian.little);
     final numEffects = byteData.getUint32(12, Endian.little);
     final target = byteData.getUint32(16, Endian.little);
+    final resolvedFamily = _resolveFamilyFromTarget(target);
+    final isZoomFourContext = resolvedFamily.isZoomFour || defaultFamily.isZoomFour;
+    final maxAllowedSlots = isZoomFourContext
+        ? zoomFourMaxSlots
+        : defaultMaxSlots;
 
     // Short name at offset 26 (10 bytes)
     final shortName = ptcf.length >= 36
@@ -702,8 +765,8 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
           break;
 
         case 'EDTB':
-          // Process each 24-byte effect block
-          for (int slotIdx = 0; slotIdx < numEffects; slotIdx++) {
+          // Process each 24-byte effect block up to the hardware family slot limit
+          for (int slotIdx = 0; slotIdx < numEffects && slotIdx < maxAllowedSlots; slotIdx++) {
             final blockStart = slotIdx * edtbEffectBlockSize;
             if (blockStart + edtbEffectBlockSize > chunkData.length) break;
 
@@ -741,9 +804,33 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
               rawValues.add(val.toDouble());
             }
 
-            final hexId = '0x${dspId.toRadixString(16).padLeft(8, '0').toUpperCase()}';
-            final family = _resolveFamilyFromTarget(target);
-            final effectDef = EffectCatalogRegistry.getDefinition(family, hexId);
+            final tableEffectId = slotIdx < effectIds.length ? effectIds[slotIdx] : null;
+            if (isZoomFourContext &&
+                (dspId == 0 ||
+                    dspId == 1 ||
+                    (tableEffectId != null &&
+                        (tableEffectId == 0 || tableEffectId == 1)))) {
+              // Skip empty 0x00000000 and 0x00000001 (BYPASS.ZD2) hardware slots on Zoom Four
+              continue;
+            }
+            var resolvedDspId = dspId;
+            var hexId = '0x${resolvedDspId.toRadixString(16).padLeft(8, '0').toUpperCase()}';
+            final family = resolvedFamily;
+            var effectDef = EffectCatalogRegistry.getDefinition(family, hexId);
+            if (isZoomFourContext &&
+                tableEffectId != null &&
+                tableEffectId != 0 &&
+                tableEffectId != resolvedDspId &&
+                effectDef.name.startsWith('Unknown')) {
+              final tableHexId =
+                  '0x${tableEffectId.toRadixString(16).padLeft(8, '0').toUpperCase()}';
+              final tableDef = EffectCatalogRegistry.getDefinition(family, tableHexId);
+              if (!tableDef.name.startsWith('Unknown')) {
+                resolvedDspId = tableEffectId;
+                hexId = tableHexId;
+                effectDef = tableDef;
+              }
+            }
 
             final parameters = <ParameterValue>[];
             final int exposedCount = effectDef.parameters.isNotEmpty
@@ -775,17 +862,25 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
                 ? rawValues.sublist(exposedCount)
                 : null;
 
-            final effectName = (dspId != 0 && !effectDef.name.startsWith('Unknown'))
+            final effectName = (resolvedDspId != 0 && !effectDef.name.startsWith('Unknown'))
                 ? effectDef.name
-                : _lookupEffectName(dspId, family: family);
+                : _lookupEffectName(resolvedDspId, family: family);
 
             slots.add(EffectSlot(
-              slotIndex: slotIdx,
+              slotIndex: isZoomFourContext ? slotIdx : slots.length,
               effectId: hexId,
               effectName: effectName,
               isEnabled: isEnabled,
               parameters: parameters,
               rawTrailingValues: rawTrailing,
+            ));
+          }
+          if (isZoomFourContext && slots.isEmpty) {
+            slots.add(const EffectSlot(
+              slotIndex: 0,
+              effectId: '0x00000000',
+              effectName: 'Bypass',
+              isEnabled: true,
             ));
           }
           break;
@@ -811,7 +906,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     return Patch(
       id: programNumber != null ? 'zoom_slot_$programNumber' : 'zoom_active_patch',
       name: patchName,
-      deviceFamily: _resolveFamilyFromTarget(target),
+      deviceFamily: resolvedFamily,
       programNumber: programNumber,
       slots: slots,
       metadata: {
@@ -821,6 +916,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
         'version': version,
         'shortName': shortName,
         'description': description,
+        'generation': resolvedFamily.generation.name,
       },
     );
   }
@@ -901,13 +997,19 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
 
   /// Encodes a domain [Patch] into an 8-bit PTCF binary payload.
   Uint8List encodePtcf(Patch patch) {
-    final numEffects = patch.slots.isEmpty ? defaultMaxSlots : patch.slots.length;
-    final target = (patch.metadata['target'] as int?) ??
-        ((patch.deviceFamily == DeviceFamily.zoomMs50gPlus ||
-                patch.deviceFamily == DeviceFamily.zoomMs70cdrPlus ||
-                patch.deviceFamily == DeviceFamily.zoomMs200dPlus)
-            ? ptcfTargetMs50gPlus
-            : ptcfTargetMs60bPlus);
+    final effectiveFamily = patch.deviceFamily == DeviceFamily.unknown
+        ? defaultFamily
+        : patch.deviceFamily;
+    final maxAllowedSlots = (effectiveFamily.isZoomFour || defaultFamily.isZoomFour)
+        ? zoomFourMaxSlots
+        : defaultMaxSlots;
+    final rawNumEffects = patch.slots.isEmpty ? maxAllowedSlots : patch.slots.length;
+    final numEffects = rawNumEffects.clamp(1, maxAllowedSlots);
+    final metaTarget = patch.metadata['target'] as int?;
+    final target = (metaTarget != null &&
+            _resolveFamilyFromTarget(metaTarget).isSameGeneration(effectiveFamily))
+        ? metaTarget
+        : defaultPtcfTargetForFamily(effectiveFamily);
     final version = (patch.metadata['version'] as int?) ?? 1;
 
     // Build EDTB block (numEffects * 24 bytes)
@@ -1079,7 +1181,46 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     return output;
   }
 
+  /// Returns the default PTCF target word bitmask for [family].
+  static int defaultPtcfTargetForFamily(DeviceFamily family) {
+    switch (family) {
+      case DeviceFamily.zoomB1xFour:
+        return ptcfTargetB1xFour;
+      case DeviceFamily.zoomB1Four:
+        return ptcfTargetB1Four;
+      case DeviceFamily.zoomG1xFour:
+        return ptcfTargetG1xFour;
+      case DeviceFamily.zoomG1Four:
+        return ptcfTargetG1Four;
+      case DeviceFamily.zoomMs50gPlus:
+      case DeviceFamily.zoomMs70cdrPlus:
+      case DeviceFamily.zoomMs200dPlus:
+        return ptcfTargetMs50gPlus;
+      case DeviceFamily.zoomMs60bPlus:
+      case DeviceFamily.line6BassPodPro:
+      case DeviceFamily.unknown:
+        return ptcfTargetMs60bPlus;
+    }
+  }
+
   DeviceFamily _resolveFamilyFromTarget(int target) {
+    if (defaultFamily.isZoomFour) {
+      final profile = ZoomFourProfile.fromPtcfTarget(target);
+      if (profile != null) {
+        final defaultMask = defaultFamily.zoomFourProfile?.ptcfTargetMask ?? 0;
+        if ((target & defaultMask) != 0) {
+          return defaultFamily;
+        }
+        return profile.deviceFamily;
+      }
+      return defaultFamily;
+    }
+    if ((target & ptcfTargetZoomFourMask) != 0) {
+      final profile = ZoomFourProfile.fromPtcfTarget(target);
+      if (profile != null) {
+        return profile.deviceFamily;
+      }
+    }
     if ((target & ptcfTargetMs50gPlus) != 0) {
       if (defaultFamily == DeviceFamily.zoomMs70cdrPlus ||
           defaultFamily == DeviceFamily.zoomMs200dPlus) {
@@ -1100,10 +1241,14 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
 
   String _lookupEffectName(int dspId, {DeviceFamily? family}) {
     if (dspId == 0) return 'Bypass';
+    final targetFamily = family ?? defaultFamily;
     final hexId = '0x${dspId.toRadixString(16).padLeft(8, '0').toUpperCase()}';
-    final def = EffectCatalogRegistry.getDefinition(family ?? defaultFamily, hexId);
+    final def = EffectCatalogRegistry.getDefinition(targetFamily, hexId);
     if (!def.name.startsWith('Unknown')) {
       return def.name;
+    }
+    if (targetFamily.isZoomFour) {
+      return 'Unknown ($hexId)';
     }
     switch (dspId) {
       case 0x01000010:

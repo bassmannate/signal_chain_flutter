@@ -5,6 +5,7 @@ import '../../models/device_family.dart';
 import 'adapters/native_json_import_adapter.dart';
 import 'adapters/raw_sysex_import_adapter.dart';
 import 'adapters/symbiosis_import_adapter.dart';
+import 'adapters/zoom_four_zb1f_import_adapter.dart';
 import 'adapters/zoom_multistomp_studio_import_adapter.dart';
 import 'adapters/zoom_ptcf_import_adapter.dart';
 import 'import_adapter.dart';
@@ -17,7 +18,14 @@ import 'imported_patch_entry.dart';
 /// device-mismatch validation across all registered [ImportAdapter]s.
 class PatchImporter {
   /// Supported file extensions for file browser filtering and folder batch scans.
-  static const Set<String> supportedExtensions = {'.json', '.zptc', '.syx'};
+  static const Set<String> supportedExtensions = {
+    '.json',
+    '.zptc',
+    '.ptcf',
+    '.syx',
+    '.zb1f',
+    '.zg1f',
+  };
 
   final List<ImportAdapter> adapters;
 
@@ -28,6 +36,7 @@ class PatchImporter {
   factory PatchImporter.standard() {
     return const PatchImporter(
       adapters: [
+        ZoomFourZb1fImportAdapter(),
         SymbiosisImportAdapter(),
         ZoomMultistompStudioImportAdapter(),
         ZoomPtcfImportAdapter(),
@@ -120,6 +129,17 @@ class PatchImporter {
             message: 'Input text is empty.',
           ),
         ],
+      );
+    }
+
+    // Try ToneLib XML (.zb1f / .zg1f) if text looks like a ZoomPatch XML payload
+    if (trimmed.contains('<ZoomPatch') || trimmed.contains('<PatchData')) {
+      return importBytes(
+        Uint8List.fromList(utf8.encode(trimmed)),
+        sourceName: '$sourceName.zb1f',
+        targetDeviceHint: targetDeviceHint,
+        activeDeviceFamily: activeDeviceFamily,
+        formatOverride: ImportFormat.zoomFourZb1f,
       );
     }
 

@@ -66,6 +66,10 @@ class DeviceConnectionController extends ChangeNotifier {
   /// Known hardware identification patterns for auto-discovery.
   static const List<String> knownHardwarePatterns = [
     'zoom',
+    'b1x four',
+    'b1 four',
+    'g1x four',
+    'g1 four',
     'ms plus',
     'ms-60b',
     'ms-50g',
@@ -209,12 +213,27 @@ class DeviceConnectionController extends ChangeNotifier {
     return false;
   }
 
+  /// Resolves the best matching [DeviceFamily] from a [MidiPortDescriptor]
+  /// by checking `port.name`, `port.id`, and `port.manufacturer`.
+  static DeviceFamily? identifyFamilyFromPort(MidiPortDescriptor port) {
+    return identifyFamilyFromPortName(port.name) ??
+        identifyFamilyFromPortName(port.id) ??
+        (port.manufacturer != null
+            ? identifyFamilyFromPortName(port.manufacturer!)
+            : null);
+  }
+
   /// Resolves the best matching [DeviceFamily] from port name heuristics.
   static DeviceFamily? identifyFamilyFromPortName(String portName) {
     final nameLower = portName.toLowerCase();
     if (nameLower.contains('pod') || nameLower.contains('line 6') || nameLower.contains('line6')) {
       return DeviceFamily.line6BassPodPro;
-    } else if (nameLower.contains('50g') || nameLower.contains('ms-50g')) {
+    }
+    final zoomFour = ZoomFourProfile.fromPortName(portName);
+    if (zoomFour != null) {
+      return zoomFour.deviceFamily;
+    }
+    if (nameLower.contains('50g') || nameLower.contains('ms-50g')) {
       return DeviceFamily.zoomMs50gPlus;
     } else if (nameLower.contains('70cdr') || nameLower.contains('ms-70cdr')) {
       return DeviceFamily.zoomMs70cdrPlus;
@@ -328,13 +347,24 @@ class DeviceConnectionController extends ChangeNotifier {
         );
 
         if (match != null) {
-          final matchedFamily = identifyFamilyFromPortName(match.name);
+          final matchedFamily = identifyFamilyFromPort(match);
           await connect(
             match,
             explicitFamily: matchedFamily,
             autoSyncBank: true,
             fetchCurrentPatch: true,
           );
+        }
+      } else if (!isConnectedToRealHardware) {
+        final match = _availablePorts.cast<MidiPortDescriptor?>().firstWhere(
+          (p) => p != null && isKnownHardwarePort(p),
+          orElse: () => null,
+        );
+        if (match != null) {
+          final matchedFamily = identifyFamilyFromPort(match);
+          if (matchedFamily != null && matchedFamily != DeviceFamily.unknown) {
+            selectDeviceFamily(matchedFamily);
+          }
         }
       }
     } catch (e) {
@@ -367,7 +397,13 @@ class DeviceConnectionController extends ChangeNotifier {
     _errorMessage = null;
     _activeHardwareSlotIndex = null;
     _isTunerActive = false;
-    notifyListeners();
+
+    final preDetected = explicitFamily ?? identifyFamilyFromPort(port);
+    if (preDetected != null && preDetected != DeviceFamily.unknown) {
+      selectDeviceFamily(preDetected);
+    } else {
+      notifyListeners();
+    }
 
     try {
       await transport.connect(port.id);
@@ -398,12 +434,13 @@ class DeviceConnectionController extends ChangeNotifier {
           final request = _activeProtocol.buildRequestCurrentPatchMessage();
           bool received = false;
           try {
-            await transport.sendSysExAndWait(
+            final dumpMsg = await transport.sendSysExAndWait(
               request,
               responseMatcher: (m) => _activeProtocol.isCurrentPatchDump(m),
               timeout: currentPatchTimeout,
             );
             received = true;
+            _autoDetectFamilyFromPatchDump(dumpMsg);
           } catch (_) {
             // First attempt timed out; retry once if still connected
           }
@@ -413,12 +450,13 @@ class DeviceConnectionController extends ChangeNotifier {
               await Future<void>.delayed(pacingDelay);
             }
             try {
-              await transport.sendSysExAndWait(
+              final dumpMsg = await transport.sendSysExAndWait(
                 request,
                 responseMatcher: (m) => _activeProtocol.isCurrentPatchDump(m),
                 timeout: currentPatchTimeout,
               );
               received = true;
+              _autoDetectFamilyFromPatchDump(dumpMsg);
             } catch (_) {
               // Current patch request did not return a dump; proceed gracefully
             }
@@ -508,7 +546,7 @@ class DeviceConnectionController extends ChangeNotifier {
         totalSlots,
         (i) => BankSlotDescriptor(
           index: i,
-          name: 'Slot ${i.toString().padLeft(2, '0')}',
+          name: 'Slot ${_activeFamily.formatHardwarePatchLabel(i)}',
           deviceFamily: _activeFamily,
           isLoaded: false,
         ),
@@ -566,7 +604,7 @@ class DeviceConnectionController extends ChangeNotifier {
               index: i,
               name: decoded.name.trim().isNotEmpty
                   ? decoded.name.trim()
-                  : 'Slot ${i.toString().padLeft(2, '0')}',
+                  : 'Slot ${_activeFamily.formatHardwarePatchLabel(i)}',
               deviceFamily: _activeFamily,
               isLoaded: true,
               isEmpty: decoded.slots.isEmpty,
@@ -586,7 +624,7 @@ class DeviceConnectionController extends ChangeNotifier {
           if (!_bankSlots[i].isLoaded) {
             _bankSlots[i] = BankSlotDescriptor(
               index: i,
-              name: 'Slot ${i.toString().padLeft(2, '0')}',
+              name: 'Slot ${_activeFamily.formatHardwarePatchLabel(i)}',
               deviceFamily: _activeFamily,
               isLoaded: true,
               isEmpty: true,
@@ -632,7 +670,7 @@ class DeviceConnectionController extends ChangeNotifier {
         _activeFamily.totalMemorySlots,
         (i) => BankSlotDescriptor(
           index: i,
-          name: 'Slot ${i.toString().padLeft(2, '0')}',
+          name: 'Slot ${_activeFamily.formatHardwarePatchLabel(i)}',
           deviceFamily: _activeFamily,
           isLoaded: false,
         ),
@@ -675,8 +713,21 @@ class DeviceConnectionController extends ChangeNotifier {
 
       if (zoomProto.matchesIdentityResponse(reply)) {
         final detected = zoomProto.parseDeviceFamily(reply);
-        selectDeviceFamily(detected);
-        return;
+        final portDetected = identifyFamilyFromPortName(port.name);
+        if (portDetected != null &&
+            portDetected.isZoomFour &&
+            !detected.isZoomFour) {
+          selectDeviceFamily(portDetected);
+          return;
+        }
+        if (detected != DeviceFamily.unknown) {
+          selectDeviceFamily(detected);
+          return;
+        }
+        if (portDetected != null && portDetected != DeviceFamily.unknown) {
+          selectDeviceFamily(portDetected);
+          return;
+        }
       }
 
       if (line6Proto.matchesIdentityResponse(reply)) {
@@ -689,19 +740,24 @@ class DeviceConnectionController extends ChangeNotifier {
     }
 
     // Port name heuristic fallback
-    final nameLower = port.name.toLowerCase();
-    if (nameLower.contains('pod') || nameLower.contains('line 6')) {
-      selectDeviceFamily(DeviceFamily.line6BassPodPro);
-    } else if (nameLower.contains('50g+') || nameLower.contains('ms-50g')) {
-      selectDeviceFamily(DeviceFamily.zoomMs50gPlus);
-    } else if (nameLower.contains('70cdr+') || nameLower.contains('ms-70cdr')) {
-      selectDeviceFamily(DeviceFamily.zoomMs70cdrPlus);
-    } else if (nameLower.contains('200d+') || nameLower.contains('ms-200d')) {
-      selectDeviceFamily(DeviceFamily.zoomMs200dPlus);
-    } else if (nameLower.contains('zoom') || nameLower.contains('60b+') || nameLower.contains('ms-')) {
-      selectDeviceFamily(DeviceFamily.zoomMs60bPlus);
+    final portFamily = identifyFamilyFromPort(port);
+    if (portFamily != null && portFamily != DeviceFamily.unknown) {
+      selectDeviceFamily(portFamily);
     }
     // Otherwise keep current activeFamily
+  }
+
+  /// Inspects an incoming current-patch dump and switches [activeFamily] to
+  /// `DeviceGeneration.zoomFour` before bank sync if the PTCF target identifies
+  /// a Four-series pedal while a non-Four family was active.
+  void _autoDetectFamilyFromPatchDump(MidiMessage dumpMsg) {
+    try {
+      final decoded = _activeProtocol.decodePatch(dumpMsg);
+      if (decoded.deviceFamily.isZoomFour && !_activeFamily.isZoomFour) {
+        selectDeviceFamily(decoded.deviceFamily);
+        _ensureBankSlotsInitialized();
+      }
+    } catch (_) {}
   }
 
   /// Routes unsolicited incoming MIDI events from hardware to registered editor controllers.
@@ -716,7 +772,7 @@ class DeviceConnectionController extends ChangeNotifier {
             slotIndex,
             patchName: decoded.name.trim().isNotEmpty
                 ? decoded.name.trim()
-                : 'Slot ${slotIndex.toString().padLeft(2, '0')}',
+                : 'Slot ${_activeFamily.formatHardwarePatchLabel(slotIndex)}',
             patch: decoded,
           );
           if (_activeHardwareSlotIndex == null && _editor != null) {
@@ -845,7 +901,7 @@ class DeviceConnectionController extends ChangeNotifier {
             _activeHardwareSlotIndex!,
             patchName: resolvedPatch.name.trim().isNotEmpty
                 ? resolvedPatch.name.trim()
-                : 'Slot ${_activeHardwareSlotIndex!.toString().padLeft(2, '0')}',
+                : 'Slot ${_activeFamily.formatHardwarePatchLabel(_activeHardwareSlotIndex!)}',
             patch: resolvedPatch,
           );
         }
@@ -875,6 +931,11 @@ class DeviceConnectionController extends ChangeNotifier {
     switch (family) {
       case DeviceFamily.line6BassPodPro:
         return const Line6BassPodProProtocol();
+      case DeviceFamily.zoomB1xFour:
+      case DeviceFamily.zoomB1Four:
+      case DeviceFamily.zoomG1xFour:
+      case DeviceFamily.zoomG1Four:
+        return ZoomFourProtocol.forFamily(family);
       case DeviceFamily.zoomMs50gPlus:
       case DeviceFamily.zoomMs60bPlus:
       case DeviceFamily.zoomMs70cdrPlus:

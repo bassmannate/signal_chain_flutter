@@ -225,7 +225,7 @@ void main() {
   });
 
   group('Drag-and-Drop Effect Bank Palette Widget Tests', () {
-    testWidgets('renders category filter chips, search input, and draggable effect items', (tester) async {
+    testWidgets('renders category filter dropdown, search input, and draggable effect items', (tester) async {
       final transport = MockMidiTransport();
       final connection = DeviceConnectionController(transport: transport);
       const samplePatch = Patch(
@@ -261,24 +261,37 @@ void main() {
         ),
       );
 
-      // Verify category chips exist
-      expect(find.byKey(const Key('palette_chip_All')), findsOneWidget);
-      expect(find.byKey(const Key('palette_chip_Dynamics')), findsOneWidget);
-      expect(find.byKey(const Key('palette_chip_Filter')), findsOneWidget);
-      expect(find.byKey(const Key('palette_chip_Drive')), findsOneWidget);
-      expect(find.byKey(const Key('palette_chip_Amp')), findsOneWidget);
-      expect(find.byKey(const Key('palette_chip_Cabinet')), findsOneWidget);
-      expect(find.byKey(const Key('palette_chip_Modulation')), findsOneWidget);
-      expect(find.byKey(const Key('palette_chip_SFX')), findsOneWidget);
-      expect(find.byKey(const Key('palette_chip_Delay')), findsOneWidget);
-      expect(find.byKey(const Key('palette_chip_Reverb')), findsOneWidget);
+      // Verify category dropdown exists and starts on 'All'
+      final dropdownFinder = find.byKey(const Key('palette_category_dropdown'));
+      expect(dropdownFinder, findsOneWidget);
+      expect(find.text('All'), findsOneWidget);
 
       // Verify search input exists
       expect(find.byKey(const Key('palette_search_input')), findsOneWidget);
 
-      // Filter by category
-      await tester.tap(find.byKey(const Key('palette_chip_Dynamics')));
+      // Open category dropdown and verify all category options exist
+      await tester.tap(dropdownFinder);
       await tester.pumpAndSettle();
+
+      for (final cat in const [
+        'All',
+        'Dynamics',
+        'Filter',
+        'Drive',
+        'Amp',
+        'Cabinet',
+        'Modulation',
+        'SFX',
+        'Delay',
+        'Reverb',
+      ]) {
+        expect(find.byKey(Key('palette_category_item_$cat')), findsWidgets);
+      }
+
+      // Filter by Dynamics category
+      await tester.tap(find.byKey(const Key('palette_category_item_Dynamics')).last);
+      await tester.pumpAndSettle();
+      expect(find.text('Dynamics'), findsOneWidget);
 
       // Search keyword
       await tester.enterText(find.byKey(const Key('palette_search_input')), 'comp');

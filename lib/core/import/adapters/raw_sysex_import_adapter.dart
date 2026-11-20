@@ -136,10 +136,12 @@ class RawSysExImportAdapter extends ImportAdapter {
       );
     }
 
-    final zoomDefault = (targetDeviceHint != null && targetDeviceHint.isZoomMsPlus)
+    final zoomDefault = (targetDeviceHint != null && targetDeviceHint.isZoom6E)
         ? targetDeviceHint
         : DeviceFamily.zoomMs60bPlus;
-    final zoomProto = ZoomMsPlusProtocol(defaultFamily: zoomDefault);
+    final zoomProto = zoomDefault.isZoomFour
+        ? ZoomFourProtocol.forFamily(zoomDefault)
+        : ZoomMsPlusProtocol(defaultFamily: zoomDefault);
     const line6Proto = Line6BassPodProProtocol();
 
     for (int i = 0; i < split.frames.length; i++) {

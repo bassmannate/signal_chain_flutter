@@ -18,7 +18,7 @@ class ZoomMultistompStudioExportAdapter extends ExportAdapter {
   ExportFormat get format => ExportFormat.zoomMultistompStudio;
 
   @override
-  bool supportsDevice(DeviceFamily family) => family.isZoomMsPlus;
+  bool supportsDevice(DeviceFamily family) => family.isZoom6E;
 
   @override
   ExportPayload exportPatch(Patch patch) {

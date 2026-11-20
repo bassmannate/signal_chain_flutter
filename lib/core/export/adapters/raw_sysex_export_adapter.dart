@@ -11,8 +11,8 @@ import '../export_payload.dart';
 
 /// Exports patches as standard `F0 ... F7` MIDI SysEx (`.syx`) dumps.
 ///
-/// Uses Zoom 989-byte `0x45` memory slot SysEx for Zoom MS Plus patches and
-/// Line 6 170-byte `0x02` program SysEx for Line 6 Bass POD Pro patches.
+/// Uses Zoom 989-byte `0x45` memory slot SysEx for Zoom `0x6E` (`MS+` / `Four`)
+/// patches and Line 6 170-byte `0x02` program SysEx for Line 6 Bass POD Pro patches.
 class RawSysExExportAdapter extends ExportAdapter {
   const RawSysExExportAdapter();
 
@@ -21,11 +21,14 @@ class RawSysExExportAdapter extends ExportAdapter {
 
   @override
   bool supportsDevice(DeviceFamily family) =>
-      family.isZoomMsPlus || family.isLine6BassPodPro;
+      family.isZoom6E || family.isLine6BassPodPro;
 
   static DeviceProtocol _protocolFor(DeviceFamily family) {
     if (family.isLine6BassPodPro) {
       return const Line6BassPodProProtocol();
+    }
+    if (family.isZoomFour) {
+      return ZoomFourProtocol.forFamily(family);
     }
     return ZoomMsPlusProtocol(defaultFamily: family);
   }
