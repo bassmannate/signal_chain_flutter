@@ -2,6 +2,76 @@ import 'package:flutter/foundation.dart';
 import 'device_family.dart';
 import 'effect_slot.dart';
 
+/// Constants and normalization helpers for the Zoom MS+ configurable Right-Output
+/// (`R-Out`) signal tap point encoded in `PRM2` byte 13 bits `1..3`.
+///
+/// Tap code values:
+/// - `0`: End of chain (`OUT`, default — L and R both output after the final slot)
+/// - `1`: Input (`IN`, dry signal before slot 0)
+/// - `2..6`: After 0-based slot index `code - 2` (so `2` = after Effect 1 / slot 0,
+///   `5` = after Effect 4 / slot 3, `6` = after Effect 5 / slot 4)
+abstract final class RightOutputTap {
+  static const int endOfChain = 0;
+  static const int input = 1;
+  static const int minSlotTapCode = 2;
+  static const int maxCode = 6;
+
+  /// Returns the tap code representing a split right after 0-based [slotIndex].
+  static int afterSlot(int slotIndex) => slotIndex + minSlotTapCode;
+
+  /// Returns the 0-based slot index whose output is tapped by [tapCode],
+  /// or `null` when [tapCode] represents [endOfChain] (`0`) or [input] (`1`).
+  static int? slotIndexFor(int tapCode) =>
+      tapCode >= minSlotTapCode && tapCode <= maxCode
+          ? tapCode - minSlotTapCode
+          : null;
+
+  /// Normalizes [tapCode] against a signal chain of length [slotCount].
+  ///
+  /// Tapping after the final slot (`tapCode == slotCount + 1`) is equivalent
+  /// to [endOfChain] (`0`) and normalizes to `0`. Invalid or out-of-range
+  /// values also fall back safely to `0`.
+  static int normalize(int tapCode, {required int slotCount}) {
+    if (slotCount <= 0) return endOfChain;
+    if (tapCode == endOfChain || tapCode == input) return tapCode;
+    if (tapCode >= minSlotTapCode &&
+        tapCode <= slotCount &&
+        tapCode <= maxCode) {
+      return tapCode;
+    }
+    return endOfChain;
+  }
+
+  /// Human-readable full label for menus and tooltips.
+  static String describe(int tapCode, {List<EffectSlot> slots = const []}) {
+    if (tapCode == endOfChain) return 'End of Chain (L+R Out)';
+    if (tapCode == input) return 'Input (Dry)';
+    final slotIdx = slotIndexFor(tapCode);
+    if (slotIdx != null) {
+      final rawName =
+          slotIdx < slots.length ? slots[slotIdx].effectName.trim() : '';
+      final name = rawName.isNotEmpty ? rawName : 'Effect ${slotIdx + 1}';
+      return 'After ${slotIdx + 1}: $name';
+    }
+    return 'End of Chain (L+R Out)';
+  }
+
+  /// Compact summary label for pills and diff rows.
+  static String shortLabel(int tapCode, {List<EffectSlot> slots = const []}) {
+    if (tapCode == endOfChain) return 'End (L+R)';
+    if (tapCode == input) return 'Input (Dry)';
+    final slotIdx = slotIndexFor(tapCode);
+    if (slotIdx != null) {
+      final rawName =
+          slotIdx < slots.length ? slots[slotIdx].effectName.trim() : '';
+      return rawName.isNotEmpty
+          ? 'After #${slotIdx + 1} ($rawName)'
+          : 'After #${slotIdx + 1}';
+    }
+    return 'End (L+R)';
+  }
+}
+
 /// Immutable representation of a device preset/patch containing an effect chain and metadata.
 @immutable
 class Patch {
@@ -10,6 +80,7 @@ class Patch {
   final DeviceFamily deviceFamily;
   final int? programNumber;
   final List<EffectSlot> slots;
+  final int rightOutputTapCode;
   final List<String> tags;
   final String? author;
   final String? notes;
@@ -22,6 +93,7 @@ class Patch {
     required this.deviceFamily,
     this.programNumber,
     this.slots = const [],
+    this.rightOutputTapCode = RightOutputTap.endOfChain,
     this.tags = const [],
     this.author,
     this.notes,
@@ -37,6 +109,15 @@ class Patch {
 
   /// Alias for [deviceGeneration].
   DeviceGeneration get generation => deviceFamily.generation;
+
+  /// True when [deviceFamily] supports a configurable Right-Output (`R-Out`) signal tap.
+  bool get supportsConfigurableRightOutput =>
+      deviceFamily.supportsConfigurableRightOutput;
+
+  /// Normalized Right-Output tap code for this patch (`0` for non-MS+ devices).
+  int get effectiveRightOutputTapCode => supportsConfigurableRightOutput
+      ? RightOutputTap.normalize(rightOutputTapCode, slotCount: slots.length)
+      : RightOutputTap.endOfChain;
 
   /// Checks whether [candidate] matches the effect chain signature of [target],
   /// ignoring volatile fields like [id], [programNumber], and timestamps.
@@ -59,12 +140,18 @@ class Patch {
       return false;
     }
 
-    // 2. Slot count
+    // 2. Right-Output routing tap comparison
+    if (target.effectiveRightOutputTapCode !=
+        candidate.effectiveRightOutputTapCode) {
+      return false;
+    }
+
+    // 3. Slot count
     if (target.slots.length != candidate.slots.length) {
       return false;
     }
 
-    // 3. Effect slots comparison
+    // 4. Effect slots comparison
     for (int i = 0; i < target.slots.length; i++) {
       final slotA = target.slots[i];
       final slotB = candidate.slots[i];
@@ -109,6 +196,7 @@ class Patch {
     DeviceFamily? deviceFamily,
     int? programNumber,
     List<EffectSlot>? slots,
+    int? rightOutputTapCode,
     List<String>? tags,
     String? author,
     String? notes,
@@ -121,6 +209,7 @@ class Patch {
       deviceFamily: deviceFamily ?? this.deviceFamily,
       programNumber: programNumber ?? this.programNumber,
       slots: slots ?? this.slots,
+      rightOutputTapCode: rightOutputTapCode ?? this.rightOutputTapCode,
       tags: tags ?? this.tags,
       author: author ?? this.author,
       notes: notes ?? this.notes,
@@ -136,6 +225,8 @@ class Patch {
         'deviceFamily': deviceFamily.toJson(),
         if (programNumber != null) 'programNumber': programNumber,
         'slots': slots.map((s) => s.toJson()).toList(),
+        if (rightOutputTapCode != RightOutputTap.endOfChain)
+          'rightOutputTapCode': rightOutputTapCode,
         if (tags.isNotEmpty) 'tags': tags,
         if (author != null) 'author': author,
         if (notes != null) 'notes': notes,
@@ -154,6 +245,9 @@ class Patch {
               ?.map((e) => EffectSlot.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
+      rightOutputTapCode:
+          (json['rightOutputTapCode'] as num?)?.toInt() ??
+              RightOutputTap.endOfChain,
       tags: (json['tags'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
@@ -177,6 +271,7 @@ class Patch {
           deviceFamily == other.deviceFamily &&
           programNumber == other.programNumber &&
           listEquals(slots, other.slots) &&
+          rightOutputTapCode == other.rightOutputTapCode &&
           listEquals(tags, other.tags) &&
           author == other.author &&
           notes == other.notes &&
@@ -190,6 +285,7 @@ class Patch {
         deviceFamily,
         programNumber,
         Object.hashAll(slots),
+        rightOutputTapCode,
         Object.hashAll(tags),
         author,
         notes,
@@ -203,5 +299,5 @@ class Patch {
   @override
   String toString() =>
       'Patch(id: $id, name: "$name", family: ${deviceFamily.displayName}, '
-      'prog: $programNumber, slots: ${slots.length}, tags: $tags)';
+      'prog: $programNumber, slots: ${slots.length}, rOut: $rightOutputTapCode, tags: $tags)';
 }

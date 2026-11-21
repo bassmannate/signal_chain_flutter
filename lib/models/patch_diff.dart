@@ -71,6 +71,7 @@ class PatchDiff {
   final Patch target;
   final ({String before, String after})? nameChange;
   final ({int before, int after})? tempoChange;
+  final ({int before, int after})? rightOutputTapChange;
   final List<SlotDiff> slotDiffs;
 
   const PatchDiff({
@@ -78,6 +79,7 @@ class PatchDiff {
     required this.target,
     this.nameChange,
     this.tempoChange,
+    this.rightOutputTapChange,
     this.slotDiffs = const [],
   });
 
@@ -92,6 +94,11 @@ class PatchDiff {
         : null;
     final tempoDiff = base.tempo != target.tempo
         ? (before: base.tempo, after: target.tempo)
+        : null;
+    final baseTap = base.effectiveRightOutputTapCode;
+    final targetTap = target.effectiveRightOutputTapCode;
+    final rightOutputTapDiff = baseTap != targetTap
+        ? (before: baseTap, after: targetTap)
         : null;
 
     final maxSlots = math.max(base.slots.length, target.slots.length);
@@ -187,14 +194,16 @@ class PatchDiff {
       target: target,
       nameChange: nameDiff,
       tempoChange: tempoDiff,
+      rightOutputTapChange: rightOutputTapDiff,
       slotDiffs: List.unmodifiable(slots),
     );
   }
 
-  /// True if any metadata, slot structure, bypass state, or parameter differs.
+  /// True if any metadata, routing tap, slot structure, bypass state, or parameter differs.
   bool get hasChanges =>
       nameChange != null ||
       tempoChange != null ||
+      rightOutputTapChange != null ||
       slotDiffs.any((s) => s.hasChanges);
 
   /// Number of slots with structural, bypass, or parameter changes.
@@ -204,10 +213,11 @@ class PatchDiff {
   int get totalChangedParameters =>
       slotDiffs.fold<int>(0, (sum, s) => sum + s.parameterDiffs.length);
 
-  /// Total count of logical change items (metadata fields + changed slots).
+  /// Total count of logical change items (metadata fields + routing + changed slots).
   int get totalChangeCount =>
       (nameChange != null ? 1 : 0) +
       (tempoChange != null ? 1 : 0) +
+      (rightOutputTapChange != null ? 1 : 0) +
       changedSlotCount;
 
   /// Concise human-readable summary for badges and buttons.

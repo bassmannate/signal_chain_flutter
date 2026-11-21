@@ -93,6 +93,10 @@ enum DeviceFamily {
   /// Returns true if this device speaks the shared Zoom `0x6E` SysEx / PTCF family protocol.
   bool get isZoom6E => isZoomMsPlus || isZoomFour;
 
+  /// Returns true if this hardware supports a configurable Right-Output (`R-Out`)
+  /// signal tap point in the chain (Zoom MS+ series: MS-50G+, MS-60B+, MS-70CDR+, MS-200D+).
+  bool get supportsConfigurableRightOutput => isZoomMsPlus;
+
   /// Hardware capability profile when this family belongs to [DeviceGeneration.zoomFour].
   ZoomFourProfile? get zoomFourProfile => ZoomFourProfile.fromDeviceFamily(this);
 

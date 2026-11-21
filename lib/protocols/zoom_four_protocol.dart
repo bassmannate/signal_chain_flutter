@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../core/midi/midi_message.dart';
 import '../models/device_family.dart';
 import '../models/patch.dart';
 import 'zoom_ms_plus_protocol.dart';
@@ -88,4 +89,13 @@ class ZoomFourProtocol extends ZoomMsPlusProtocol {
       },
     );
   }
+
+  @override
+  MidiMessage? buildRightOutputTapMessage(int tapCode) => null;
+
+  @override
+  bool isRightOutputTapChange(MidiMessage message) => false;
+
+  @override
+  int? parseRightOutputTapChange(MidiMessage message) => null;
 }

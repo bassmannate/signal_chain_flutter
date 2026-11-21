@@ -97,6 +97,10 @@ abstract class DeviceProtocol {
   /// Builds a real-time message to set the active/focused effect slot on the hardware display.
   MidiMessage? buildSlotFocusMessage(int slotIndex) => null;
 
+  /// Builds a real-time message to set the Right-Output (`R-Out`) signal tap point
+  /// on hardware devices that support configurable right-output routing (e.g. Zoom MS+).
+  MidiMessage? buildRightOutputTapMessage(int tapCode) => null;
+
   /// Returns true if [message] is a real-time slot bypass event.
   bool isSlotBypass(MidiMessage message) => false;
 
@@ -108,6 +112,12 @@ abstract class DeviceProtocol {
 
   /// Parses the newly focused slot index from a slot navigation event.
   int? parseSlotFocusChange(MidiMessage message) => null;
+
+  /// Returns true if [message] is a real-time Right-Output (`R-Out`) routing tap change event from hardware.
+  bool isRightOutputTapChange(MidiMessage message) => false;
+
+  /// Parses the Right-Output (`R-Out`) tap code from a hardware routing change event, or null.
+  int? parseRightOutputTapChange(MidiMessage message) => null;
 
   /// Returns true if [message] is a hardware slot change notification (e.g. SysEx 64 26 or PC).
   bool isSlotChange(MidiMessage message) => false;

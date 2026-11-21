@@ -286,6 +286,27 @@ void main() {
       ]));
     });
 
+    test('buildRightOutputTapMessage formats 64 20 00 64 04 <tapCode> 15-byte SysEx and returns null on ZoomFourProtocol', () {
+      final tap5 = protocol.buildRightOutputTapMessage(5);
+      expect(tap5, isNotNull);
+      expect(tap5!.data, equals([
+        0xF0, 0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x64, 0x04, 0x05, 0x00, 0x00, 0x00, 0x00, 0xF7,
+      ]));
+
+      final tap0 = protocol.buildRightOutputTapMessage(0);
+      expect(tap0!.data, equals([
+        0xF0, 0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x64, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7,
+      ]));
+
+      final tap1 = protocol.buildRightOutputTapMessage(1);
+      expect(tap1!.data, equals([
+        0xF0, 0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x64, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0xF7,
+      ]));
+
+      const fourProtocol = ZoomFourProtocol();
+      expect(fourProtocol.buildRightOutputTapMessage(5), isNull);
+    });
+
     test('isSlotFocusChange and parseSlotFocusChange extract focused slot index from hardware Left/Right buttons', () {
       // Hardware Left/Right cursor button press on MS-60B+:
       // F0 52 00 6E 64 20 00 64 01 03 00 00 00 00 F7
@@ -295,9 +316,41 @@ void main() {
       expect(protocol.isSlotFocusChange(focusMsg), isTrue);
       expect(protocol.isSlotBypass(focusMsg), isFalse);
       expect(protocol.isParameterEdit(focusMsg), isFalse);
+      expect(protocol.isRightOutputTapChange(focusMsg), isFalse);
 
       final slotIndex = protocol.parseSlotFocusChange(focusMsg);
       expect(slotIndex, equals(3));
+    });
+
+    test('isRightOutputTapChange and parseRightOutputTapChange decode incoming 64 20 00 64 04 messages and reject ACKs/short/unrelated frames', () {
+      for (final code in [0x00, 0x01, 0x05]) {
+        final msg = MidiMessage.sysEx([
+          0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x64, 0x04, code, 0x00, 0x00, 0x00, 0x00,
+        ]);
+        expect(protocol.isRightOutputTapChange(msg), isTrue);
+        expect(protocol.parseRightOutputTapChange(msg), equals(code));
+        expect(protocol.isSlotFocusChange(msg), isFalse);
+        expect(protocol.isSlotBypass(msg), isFalse);
+        expect(protocol.isParameterEdit(msg), isFalse);
+
+        const fourProtocol = ZoomFourProtocol();
+        expect(fourProtocol.isRightOutputTapChange(msg), isFalse);
+        expect(fourProtocol.parseRightOutputTapChange(msg), isNull);
+      }
+
+      // Rejects ACK (64 20 01 64 04)
+      final ackMsg = MidiMessage.sysEx([
+        0x52, 0x00, 0x6E, 0x64, 0x20, 0x01, 0x64, 0x04, 0x05, 0x00, 0x00, 0x00, 0x00,
+      ]);
+      expect(protocol.isRightOutputTapChange(ackMsg), isFalse);
+      expect(protocol.parseRightOutputTapChange(ackMsg), isNull);
+
+      // Rejects truncated frame (< 15 bytes)
+      final shortMsg = MidiMessage.sysEx([
+        0x52, 0x00, 0x6E, 0x64, 0x20, 0x00, 0x64, 0x04, 0x05,
+      ]);
+      expect(protocol.isRightOutputTapChange(shortMsg), isFalse);
+      expect(protocol.parseRightOutputTapChange(shortMsg), isNull);
     });
 
     test('isSlotBypass and isParameterEdit reject global device-level 0x64 parameters', () {
@@ -308,6 +361,7 @@ void main() {
       expect(protocol.isSlotBypass(tempoMsg), isFalse);
       expect(protocol.isParameterEdit(tempoMsg), isFalse);
       expect(protocol.isSlotFocusChange(tempoMsg), isFalse);
+      expect(protocol.isRightOutputTapChange(tempoMsg), isFalse);
     });
   });
 

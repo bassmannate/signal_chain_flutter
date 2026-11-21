@@ -258,6 +258,7 @@ class PatchLibraryController extends ChangeNotifier {
       deviceFamily: source.deviceFamily,
       programNumber: null,
       slots: source.slots,
+      rightOutputTapCode: source.rightOutputTapCode,
       tags: source.tags,
       author: source.author,
       notes: source.notes,

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../models/patch.dart';
 import '../../models/patch_diff.dart';
 import '../theme/studio_theme.dart';
 
@@ -167,7 +168,9 @@ class _PatchDiffDialogState extends State<PatchDiffDialog> {
                   ),
                 ),
               ] else ...[
-                if (diff.nameChange != null || diff.tempoChange != null) ...[
+                if (diff.nameChange != null ||
+                    diff.tempoChange != null ||
+                    diff.rightOutputTapChange != null) ...[
                   const SizedBox(height: 10),
                   _buildMetadataCard(diff),
                 ],
@@ -253,6 +256,18 @@ class _PatchDiffDialogState extends State<PatchDiffDialog> {
               label: 'Tempo',
               before: '${diff.tempoChange!.before} BPM',
               after: '${diff.tempoChange!.after} BPM',
+            ),
+          if (diff.rightOutputTapChange != null)
+            _DeltaRow(
+              label: 'R-Out Tap',
+              before: RightOutputTap.shortLabel(
+                diff.rightOutputTapChange!.before,
+                slots: diff.base.slots,
+              ),
+              after: RightOutputTap.shortLabel(
+                diff.rightOutputTapChange!.after,
+                slots: diff.target.slots,
+              ),
             ),
         ],
       ),

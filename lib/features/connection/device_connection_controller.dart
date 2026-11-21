@@ -21,6 +21,7 @@ typedef HardwareUpdateHandler = void Function({
   int? programNumber,
   Patch? patch,
   bool? isEnabled,
+  int? rightOutputTapCode,
 });
 
 /// Controller managing MIDI port discovery, device connection lifecycle,
@@ -849,6 +850,15 @@ class DeviceConnectionController extends ChangeNotifier {
       final slotIndex = _activeProtocol.parseSlotFocusChange(message);
       if (slotIndex != null) {
         _hardwareUpdateHandler?.call(slotIndex: slotIndex);
+      }
+      return;
+    }
+
+    // Real-time Right-Output (R-Out) routing tap change from pedal (Zoom MS+ 64 20 00 64 04)
+    if (_activeProtocol.isRightOutputTapChange(message)) {
+      final tapCode = _activeProtocol.parseRightOutputTapChange(message);
+      if (tapCode != null) {
+        _hardwareUpdateHandler?.call(rightOutputTapCode: tapCode);
       }
       return;
     }

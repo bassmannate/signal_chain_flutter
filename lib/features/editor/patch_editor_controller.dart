@@ -797,6 +797,7 @@ class PatchEditorController extends ChangeNotifier {
         deviceFamily: current.deviceFamily,
         programNumber: null,
         slots: current.slots,
+        rightOutputTapCode: current.rightOutputTapCode,
         tags: current.tags,
         author: current.author,
         notes: current.notes,
@@ -972,6 +973,100 @@ class PatchEditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Configures the Zoom MS+ Right-Output (`R-Out`) signal tap point.
+  ///
+  /// Only applies to Zoom MS+ patches (`MS-50G+`, `MS-60B+`, `MS-70CDR+`, `MS-200D+`).
+  /// Tapping after the final slot (`slots.length + 1`) normalizes to `0` (`OUT`).
+  void setRightOutputTap(int tapCode) {
+    final current = _patch;
+    if (current == null || !current.deviceFamily.isZoomMsPlus) {
+      return;
+    }
+
+    final normalized = RightOutputTap.normalize(
+      tapCode,
+      slotCount: current.slots.length,
+    );
+    if (normalized == current.rightOutputTapCode) {
+      return;
+    }
+
+    final previousDirty = _isDirty;
+    final updated = current.copyWith(rightOutputTapCode: normalized);
+    _patch = updated;
+    _isDirty = true;
+    _recordUserEdit(
+      previousPatch: current,
+      previousSelectedSlot: _selectedSlotIndex,
+      previousDirty: previousDirty,
+      label: 'Set R-Out Tap',
+    );
+    _syncRightOutputTapToDevice(updated);
+    notifyListeners();
+  }
+
+  void _syncRightOutputTapToDevice(Patch updated) {
+    if (!transport.isConnected || _isHandlingIncoming) return;
+
+    final msg = protocol.buildRightOutputTapMessage(
+      updated.effectiveRightOutputTapCode,
+    );
+    if (msg == null) return;
+
+    try {
+      unawaited(transport.send(msg));
+    } catch (e) {
+      _errorMessage = 'Failed to sync R-Out tap to device: $e';
+    }
+  }
+
+  int _adjustRightOutputTapForInsert(
+    Patch current,
+    int insertIndex,
+    int newSlotCount,
+  ) {
+    if (!current.deviceFamily.isZoomMsPlus) {
+      return RightOutputTap.endOfChain;
+    }
+    final tap = current.rightOutputTapCode;
+    if (tap < RightOutputTap.minSlotTapCode) {
+      return RightOutputTap.normalize(tap, slotCount: newSlotCount);
+    }
+    final tapSlot = tap - RightOutputTap.minSlotTapCode;
+    final shifted = insertIndex <= tapSlot ? tap + 1 : tap;
+    return RightOutputTap.normalize(shifted, slotCount: newSlotCount);
+  }
+
+  int _adjustRightOutputTapForRemove(
+    Patch current,
+    int removedIndex,
+    int newSlotCount,
+  ) {
+    if (!current.deviceFamily.isZoomMsPlus) {
+      return RightOutputTap.endOfChain;
+    }
+    final tap = current.rightOutputTapCode;
+    if (tap < RightOutputTap.minSlotTapCode) {
+      return RightOutputTap.normalize(tap, slotCount: newSlotCount);
+    }
+    final tapSlot = tap - RightOutputTap.minSlotTapCode;
+    if (tapSlot == removedIndex) {
+      return RightOutputTap.endOfChain;
+    }
+    final shifted = tapSlot > removedIndex ? tap - 1 : tap;
+    return RightOutputTap.normalize(shifted, slotCount: newSlotCount);
+  }
+
+  int _normalizeRightOutputTap(Patch current, int slotCount) {
+    if (!current.deviceFamily.isZoomMsPlus) {
+      return RightOutputTap.endOfChain;
+    }
+    return RightOutputTap.normalize(
+      current.rightOutputTapCode,
+      slotCount: slotCount,
+    );
+  }
+
   /// Toggles the bypass/enable state for the effect slot at [slotIndex].
   void toggleSlotEnabled(int slotIndex) {
     final current = _patch;
@@ -1066,9 +1161,20 @@ class PatchEditorController extends ChangeNotifier {
     final meta = Map<String, dynamic>.from(current.metadata);
     meta['activeEffectSlot'] = insertIndex;
 
+    final nextTapCode = _adjustRightOutputTapForInsert(
+      current,
+      insertIndex,
+      newSlots.length,
+    );
+    final updated = current.copyWith(
+      slots: newSlots,
+      rightOutputTapCode: nextTapCode,
+      metadata: meta,
+    );
+
     final previousSlot = _selectedSlotIndex;
     final previousDirty = _isDirty;
-    _patch = current.copyWith(slots: newSlots, metadata: meta);
+    _patch = updated;
     _isDirty = true;
     _selectedSlotIndex = insertIndex;
     _recordUserEdit(
@@ -1079,6 +1185,9 @@ class PatchEditorController extends ChangeNotifier {
     );
     final affected = [for (int i = insertIndex; i < newSlots.length; i++) i];
     _syncStructureToDevice(affectedSlots: affected);
+    if (nextTapCode != current.rightOutputTapCode) {
+      _syncRightOutputTapToDevice(updated);
+    }
     notifyListeners();
     return true;
   }
@@ -1128,7 +1237,18 @@ class PatchEditorController extends ChangeNotifier {
     final meta = Map<String, dynamic>.from(current.metadata);
     meta['activeEffectSlot'] = _selectedSlotIndex;
 
-    _patch = current.copyWith(slots: newSlots, metadata: meta);
+    final nextTapCode = _adjustRightOutputTapForRemove(
+      current,
+      slotIndex,
+      newSlots.length,
+    );
+    final updated = current.copyWith(
+      slots: newSlots,
+      rightOutputTapCode: nextTapCode,
+      metadata: meta,
+    );
+
+    _patch = updated;
     _isDirty = true;
     _recordUserEdit(
       previousPatch: current,
@@ -1141,6 +1261,9 @@ class PatchEditorController extends ChangeNotifier {
       affectedSlots: affected,
       clearedSlots: [clearedSlotIndex],
     );
+    if (nextTapCode != current.rightOutputTapCode) {
+      _syncRightOutputTapToDevice(updated);
+    }
     notifyListeners();
     return true;
   }
@@ -1186,7 +1309,14 @@ class PatchEditorController extends ChangeNotifier {
     final meta = Map<String, dynamic>.from(current.metadata);
     meta['activeEffectSlot'] = _selectedSlotIndex;
 
-    _patch = current.copyWith(slots: newSlots, metadata: meta);
+    final nextTapCode = _normalizeRightOutputTap(current, newSlots.length);
+    final updated = current.copyWith(
+      slots: newSlots,
+      rightOutputTapCode: nextTapCode,
+      metadata: meta,
+    );
+
+    _patch = updated;
     _isDirty = true;
     _recordUserEdit(
       previousPatch: current,
@@ -1195,6 +1325,9 @@ class PatchEditorController extends ChangeNotifier {
       label: 'Reorder Slots',
     );
     _syncStructureToDevice(affectedSlots: affected);
+    if (nextTapCode != current.rightOutputTapCode) {
+      _syncRightOutputTapToDevice(updated);
+    }
     notifyListeners();
     return true;
   }
@@ -1229,7 +1362,14 @@ class PatchEditorController extends ChangeNotifier {
     final meta = Map<String, dynamic>.from(current.metadata);
     meta['activeEffectSlot'] = _selectedSlotIndex;
 
-    _patch = current.copyWith(slots: newSlots, metadata: meta);
+    final nextTapCode = _normalizeRightOutputTap(current, newSlots.length);
+    final updated = current.copyWith(
+      slots: newSlots,
+      rightOutputTapCode: nextTapCode,
+      metadata: meta,
+    );
+
+    _patch = updated;
     _isDirty = true;
     _recordUserEdit(
       previousPatch: current,
@@ -1238,6 +1378,9 @@ class PatchEditorController extends ChangeNotifier {
       label: 'Swap Slots',
     );
     _syncStructureToDevice(affectedSlots: [indexA, indexB]);
+    if (nextTapCode != current.rightOutputTapCode) {
+      _syncRightOutputTapToDevice(updated);
+    }
     notifyListeners();
     return true;
   }
@@ -1364,8 +1507,8 @@ class PatchEditorController extends ChangeNotifier {
   /// to connected hardware.
   ///
   /// On Zoom MS Plus (`0x6E`), dispatches targeted `64 20 00` slot/parameter/bypass
-  /// deltas (never `64 12 01`). On Line 6 Bass POD Pro (`0x0E41`), dispatches
-  /// `encodePatch`.
+  /// deltas (and when R-Out tap changes, sends `64 20 00 64 04`).
+  /// On Line 6 Bass POD Pro (`0x0E41`), dispatches `encodePatch`.
   void _syncPatchTransitionToDevice(Patch fromPatch, Patch targetPatch) {
     if (!transport.isConnected || _isHandlingIncoming) return;
 
@@ -1439,6 +1582,16 @@ class PatchEditorController extends ChangeNotifier {
       if (focusMsg != null) {
         transport.send(focusMsg);
       }
+
+      if (fromPatch.effectiveRightOutputTapCode !=
+          targetPatch.effectiveRightOutputTapCode) {
+        final tapMsg = protocol.buildRightOutputTapMessage(
+          targetPatch.effectiveRightOutputTapCode,
+        );
+        if (tapMsg != null) {
+          transport.send(tapMsg);
+        }
+      }
     } catch (e) {
       _errorMessage = 'Failed to sync patch transition to device: $e';
     } finally {
@@ -1508,8 +1661,9 @@ class PatchEditorController extends ChangeNotifier {
   }
 
   /// Applies unsolicited incoming hardware events (parameter tweaks, bypass changes,
-  /// patch dump, slot focus changes, or program change) directly to the local model state WITHOUT
-  /// echoing the SysEx message back to hardware (preventing MIDI feedback loops).
+  /// patch dump, slot focus changes, Right-Output routing changes, or program change)
+  /// directly to the local model state WITHOUT echoing the SysEx message back to
+  /// hardware (preventing MIDI feedback loops).
   void applyExternalHardwareUpdate({
     int? slotIndex,
     int? paramIndex,
@@ -1517,6 +1671,7 @@ class PatchEditorController extends ChangeNotifier {
     int? programNumber,
     Patch? patch,
     bool? isEnabled,
+    int? rightOutputTapCode,
   }) {
     // Echo / ACK Safeguard: Do not process echoed feedback during an in-flight structural burst
     if (_isSyncingStructure) return;
@@ -1554,6 +1709,28 @@ class PatchEditorController extends ChangeNotifier {
           _patch = _patch!.copyWith(programNumber: programNumber);
         }
         notifyListeners();
+      }
+      return;
+    }
+
+    if (rightOutputTapCode != null) {
+      final current = _patch;
+      if (current == null || !current.deviceFamily.isZoomMsPlus) {
+        return;
+      }
+      final normalized = RightOutputTap.normalize(
+        rightOutputTapCode,
+        slotCount: current.slots.length,
+      );
+      if (normalized == current.rightOutputTapCode) {
+        return;
+      }
+      _isHandlingIncoming = true;
+      try {
+        _patch = current.copyWith(rightOutputTapCode: normalized);
+        notifyListeners();
+      } finally {
+        _isHandlingIncoming = false;
       }
       return;
     }

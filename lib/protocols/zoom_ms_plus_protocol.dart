@@ -428,6 +428,28 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   }
 
   @override
+  MidiMessage? buildRightOutputTapMessage(int tapCode) {
+    if (defaultFamily.isZoomFour) return null;
+    // Zoom MS Plus: Set Right-Output (R-Out) tap point using 64 20 00 64 04 <tapCode>
+    // F0 52 00 6E 64 20 00 64 04 <tapCode & 0x7F> 00 00 00 00 F7
+    return MidiMessage.sysEx([
+      manufacturerId,
+      0x00,
+      familyIdByte,
+      0x64,
+      cmdParameterEdit,
+      0x00,
+      0x64,
+      0x04,
+      tapCode & 0x7F,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+    ]);
+  }
+
+  @override
   bool isSlotBypass(MidiMessage message) {
     final data = message.data;
     if (!message.isSysEx || data.length < 10) return false;
@@ -472,6 +494,29 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
   @override
   int? parseSlotFocusChange(MidiMessage message) {
     if (!isSlotFocusChange(message)) return null;
+    return message.data[9] & 0x7F;
+  }
+
+  @override
+  bool isRightOutputTapChange(MidiMessage message) {
+    if (defaultFamily.isZoomFour) return false;
+    final data = message.data;
+    if (!message.isSysEx || data.length < 15) return false;
+    if (data[1] != manufacturerId || data[2] != 0x00) return false;
+
+    // Zoom MS Plus Right-Output (R-Out) tap routing:
+    // F0 52 00 6E 64 20 00 64 04 <tapCode> 00 00 00 00 F7
+    return data[3] == familyIdByte &&
+        data[4] == 0x64 &&
+        data[5] == cmdParameterEdit &&
+        data[6] == 0x00 &&
+        data[7] == 0x64 &&
+        data[8] == 0x04;
+  }
+
+  @override
+  int? parseRightOutputTapChange(MidiMessage message) {
+    if (!isRightOutputTapChange(message)) return null;
     return message.data[9] & 0x7F;
   }
 
@@ -727,6 +772,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     String description = '';
     double tempo = 120.0;
     int activeEffectSlot = 0;
+    int rawRightOutputTap = RightOutputTap.endOfChain;
     final List<EffectSlot> slots = [];
 
     final maxScanLength = (ptcfLength > 8 && ptcfLength <= ptcf.length)
@@ -761,6 +807,9 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
           }
           if (chunkData.length > 10) {
             activeEffectSlot = (chunkData[10] & 0xE0) >> 5;
+          }
+          if (!isZoomFourContext && chunkData.length > 13) {
+            rawRightOutputTap = (chunkData[13] >> 1) & 0x07;
           }
           break;
 
@@ -903,12 +952,24 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
       }
     }
 
+    final int resolvedRightOutputTap;
+    if (!isZoomFourContext && resolvedFamily.supportsConfigurableRightOutput) {
+      final effectiveSlotCount = slots.isNotEmpty ? slots.length : numEffects;
+      resolvedRightOutputTap = RightOutputTap.normalize(
+        rawRightOutputTap,
+        slotCount: effectiveSlotCount,
+      );
+    } else {
+      resolvedRightOutputTap = RightOutputTap.endOfChain;
+    }
+
     return Patch(
       id: programNumber != null ? 'zoom_slot_$programNumber' : 'zoom_active_patch',
       name: patchName,
       deviceFamily: resolvedFamily,
       programNumber: programNumber,
       slots: slots,
+      rightOutputTapCode: resolvedRightOutputTap,
       metadata: {
         'tempo': tempo,
         'activeEffectSlot': activeEffectSlot,
@@ -1092,6 +1153,20 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     final slotBits = (maskedPattern >> ((activeSlot + 1) * 4)) & 0xFFFF;
     prm2Bytes[11] = slotBits & 0xFF;
     prm2Bytes[12] = (slotBits >> 8) & 0xFF;
+
+    // Byte 13 bits 1..3: Zoom MS+ Right-Output (R-Out) signal tap code.
+    // Preserves any other bits in prm2Bytes[13] and leaves prm2Bytes[16] untouched.
+    // Writes 0 for Zoom Four patches or End of Chain (0).
+    final isZoomFourEncode =
+        effectiveFamily.isZoomFour || defaultFamily.isZoomFour;
+    final encodedTapCode =
+        (!isZoomFourEncode && effectiveFamily.supportsConfigurableRightOutput)
+            ? RightOutputTap.normalize(
+                patch.rightOutputTapCode,
+                slotCount: numEffects,
+              )
+            : RightOutputTap.endOfChain;
+    prm2Bytes[13] = (prm2Bytes[13] & ~0x0E) | ((encodedTapCode & 0x07) << 1);
 
     // Dynamically compute and populate PRM2 effect category bitmasks based on reordered chain
     int prm2PreampBits = 0;

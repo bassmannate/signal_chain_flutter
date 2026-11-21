@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/effect_slot.dart';
+import '../../models/patch.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
 import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/responsive_layout.dart';
@@ -62,6 +63,11 @@ class SignalChainStripWidget extends StatelessWidget {
           child: Builder(
             builder: (context) {
               final isRtl = controller.connectionController.activeFamily.isSignalChainRightToLeft;
+              final showRightOut = patch.deviceFamily.isZoomMsPlus;
+              final activeTapCode = showRightOut
+                  ? patch.effectiveRightOutputTapCode
+                  : RightOutputTap.endOfChain;
+
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -72,78 +78,101 @@ class SignalChainStripWidget extends StatelessWidget {
                   // Subheader
                   Padding(
                     padding: const EdgeInsets.only(left: 14, right: 14, top: 6, bottom: 2),
-                    child: Row(
-                      children: [
-                        Icon(isRtl ? Icons.arrow_back : Icons.arrow_forward, size: 14, color: Colors.grey),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        'SIGNAL CHAIN (${patch.slots.length} SLOTS)',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.0,
-                          color: Colors.grey,
-                        ),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        alignment: WrapAlignment.spaceBetween,
+                        children: [
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 2,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Icon(
+                                isRtl ? Icons.arrow_back : Icons.arrow_forward,
+                                size: 14,
+                                color: Colors.grey,
+                              ),
+                              Text(
+                                'SIGNAL CHAIN (${patch.slots.length} SLOTS)',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.0,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              const Text(
+                                '• OUT ← IN',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: StudioTheme.colorFilterEq,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (showRightOut)
+                                _buildRightOutSelectorPill(
+                                  patch,
+                                  activeTapCode,
+                                ),
+                              if (patch.programNumber != null)
+                                Text(
+                                  'HARDWARE SLOT #${patch.programNumber!.toString().padLeft(2, '0')}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: StudioTheme.colorFilterEq,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      '• OUT ← IN',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: StudioTheme.colorFilterEq,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (patch.programNumber != null)
-                      Flexible(
-                        child: Text(
-                          'HARDWARE SLOT #${patch.programNumber!.toString().padLeft(2, '0')}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.right,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: StudioTheme.colorFilterEq,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-
-              // Slot Cards, Insertion Zones, & Add Card (Right-to-Left pedalboard order)
-              SizedBox(
-                height: stripHeight + scrollbarGutter,
-                child: HorizontalMouseScrollView(
-                  key: const Key('signal_chain_horizontal_scroll'),
-                  scrollbarGutter: scrollbarGutter,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: isRtl
-                        ? _buildRtlSignalChainElements(
-                            context,
-                            patch.slots,
-                            canAdd,
-                            badgeHeight: badgeHeight,
-                            cardHeight: stripHeight - 12.0,
-                          )
-                        : _buildLtrSignalChainElements(
-                            context,
-                            patch.slots,
-                            canAdd,
-                            badgeHeight: badgeHeight,
-                            cardHeight: stripHeight - 12.0,
-                          ),
                   ),
-                ),
-              ),
+
+                  // Slot Cards, Insertion Zones, & Add Card (Right-to-Left pedalboard order)
+                  SizedBox(
+                    height: stripHeight + scrollbarGutter,
+                    child: HorizontalMouseScrollView(
+                      key: const Key('signal_chain_horizontal_scroll'),
+                      scrollbarGutter: scrollbarGutter,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: isRtl
+                            ? _buildRtlSignalChainElements(
+                                context,
+                                patch,
+                                canAdd,
+                                showRightOut: showRightOut,
+                                activeTapCode: activeTapCode,
+                                badgeHeight: badgeHeight,
+                                cardHeight: stripHeight - 12.0,
+                              )
+                            : _buildLtrSignalChainElements(
+                                context,
+                                patch.slots,
+                                canAdd,
+                                badgeHeight: badgeHeight,
+                                cardHeight: stripHeight - 12.0,
+                              ),
+                      ),
+                    ),
+                  ),
                 ],
               );
             },
@@ -155,16 +184,27 @@ class SignalChainStripWidget extends StatelessWidget {
 
   List<Widget> _buildRtlSignalChainElements(
     BuildContext context,
-    List<EffectSlot> slots,
+    Patch patch,
     bool canAdd, {
+    required bool showRightOut,
+    required int activeTapCode,
     required double badgeHeight,
     required double cardHeight,
   }) {
     final elements = <Widget>[];
+    final slots = patch.slots;
     final numSlots = slots.length;
+    final rightOutPatch = showRightOut ? patch : null;
 
     // 1. Output Jack / Badge (Far Left)
-    elements.add(_buildOutBadge(badgeHeight, isRtl: true));
+    elements.add(
+      _buildOutBadge(
+        badgeHeight,
+        isRtl: true,
+        rightOutPatch: rightOutPatch,
+        activeTapCode: activeTapCode,
+      ),
+    );
 
     // 2. Connector & Add Slot Card (if canAdd)
     if (canAdd) {
@@ -175,7 +215,14 @@ class SignalChainStripWidget extends StatelessWidget {
     // 3. Stompbox slots in RTL order (from slot N-1 down to slot 0) with insertion zones
     for (int i = numSlots - 1; i >= 0; i--) {
       // Insertion zone to the left of slot i (i.e. insertIndex = i + 1)
-      elements.add(_buildInsertionZone(i + 1, badgeHeight: badgeHeight));
+      elements.add(
+        _buildInsertionZone(
+          i + 1,
+          badgeHeight: badgeHeight,
+          rightOutPatch: rightOutPatch,
+          activeTapCode: activeTapCode,
+        ),
+      );
 
       // Stompbox slot i
       final slot = slots[i];
@@ -193,7 +240,14 @@ class SignalChainStripWidget extends StatelessWidget {
     }
 
     // 4. Insertion zone 0 (between slot 0 and IN)
-    elements.add(_buildInsertionZone(0, badgeHeight: badgeHeight));
+    elements.add(
+      _buildInsertionZone(
+        0,
+        badgeHeight: badgeHeight,
+        rightOutPatch: rightOutPatch,
+        activeTapCode: activeTapCode,
+      ),
+    );
 
     // 5. Input Jack / Badge (Far Right)
     elements.add(_buildInBadge(badgeHeight, isRtl: true));
@@ -290,51 +344,190 @@ class SignalChainStripWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildOutBadge(double height, {required bool isRtl}) {
-    return Center(
-      child: Container(
-        width: 56,
-        height: height,
-        margin: isRtl ? const EdgeInsets.only(right: 4) : const EdgeInsets.only(left: 4),
-        decoration: BoxDecoration(
-          color: StudioTheme.surfaceElevated.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: StudioTheme.surfaceBorder),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              isRtl ? Icons.arrow_back : Icons.arrow_forward,
-              size: 18,
-              color: StudioTheme.colorAmpCab,
+  Widget _buildRightOutSelectorPill(Patch patch, int activeTapCode) {
+    final isSplit = activeTapCode != RightOutputTap.endOfChain;
+    final label = RightOutputTap.shortLabel(activeTapCode, slots: patch.slots);
+    final accentColor = isSplit ? StudioTheme.colorFilterEq : Colors.grey.shade400;
+
+    return Tooltip(
+      message: 'Configure Right-Output (R-Out) Signal Tap',
+      child: PopupMenuButton<int>(
+        key: const Key('right_out_tap_selector'),
+        color: StudioTheme.surfaceElevated,
+        onSelected: controller.setRightOutputTap,
+        itemBuilder: (_) => _buildRightOutMenuItems(patch, activeTapCode),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+          decoration: BoxDecoration(
+            color: isSplit
+                ? StudioTheme.colorFilterEq.withValues(alpha: 0.14)
+                : StudioTheme.surfaceElevated.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSplit
+                  ? StudioTheme.colorFilterEq.withValues(alpha: 0.7)
+                  : StudioTheme.surfaceBorder,
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'OUT',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.2,
-                color: StudioTheme.colorAmpCab,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.call_split, size: 11, color: accentColor),
+              const SizedBox(width: 4),
+              Text(
+                'R-OUT: $label',
+                style: TextStyle(
+                  fontSize: 9.5,
+                  height: 1.1,
+                  fontWeight: FontWeight.bold,
+                  color: accentColor,
+                ),
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              'OUTPUT',
-              style: TextStyle(
-                fontSize: 8.5,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade500,
-              ),
-            ),
-          ],
+              const SizedBox(width: 2),
+              Icon(Icons.arrow_drop_down, size: 12, color: accentColor),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildInsertionZone(int insertIndex, {required double badgeHeight}) {
+  List<PopupMenuEntry<int>> _buildRightOutMenuItems(
+    Patch patch,
+    int activeTapCode,
+  ) {
+    final options = <int>[
+      RightOutputTap.endOfChain,
+      RightOutputTap.input,
+      for (int i = 0;
+          i < patch.slots.length - 1 &&
+              RightOutputTap.afterSlot(i) <= RightOutputTap.maxCode;
+          i++)
+        RightOutputTap.afterSlot(i),
+    ];
+
+    return options.map((code) {
+      final isActive = code == activeTapCode;
+      return PopupMenuItem<int>(
+        key: Key('r_out_menu_item_$code'),
+        value: code,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isActive)
+              const Icon(
+                Icons.check,
+                size: 16,
+                color: StudioTheme.colorFilterEq,
+              )
+            else
+              const SizedBox(width: 16),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                RightOutputTap.describe(code, slots: patch.slots),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                  color: isActive ? StudioTheme.colorFilterEq : Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  Widget _buildOutBadge(
+    double height, {
+    required bool isRtl,
+    Patch? rightOutPatch,
+    int activeTapCode = RightOutputTap.endOfChain,
+  }) {
+    final showRightOut = rightOutPatch != null;
+    final isSplit = showRightOut && activeTapCode != RightOutputTap.endOfChain;
+
+    final badge = Container(
+      width: showRightOut ? 64 : 56,
+      height: height,
+      margin: isRtl ? const EdgeInsets.only(right: 4) : const EdgeInsets.only(left: 4),
+      decoration: BoxDecoration(
+        color: StudioTheme.surfaceElevated.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isSplit
+              ? StudioTheme.colorAmpCab.withValues(alpha: 0.65)
+              : StudioTheme.surfaceBorder,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            isRtl ? Icons.arrow_back : Icons.arrow_forward,
+            size: 18,
+            color: StudioTheme.colorAmpCab,
+          ),
+          SizedBox(height: showRightOut ? 6 : 8),
+          Text(
+            showRightOut ? (isSplit ? 'L OUT' : 'L/R OUT') : 'OUT',
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: showRightOut ? 10.5 : 12,
+              fontWeight: FontWeight.bold,
+              letterSpacing: showRightOut ? 0.5 : 1.2,
+              color: StudioTheme.colorAmpCab,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            showRightOut ? (isSplit ? 'LEFT ONLY' : 'OUTPUT') : 'OUTPUT',
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: showRightOut ? 8.0 : 8.5,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade500,
+            ),
+          ),
+          if (showRightOut) ...[
+            const SizedBox(height: 2),
+            Icon(Icons.arrow_drop_down, size: 14, color: Colors.grey.shade400),
+          ],
+        ],
+      ),
+    );
+
+    if (!showRightOut) {
+      return Center(child: badge);
+    }
+
+    return Center(
+      child: Tooltip(
+        message: 'Configure R-Out Signal Tap',
+        child: PopupMenuButton<int>(
+          key: const Key('signal_chain_out_badge'),
+          color: StudioTheme.surfaceElevated,
+          onSelected: controller.setRightOutputTap,
+          itemBuilder: (_) => _buildRightOutMenuItems(rightOutPatch, activeTapCode),
+          child: badge,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInsertionZone(
+    int insertIndex, {
+    required double badgeHeight,
+    Patch? rightOutPatch,
+    int activeTapCode = RightOutputTap.endOfChain,
+  }) {
+    final isRightOutTap = rightOutPatch != null &&
+        activeTapCode >= RightOutputTap.input &&
+        activeTapCode == insertIndex + 1;
+
     return DragTarget<Object>(
       key: Key('insertion_zone_$insertIndex'),
       onWillAcceptWithDetails: (details) {
@@ -363,10 +556,13 @@ class SignalChainStripWidget extends StatelessWidget {
       },
       builder: (context, candidateData, rejectedData) {
         final isHovered = candidateData.isNotEmpty;
+        final width = isRightOutTap
+            ? (isHovered ? 56.0 : 52.0)
+            : (isHovered ? 32.0 : 18.0);
         return AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeInOut,
-          width: isHovered ? 32 : 18,
+          width: width,
           margin: const EdgeInsets.symmetric(horizontal: 2),
           child: Center(
             child: isHovered
@@ -385,9 +581,66 @@ class SignalChainStripWidget extends StatelessWidget {
                       ],
                     ),
                   )
-                : _buildCableConnector(
-                    isRtl: controller.connectionController.activeFamily.isSignalChainRightToLeft,
-                  ),
+                : isRightOutTap
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildCableConnector(
+                            isRtl: controller.connectionController.activeFamily.isSignalChainRightToLeft,
+                          ),
+                          const SizedBox(height: 4),
+                          Tooltip(
+                            message: 'R-Out Signal Tap — click to change',
+                            child: PopupMenuButton<int>(
+                              key: const Key('signal_chain_r_out_badge'),
+                              color: StudioTheme.surfaceElevated,
+                              onSelected: controller.setRightOutputTap,
+                              itemBuilder: (_) => _buildRightOutMenuItems(
+                                rightOutPatch,
+                                activeTapCode,
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: StudioTheme.colorFilterEq.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: StudioTheme.colorFilterEq,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: const Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.call_split,
+                                      size: 13,
+                                      color: StudioTheme.colorFilterEq,
+                                    ),
+                                    SizedBox(height: 2),
+                                    Text(
+                                      'R-OUT',
+                                      maxLines: 1,
+                                      style: TextStyle(
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.4,
+                                        color: StudioTheme.colorFilterEq,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : _buildCableConnector(
+                        isRtl: controller.connectionController.activeFamily.isSignalChainRightToLeft,
+                      ),
           ),
         );
       },

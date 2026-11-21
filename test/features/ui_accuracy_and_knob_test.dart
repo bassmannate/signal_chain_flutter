@@ -77,9 +77,8 @@ void main() {
       final slot0Offset = tester.getTopLeft(find.byKey(const Key('effect_slot_0')));
       final slot1Offset = tester.getTopLeft(find.byKey(const Key('effect_slot_1')));
       final slot2Offset = tester.getTopLeft(find.byKey(const Key('effect_slot_2')));
-      final outOffset = tester.getTopLeft(find.text('OUT'));
+      final outOffset = tester.getTopLeft(find.text('L/R OUT'));
 
-      // In Right-to-Left order:
       // OUT is leftmost < Slot 2 < Slot 1 < Slot 0 < IN is rightmost
       expect(outOffset.dx, lessThan(slot2Offset.dx));
       expect(slot2Offset.dx, lessThan(slot1Offset.dx));
