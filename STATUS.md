@@ -1,12 +1,25 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** v1.2.1 Release Prep & Persistent Android Signing Complete (Milestone 19A Complete)  
-**Active Milestone:** Release 1.2.1 Ready  
-**Last Updated:** 2026-11-20
+**Current Status:** v1.2.2 Release Prep Complete (Unsaved-Changes Protection & Zoom MS+ R-Out Routing)  
+**Active Milestone:** Release 1.2.2 Ready  
+**Last Updated:** 2026-11-21
 
 ---
 
 ## 1. Milestone Roadmap
+
+### 🟢 Milestone 19B: Unsaved-Changes Protection & Zoom MS+ Right-Output (`R-Out`) Tap Routing (v1.2.2)
+*Status:* **Completed**
+- [x] **Unsaved-Changes Protection (`lib/features/editor/unsaved_changes_dialog.dart`, `patch_editor_controller.dart`, `lib/main.dart`):**
+  * Added `UnsavedChangesDialog` and `confirmDiscardOrSaveUnsavedChanges` modal interceptor warning before closing the app (desktop window close via `AppLifecycleListener` / `PopScope`, Android system back) or switching/loading patches (hardware bank slot switch, library preset activation, patch import, and setlist stepping) when unsaved edits are active.
+  * Offers **Save to Library**, **Save to Pedal** (enabled when hardware is connected), **Discard**, and **Cancel** actions with automatic save execution before proceeding.
+- [x] **Zoom MS+ Configurable Right-Output (`R-Out`) Routing (`lib/models/patch.dart`, `lib/protocols/zoom_ms_plus_protocol.dart`, `lib/features/editor/signal_chain_strip_widget.dart`):**
+  * Added `rightOutputTapCode` (`RightOutputTap`) modeling to `Patch`: allows routing the Right-Output signal to End of Chain (`L/R OUT`, code `0`), Input (`IN`, code `slots.length + 1`), or after any active effect slot (`1..slots.length`).
+  * Live bidirectional 15-byte SysEx synchronization (`F0 52 00 6E 64 20 00 64 04 <tapCode> ... F7`) with incoming `isRightOutputTapChange` / `parseRightOutputTapChange` and outgoing `buildRightOutputTapMessage`.
+  * Preserved in `PRM2[13]` PTCF binary bitfields (`((code & 0x07) << 1)`), Raw SysEx dumps, and Signal Chain native JSON.
+  * Interactive UI pill in `SignalChainStripWidget` with popup placement menu, undo/redo support, and structured delta tracking in `PatchDiffDialog`.
+
+---
 
 ### 🟢 Milestone 19A: Zoom B1X FOUR / B1 FOUR Hardware Protocol & Catalog Support (`DeviceGeneration.zoomFour`)
 *Status:* **Completed**

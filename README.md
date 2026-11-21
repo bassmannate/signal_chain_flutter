@@ -36,7 +36,11 @@ Total typed effect catalog coverage: **578** Zoom MS Plus definitions + **99** Z
 
 ---
 
-## Key Features (Through Milestone 19A)
+## Key Features (Through v1.2.2)
+
+- **Unsaved-Changes Protection:** Proactively protects in-progress tone edits with modal warnings before closing the application (desktop Linux/Windows window close, Android system back gesture / back button) or navigating away (switching hardware slots, loading local presets, importing patches, or changing setlists). Prompts with **Save to Library**, **Save to Pedal** (enabled whenever connected to physical hardware), **Discard**, and **Cancel**, ensuring no adjustments are accidentally lost.
+
+- **Zoom MS+ Configurable Right-Output (`R-Out`) Routing:** Full control over the Zoom MS Plus stereo Right-Output signal tap directly in the interactive signal chain strip. Users can place the tap point at the end of the chain (`L/R OUT`), immediately at the input stage (`IN`), or after any arbitrary effect slot (`Slot 1`..`Slot N`). Includes real-time bidirectional 15-byte SysEx synchronization (`64 20 00 64 04`), persistent `PRM2[13]` PTCF/SysEx and JSON serialization, full Undo/Redo integration, and structured `PatchDiffDialog` diff tracking.
 
 - **Zoom Four (`B1X FOUR` / `B1 FOUR`) & Multi-Generation Protocol Support:** Full `ZoomFourProfile`, `ZoomFourProtocol`, `PtcfCodec`, and `ZoomFourCatalog` support enforcing 5 effect slots max, 50 persistent patches numbered `10`–`59` across 5 banks (`10–19` to `50–59`), `hasExpressionPedal` capabilities (`PDL Vol`, `BassWah`, `PDL Reso`, `Ba PDLPit`, `Ba PDLMnP`, `Output VP` on `B1X FOUR` / `G1X FOUR`), strict ZDL7-vs-MS+ catalog isolation, USB/`0x6E` identity disambiguation, and **ToneLib `.zb1f` / `.zg1f`** XML/PTCF export and import alongside `.zptc` / `.ptcf` / `.syx`.
 

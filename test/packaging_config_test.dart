@@ -192,6 +192,7 @@ void main() {
 
       expect(File('$fastlaneDir/changelogs/1.txt').existsSync(), isTrue);
       expect(File('$fastlaneDir/changelogs/2.txt').existsSync(), isTrue);
+      expect(File('$fastlaneDir/changelogs/3.txt').existsSync(), isTrue);
 
       final fastlaneIcon = File('$fastlaneDir/images/icon.png');
       expect(fastlaneIcon.existsSync(), isTrue);

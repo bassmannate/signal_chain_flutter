@@ -1,0 +1,3 @@
+- Unsaved-changes protection warning before quitting the app or switching patches with Save to Library, Save to Pedal, Discard, and Cancel options.
+- Zoom MS Plus configurable Right-Output (R-Out) signal tap routing directly in the signal chain with live bidirectional SysEx sync.
+
