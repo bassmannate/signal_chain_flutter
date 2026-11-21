@@ -5,6 +5,7 @@ import '../../models/device_family.dart';
 import '../../models/patch.dart';
 import '../connection/device_connection_controller.dart';
 import '../editor/patch_editor_controller.dart';
+import '../editor/unsaved_changes_dialog.dart';
 import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/responsive_layout.dart';
 import '../theme/studio_theme.dart';
@@ -1069,6 +1070,7 @@ class _BankManagerDialogState extends State<BankManagerDialog> {
                     if (slotPatch != null && !slot.isEmpty)
                       const Icon(Icons.drag_indicator, size: 15, color: Colors.grey),
                     IconButton(
+                      key: Key('bank_manager_load_slot_${slot.index}_button'),
                       icon: const Icon(
                         Icons.play_arrow,
                         size: 16,
@@ -1077,7 +1079,21 @@ class _BankManagerDialogState extends State<BankManagerDialog> {
                       tooltip: 'Load into Editor',
                       visualDensity: VisualDensity.compact,
                       onPressed: isConnected
-                          ? () => widget.editorController.loadPatchFromDeviceSlot(slot.index)
+                          ? () async {
+                              final confirmed =
+                                  await confirmDiscardOrSaveUnsavedChanges(
+                                context: context,
+                                editorController: widget.editorController,
+                                libraryController: widget.libraryController,
+                                connectionController:
+                                    widget.connectionController,
+                                actionDescription:
+                                    'load Hardware Slot #${slot.formattedSlotIndex}',
+                              );
+                              if (!confirmed || !context.mounted) return;
+                              await widget.editorController
+                                  .loadPatchFromDeviceSlot(slot.index);
+                            }
                           : null,
                     ),
                   ],

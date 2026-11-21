@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/midi/midi_port_descriptor.dart';
 import '../../models/device_family.dart';
 import '../editor/patch_editor_controller.dart';
+import '../editor/unsaved_changes_dialog.dart';
 import '../library/patch_library_controller.dart';
 import '../setlist/setlist_controller.dart';
 import '../theme/studio_theme.dart';
@@ -16,6 +17,7 @@ class ConnectionBarWidget extends StatelessWidget {
   final PatchLibraryController libraryController;
   final SetlistController? setlistController;
   final VoidCallback? onToggleLibrary;
+  final Future<void> Function()? onTogglePerformanceMode;
 
   const ConnectionBarWidget({
     super.key,
@@ -24,6 +26,7 @@ class ConnectionBarWidget extends StatelessWidget {
     required this.libraryController,
     this.setlistController,
     this.onToggleLibrary,
+    this.onTogglePerformanceMode,
   });
 
   @override
@@ -240,7 +243,13 @@ class ConnectionBarWidget extends StatelessWidget {
                     padding: buttonPadding,
                     visualDensity: isCompact ? VisualDensity.compact : VisualDensity.standard,
                   ),
-                  onPressed: () => setlistController!.togglePerformanceMode(),
+                  onPressed: () {
+                    if (onTogglePerformanceMode != null) {
+                      onTogglePerformanceMode!();
+                    } else {
+                      _togglePerformanceMode(context);
+                    }
+                  },
                 ),
             ];
 
@@ -434,6 +443,22 @@ class ConnectionBarWidget extends StatelessWidget {
     );
   }
 
+  Future<void> _togglePerformanceMode(BuildContext context) async {
+    final setlist = setlistController;
+    if (setlist == null) return;
+    if (!setlist.isPerformanceModeActive) {
+      final confirmed = await confirmDiscardOrSaveUnsavedChanges(
+        context: context,
+        editorController: editorController,
+        libraryController: libraryController,
+        connectionController: connectionController,
+        actionDescription: 'enter Stage Mode',
+      );
+      if (!confirmed || !context.mounted) return;
+    }
+    setlist.togglePerformanceMode();
+  }
+
   Future<void> _saveCurrentToLibrary(BuildContext context) async {
     final current = editorController.patch;
     if (current == null) return;
@@ -441,6 +466,7 @@ class ConnectionBarWidget extends StatelessWidget {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await libraryController.savePatch(current);
+      editorController.markSaved();
       if (context.mounted) {
         messenger.showSnackBar(
           SnackBar(

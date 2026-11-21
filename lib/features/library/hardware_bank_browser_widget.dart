@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../core/storage/in_memory_patch_library_repository.dart';
 import '../../models/bank_slot_descriptor.dart';
 import '../../models/device_family.dart';
 import '../connection/device_connection_controller.dart';
 import '../editor/patch_editor_controller.dart';
+import '../editor/unsaved_changes_dialog.dart';
 import '../editor/write_to_slot_dialog.dart';
 import '../theme/studio_theme.dart';
 import 'bank_manager_dialog.dart';
@@ -37,10 +39,19 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   int? _loadingSlotIndex;
+  PatchLibraryController? _fallbackLibraryController;
+
+  PatchLibraryController get _resolvedLibraryController =>
+      widget.libraryController ??
+      widget.editorController.libraryController ??
+      (_fallbackLibraryController ??= PatchLibraryController(
+        repository: InMemoryPatchLibraryRepository(),
+      ));
 
   @override
   void dispose() {
     _searchController.dispose();
+    _fallbackLibraryController?.dispose();
     super.dispose();
   }
 
@@ -582,6 +593,15 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
   }
 
   Future<void> _loadSlot(int slotIndex) async {
+    final confirmed = await confirmDiscardOrSaveUnsavedChanges(
+      context: context,
+      editorController: widget.editorController,
+      libraryController: _resolvedLibraryController,
+      connectionController: widget.connectionController,
+      actionDescription: 'load Hardware Slot $slotIndex',
+    );
+    if (!confirmed || !mounted) return;
+
     setState(() => _loadingSlotIndex = slotIndex);
     try {
       await widget.editorController.loadPatchFromDeviceSlot(slotIndex);

@@ -12,6 +12,7 @@ import '../../models/device_family.dart';
 import '../../models/patch_diff.dart';
 import '../editor/patch_diff_dialog.dart';
 import '../editor/patch_editor_controller.dart';
+import '../editor/unsaved_changes_dialog.dart';
 import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/studio_theme.dart';
 import 'patch_library_controller.dart';
@@ -273,6 +274,18 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
     final selected = _selectedEntries;
     if (selected.isEmpty) return;
 
+    if (_alsoLoadIntoEditor && selected.length == 1) {
+      final confirmed = await confirmDiscardOrSaveUnsavedChanges(
+        context: context,
+        editorController: widget.editorController,
+        libraryController: widget.libraryController,
+        connectionController: widget.editorController.connectionController,
+        actionDescription:
+            'load "${selected.first.patch.name}" into the editor',
+      );
+      if (!confirmed || !mounted) return;
+    }
+
     setState(() => _isBusy = true);
     try {
       final saved = await widget.libraryController.importEntries(selected);
@@ -315,6 +328,15 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
     if (selected.length != 1) return;
 
     final entry = selected.first;
+    final confirmed = await confirmDiscardOrSaveUnsavedChanges(
+      context: context,
+      editorController: widget.editorController,
+      libraryController: widget.libraryController,
+      connectionController: widget.editorController.connectionController,
+      actionDescription: 'load "${entry.patch.name}" into the editor',
+    );
+    if (!confirmed || !mounted) return;
+
     var patchToLoad = entry.patch;
 
     setState(() => _isBusy = true);

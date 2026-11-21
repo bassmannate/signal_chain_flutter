@@ -90,9 +90,22 @@ class PatchEditorController extends ChangeNotifier {
   int get bankRestoreCompletedCount => _bankRestoreCompletedCount;
   int get bankRestoreTotalCount => _bankRestoreTotalCount;
 
+  /// Currently bound library controller, if set.
+  PatchLibraryController? get libraryController => _libraryController;
+
   /// Binds an optional [PatchLibraryController] for "Save Copy As..." duplication.
   void setLibraryController(PatchLibraryController? libraryController) {
     _libraryController = libraryController;
+  }
+
+  /// Marks the active patch as saved, clearing [isDirty] and updating
+  /// the Compare Slot A baseline snapshot.
+  void markSaved() {
+    _isDirty = false;
+    if (_patch != null) {
+      _compareSlotA = _patch;
+    }
+    notifyListeners();
   }
 
   /// Resolved protocol engine from [connectionController].
@@ -703,6 +716,9 @@ class PatchEditorController extends ChangeNotifier {
       return;
     }
 
+    final isExternalPatch =
+        _isRestoringBank || (patchToSave != null && !identical(patchToSave, _patch));
+
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -731,9 +747,12 @@ class PatchEditorController extends ChangeNotifier {
       }
 
       final updated = target.copyWith(programNumber: slotIndex);
-      _patch = updated;
-      _isDirty = false;
-      connectionController.setActiveHardwareSlotIndex(slotIndex);
+      if (!isExternalPatch) {
+        _patch = updated;
+        _isDirty = false;
+        _compareSlotA = updated;
+        connectionController.setActiveHardwareSlotIndex(slotIndex);
+      }
       connectionController.updateBankSlot(
         slotIndex,
         patchName: updated.name,

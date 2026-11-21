@@ -5,6 +5,7 @@ import '../../models/patch.dart';
 import '../../models/patch_diff.dart';
 import '../editor/patch_diff_dialog.dart';
 import '../editor/patch_editor_controller.dart';
+import '../editor/unsaved_changes_dialog.dart';
 import '../editor/write_to_slot_dialog.dart';
 import '../setlist/setlist_browser_widget.dart';
 import '../setlist/setlist_controller.dart';
@@ -814,7 +815,15 @@ class _PatchLibraryDrawerOrPanelState extends State<PatchLibraryDrawerOrPanel> {
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  onPressed: () {
+                  onPressed: () async {
+                    final confirmed = await confirmDiscardOrSaveUnsavedChanges(
+                      context: context,
+                      editorController: editorController,
+                      libraryController: libraryController,
+                      connectionController: editorController.connectionController,
+                      actionDescription: 'load "${patch.name}"',
+                    );
+                    if (!confirmed || !context.mounted) return;
                     libraryController.loadIntoEditor(patch, editorController);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(

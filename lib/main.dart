@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,6 +26,7 @@ import 'features/editor/effect_bank_palette_widget.dart';
 import 'features/editor/patch_editor_controller.dart';
 import 'features/editor/signal_chain_strip_widget.dart';
 import 'features/editor/slot_inspector_widget.dart';
+import 'features/editor/unsaved_changes_dialog.dart';
 import 'features/library/patch_library_controller.dart';
 import 'features/library/patch_library_drawer_or_panel.dart';
 import 'features/setlist/setlist_controller.dart';
@@ -79,7 +81,10 @@ class _SignalChainAppState extends State<SignalChainApp> {
   late final PatchLibraryController _libraryController;
   late final SetlistController _setlistController;
 
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  AppLifecycleListener? _lifecycleListener;
+  bool _isHandlingExitRequest = false;
   int _activeEditorTabIndex = 0;
 
   @override
@@ -176,10 +181,57 @@ class _SignalChainAppState extends State<SignalChainApp> {
     if (!_isRunningInWidgetTest && widget.libraryRepository == null) {
       _seedStorageIfEmpty(zoomSample, line6Sample);
     }
+
+    _lifecycleListener = AppLifecycleListener(
+      onExitRequested: _handleExitRequested,
+    );
+  }
+
+  Future<AppExitResponse> _handleExitRequested() async {
+    if (!_editorController.isDirty) {
+      return AppExitResponse.exit;
+    }
+    if (_isHandlingExitRequest) {
+      return AppExitResponse.cancel;
+    }
+    final dialogContext =
+        _navigatorKey.currentState?.overlay?.context ??
+        _scaffoldKey.currentContext;
+    if (dialogContext == null || !dialogContext.mounted) {
+      return AppExitResponse.exit;
+    }
+    _isHandlingExitRequest = true;
+    try {
+      final confirmed = await confirmDiscardOrSaveUnsavedChanges(
+        context: dialogContext,
+        editorController: _editorController,
+        libraryController: _libraryController,
+        connectionController: _connectionController,
+        actionDescription: 'quit Signal Chain',
+      );
+      return confirmed ? AppExitResponse.exit : AppExitResponse.cancel;
+    } finally {
+      _isHandlingExitRequest = false;
+    }
+  }
+
+  Future<void> _toggleStageMode(BuildContext context) async {
+    if (!_setlistController.isPerformanceModeActive) {
+      final confirmed = await confirmDiscardOrSaveUnsavedChanges(
+        context: context,
+        editorController: _editorController,
+        libraryController: _libraryController,
+        connectionController: _connectionController,
+        actionDescription: 'enter Stage Mode',
+      );
+      if (!confirmed || !mounted) return;
+    }
+    _setlistController.togglePerformanceMode();
   }
 
   @override
   void dispose() {
+    _lifecycleListener?.dispose();
     if (widget.transport == null) {
       _transport.dispose();
     }
@@ -436,6 +488,7 @@ class _SignalChainAppState extends State<SignalChainApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'Signal Chain Studio',
       debugShowCheckedModeBanner: false,
       theme: StudioTheme.darkTheme,
@@ -492,7 +545,35 @@ class _SignalChainAppState extends State<SignalChainApp> {
         },
         child: Focus(
           autofocus: true,
-          child: Scaffold(
+          child: ListenableBuilder(
+            listenable: _editorController,
+            builder: (context, child) => PopScope(
+              canPop: !_editorController.isDirty,
+              onPopInvokedWithResult: (didPop, _) async {
+                if (didPop || _isHandlingExitRequest) return;
+                final navContext =
+                    _navigatorKey.currentState?.overlay?.context ??
+                    _scaffoldKey.currentContext ??
+                    context;
+                _isHandlingExitRequest = true;
+                try {
+                  final confirmed = await confirmDiscardOrSaveUnsavedChanges(
+                    context: navContext,
+                    editorController: _editorController,
+                    libraryController: _libraryController,
+                    connectionController: _connectionController,
+                    actionDescription: 'quit Signal Chain',
+                  );
+                  if (confirmed) {
+                    await SystemNavigator.pop();
+                  }
+                } finally {
+                  _isHandlingExitRequest = false;
+                }
+              },
+              child: child!,
+            ),
+            child: Scaffold(
         key: _scaffoldKey,
         endDrawer: Builder(
           builder: (context) {
@@ -632,6 +713,7 @@ class _SignalChainAppState extends State<SignalChainApp> {
                         onToggleLibrary: showLibraryPanel
                             ? null
                             : () => _scaffoldKey.currentState?.openEndDrawer(),
+                        onTogglePerformanceMode: () => _toggleStageMode(context),
                       ),
                       Expanded(
                         child: showDockedLibrary
@@ -657,6 +739,7 @@ class _SignalChainAppState extends State<SignalChainApp> {
           ),
         ),
         ),
+      ),
       ),
     ),
     );

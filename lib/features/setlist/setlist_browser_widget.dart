@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/patch.dart';
 import '../../models/setlist.dart';
+import '../editor/unsaved_changes_dialog.dart';
 import '../theme/studio_theme.dart';
 import 'setlist_controller.dart';
 
@@ -156,9 +157,22 @@ class SetlistBrowserWidget extends StatelessWidget {
                       ),
                       onPressed: active.entries.isEmpty
                           ? null
-                          : () {
+                          : () async {
+                              final confirmed =
+                                  await confirmDiscardOrSaveUnsavedChanges(
+                                context: context,
+                                editorController:
+                                    setlistController.editorController,
+                                libraryController:
+                                    setlistController.libraryController,
+                                connectionController:
+                                    setlistController.connectionController,
+                                actionDescription: 'enter Stage Mode',
+                              );
+                              if (!confirmed || !context.mounted) return;
                               setlistController.setPerformanceModeActive(true);
-                              if (Scaffold.maybeOf(context)?.isEndDrawerOpen ?? false) {
+                              if (Scaffold.maybeOf(context)?.isEndDrawerOpen ??
+                                  false) {
                                 Navigator.of(context).pop();
                               }
                             },
@@ -245,7 +259,17 @@ class SetlistBrowserWidget extends StatelessWidget {
     return InkWell(
       key: Key('setlist_entry_${entry.id}'),
       borderRadius: BorderRadius.circular(8),
-      onTap: () => setlistController.selectEntryAt(index),
+      onTap: () async {
+        final confirmed = await confirmDiscardOrSaveUnsavedChanges(
+          context: context,
+          editorController: setlistController.editorController,
+          libraryController: setlistController.libraryController,
+          connectionController: setlistController.connectionController,
+          actionDescription: 'load "$title"',
+        );
+        if (!confirmed || !context.mounted) return;
+        await setlistController.selectEntryAt(index);
+      },
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
