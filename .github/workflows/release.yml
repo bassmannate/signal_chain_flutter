@@ -66,19 +66,31 @@ jobs:
       - name: Configure Android Release Signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
-            echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/release-keystore.jks"
-            echo "ANDROID_KEYSTORE_PATH=${RUNNER_TEMP}/release-keystore.jks" >> "${GITHUB_ENV}"
-            echo "Configured release keystore for Android APK signing."
-          else
-            echo "ANDROID_KEYSTORE_BASE64 not set; falling back to debug signing config."
-          fi
-      - name: Build Android Release APK
-        env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is missing. Refusing to build a debug-signed release APK."
+            exit 1
+          fi
+          if [ -z "${ANDROID_KEYSTORE_PASSWORD}" ] || [ -z "${ANDROID_KEY_ALIAS}" ] || [ -z "${ANDROID_KEY_PASSWORD}" ]; then
+            echo "::error::One or more Android signing secrets (ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD) are missing."
+            exit 1
+          fi
+          echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > android/app/release-keystore.jks
+          if [ ! -s android/app/release-keystore.jks ]; then
+            echo "::error::Decoded android/app/release-keystore.jks is empty."
+            exit 1
+          fi
+          {
+            printf 'storeFile=release-keystore.jks\n'
+            printf 'storePassword=%s\n' "${ANDROID_KEYSTORE_PASSWORD}"
+            printf 'keyAlias=%s\n' "${ANDROID_KEY_ALIAS}"
+            printf 'keyPassword=%s\n' "${ANDROID_KEY_PASSWORD}"
+          } > android/key.properties
+          echo "Configured persistent release keystore for Android APK signing."
+      - name: Build Android Release APK
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           flutter build apk --release --no-pub --android-skip-build-dependency-validation
@@ -86,7 +98,7 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk "dist/signal-chain-${VERSION}-android.apk"
       - name: Clean Up Temporary Keystore
         if: always()
-        run: rm -f "${RUNNER_TEMP}/release-keystore.jks"
+        run: rm -f android/app/release-keystore.jks android/key.properties
       - uses: actions/upload-artifact@v4
         with:
           name: android-artifacts

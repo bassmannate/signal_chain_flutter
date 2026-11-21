@@ -1,8 +1,8 @@
 # PowerShell Script to Package Windows Portable Release Archive
-# Usage: powershell -ExecutionPolicy Bypass -File .\tool\package_windows_zip.ps1 [-Version "1.1.0"]
+# Usage: powershell -ExecutionPolicy Bypass -File .\tool\package_windows_zip.ps1 [-Version "1.2.1"]
 
 param(
-    [string]$Version = "1.1.0"
+    [string]$Version = "1.2.1"
 )
 
 $ErrorActionPreference = "Stop"

@@ -88,7 +88,8 @@ Because the project uses **zero external `pub.dev` packages**, all Flutter comma
 - **Windows portable ZIP packaging:**
   - `./tool/package_windows_zip.ps1`
 - **Automated GitHub Releases:**
-  - Pushing a `v*.*.*` tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which runs `flutter analyze --no-pub` and `flutter test --no-pub`, builds Linux (`.deb` and `.AppImage`), Android (`signal-chain-<version>-android.apk`, with optional release keystore signing and F-Droid reproducible build configuration), and Windows (`.zip`) artifacts, generates `SHA256SUMS.txt`, and publishes the GitHub Release via `softprops/action-gh-release@v3`.
+  - Pushing a `v*.*.*` tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which runs `flutter analyze --no-pub` and `flutter test --no-pub`, builds Linux (`.deb` and `.AppImage`), Android (`signal-chain-<version>-android.apk`, signed persistently via `ANDROID_KEYSTORE_BASE64` → `android/app/release-keystore.jks` + `android/key.properties`, with F-Droid reproducible build configuration), and Windows (`.zip`) artifacts, generates `SHA256SUMS.txt`, and publishes the GitHub Release via `softprops/action-gh-release@v3`.
+  - **Android APK Signing & In-Place Upgrades:** CI release builds require `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` secrets and fail if missing so debug-signed APKs are never published; local developer builds fall back to `signingConfigs.debug` only when `android/key.properties` is absent. Starting with `v1.2.1`, release APKs use a persistent signing key so future upgrades install cleanly in place without losing local presets or setlists (if upgrading from an earlier debug-signed pre-`1.2.1` APK, export your library and uninstall the older build once before installing `v1.2.1`).
 - **Static analysis & tests:**
   ```bash
   flutter analyze --no-pub
