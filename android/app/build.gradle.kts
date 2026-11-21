@@ -10,22 +10,8 @@ plugins {
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+    FileInputStream(keystorePropertiesFile).use { keystoreProperties.load(it) }
 }
-
-val releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
-    ?: keystoreProperties.getProperty("storeFile")
-val releaseKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-    ?: keystoreProperties.getProperty("storePassword")
-val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
-    ?: keystoreProperties.getProperty("keyAlias")
-val releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
-    ?: keystoreProperties.getProperty("keyPassword")
-val hasReleaseSigning = !releaseKeystorePath.isNullOrBlank() &&
-    file(releaseKeystorePath).exists() &&
-    !releaseKeystorePassword.isNullOrBlank() &&
-    !releaseKeyAlias.isNullOrBlank() &&
-    !releaseKeyPassword.isNullOrBlank()
 
 android {
     namespace = "com.bassmannate.signal_chain_flutter"
@@ -52,21 +38,22 @@ android {
     }
 
     signingConfigs {
-        if (hasReleaseSigning) {
+        if (keystorePropertiesFile.exists()) {
             create("release") {
-                storeFile = file(releaseKeystorePath!!)
-                storePassword = releaseKeystorePassword
-                keyAlias = releaseKeyAlias
-                keyPassword = releaseKeyPassword
+                storeFile = keystoreProperties.getProperty("storeFile")?.let { file(it) }
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
             }
         }
     }
 
     buildTypes {
         release {
-            // Use dedicated release keystore when configured; fall back safely to debug signing
-            // for local builds and community forks without CI secrets.
-            signingConfig = if (hasReleaseSigning) {
+            // Sign with the release keystore when android/key.properties exists;
+            // fall back to debug signing ONLY when android/key.properties is absent
+            // so local developer builds without the release key still compile.
+            signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")

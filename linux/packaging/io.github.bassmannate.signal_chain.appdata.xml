@@ -33,6 +33,16 @@
   </provides>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="1.2.1" date="2026-11-20">
+      <description>
+        <p>Configure persistent Android release signing for in-place APK upgrades, add inline tempo entry, and polish desktop scrolling and filters.</p>
+      </description>
+    </release>
+    <release version="1.2.0" date="2026-11-14">
+      <description>
+        <p>Add Zoom B1X FOUR / B1 FOUR protocol and catalog support, Landscape Stage Mode dashboard, hardware tuner toggle, drag-and-drop Bank Manager, and Windows WinMM MIDI transport.</p>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-11-12">
       <description>
         <p>Release 1.1.0.</p>

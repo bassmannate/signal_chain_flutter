@@ -1,8 +1,8 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** Milestone 19A Complete (Zoom B1X FOUR / B1 FOUR Hardware Protocol, Catalog & ToneLib .zb1f Support)  
-**Active Milestone:** Milestone 19A Complete  
-**Last Updated:** 2026-11-14
+**Current Status:** v1.2.1 Release Prep & Persistent Android Signing Complete (Milestone 19A Complete)  
+**Active Milestone:** Release 1.2.1 Ready  
+**Last Updated:** 2026-11-20
 
 ---
 
@@ -118,8 +118,8 @@
   * Updated `AndroidManifest.xml` to `android:label="Signal Chain"` and `android:roundIcon="@mipmap/ic_launcher_round"`.
   * Generated `mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}/ic_launcher.png` & `ic_launcher_round.png` (`48/72/96/144/192` px) and `fastlane/metadata/android/en-US/images/icon.png` (`512×512` px) via `tool/generate_android_icons.py`, plus `mipmap-anydpi-v26/ic_launcher*.xml` adaptive/monochrome layers, `drawable/ic_launcher_foreground.xml`, `values/colors.xml` (`#121318`), and dark `launch_background.xml`.
 - [x] **Android Release Signing, F-Droid Reproducible Builds & CI Artifact Naming (`android/app/build.gradle.kts`, `.github/workflows/release.yml`, `fastlane/metadata/android/en-US/`):**
-  * Added env/property-driven release signing with safe debug fallback and `dependenciesInfo { includeInApk = false; includeInBundle = false }`.
-  * Added optional `ANDROID_KEYSTORE_BASE64` decoding/cleanup in `.github/workflows/release.yml` outputting `dist/signal-chain-${VERSION}-android.apk`, and created `fastlane/metadata/android/en-US/` listings & changelogs.
+  * Added `android/key.properties` release signing with debug fallback only when `key.properties` is absent, and `dependenciesInfo { includeInApk = false; includeInBundle = false }`.
+  * Added required `ANDROID_KEYSTORE_BASE64` decoding to `android/app/release-keystore.jks` + `android/key.properties` generation and cleanup in `.github/workflows/release.yml` (failing loudly if secrets are missing) outputting `dist/signal-chain-${VERSION}-android.apk`, and created `fastlane/metadata/android/en-US/` listings & changelogs.
 - [x] **Live Performance Setlist Mode (`lib/models/setlist.dart`, `lib/core/storage/`, `lib/features/setlist/`):**
   * Implemented `Setlist` & `SetlistEntry` models, `SetlistRepository` (`InMemorySetlistRepository` & atomic `FileSystemSetlistRepository`), `PatchEditorController.activatePatchLive`, and `SetlistController` (live `64 20 00` / `encodePatch` dispatch, missing-preset & device-mismatch guards, and debounced incoming MIDI PC/CC foot-controller stepping).
   * Built `SetlistBrowserWidget` (`Setlists` tab + `"Add to Setlist"` in `PatchLibraryDrawerOrPanel`) and high-contrast `SetlistPerformanceView` Stage Mode (`Stage Mode` toggle in `ConnectionBarWidget`, `◄ PREVIOUS` / `NEXT ►` stepping, live stompbox bypasses, and desktop arrow shortcuts).

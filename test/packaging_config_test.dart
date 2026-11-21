@@ -160,13 +160,21 @@ void main() {
       expect(gradleContent, contains('dependenciesInfo'));
       expect(gradleContent, contains('includeInApk = false'));
       expect(gradleContent, contains('includeInBundle = false'));
-      expect(gradleContent, contains('ANDROID_KEYSTORE_PATH'));
+      expect(gradleContent, contains('rootProject.file("key.properties")'));
+      expect(gradleContent, contains('getProperty("storeFile")'));
+      expect(gradleContent, contains('getProperty("storePassword")'));
+      expect(gradleContent, contains('getProperty("keyAlias")'));
+      expect(gradleContent, contains('getProperty("keyPassword")'));
+      expect(gradleContent, contains('signingConfigs.getByName("release")'));
       expect(gradleContent, contains('signingConfigs.getByName("debug")'));
 
       final releaseYml = File('$projectRoot/.github/workflows/release.yml');
       final releaseContent = releaseYml.readAsStringSync();
       expect(releaseContent, contains('signal-chain-\${VERSION}-android.apk'));
       expect(releaseContent, contains('ANDROID_KEYSTORE_BASE64'));
+      expect(releaseContent, contains('android/app/release-keystore.jks'));
+      expect(releaseContent, contains('android/key.properties'));
+      expect(releaseContent, contains('exit 1'));
 
       final fastlaneDir = '$projectRoot/fastlane/metadata/android/en-US';
       final titleFile = File('$fastlaneDir/title.txt');
