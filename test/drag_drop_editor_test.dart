@@ -269,7 +269,26 @@ void main() {
       // Verify search input exists
       expect(find.byKey(const Key('palette_search_input')), findsOneWidget);
 
-      // Open category dropdown and verify all category options exist
+      // Open category dropdown and verify dynamic MS-60B+ category options exist
+      final dropdownWidget = tester.widget<DropdownButton<String>>(dropdownFinder);
+      expect(
+        dropdownWidget.items!.map((item) => item.value).toList(),
+        equals(const [
+          'All',
+          'Dynamics',
+          'Filter',
+          'Overdrive/Distortion',
+          'Preamp',
+          'Amps',
+          'Modulation',
+          'Pitch',
+          'Synths',
+          'SFX',
+          'Delay',
+          'Reverb',
+        ]),
+      );
+
       await tester.tap(dropdownFinder);
       await tester.pumpAndSettle();
 
@@ -277,19 +296,42 @@ void main() {
         'All',
         'Dynamics',
         'Filter',
-        'Drive',
-        'Amp',
-        'Cabinet',
+        'Overdrive/Distortion',
+        'Preamp',
+        'Amps',
         'Modulation',
+        'Pitch',
+        'Synths',
         'SFX',
         'Delay',
         'Reverb',
       ]) {
-        expect(find.byKey(Key('palette_category_item_$cat')), findsWidgets);
+        final itemFinder = find.byKey(Key('palette_category_item_$cat'));
+        if (itemFinder.evaluate().isEmpty) {
+          await tester.scrollUntilVisible(
+            itemFinder,
+            100.0,
+            scrollable: find.byType(Scrollable).last,
+          );
+          await tester.pumpAndSettle();
+        }
+        expect(itemFinder, findsWidgets);
       }
+      expect(find.byKey(const Key('palette_category_item_Cabinet')), findsNothing);
 
-      // Filter by Dynamics category
-      await tester.tap(find.byKey(const Key('palette_category_item_Dynamics')).last);
+      // Filter by Dynamics category (scroll back up if needed)
+      final dynamicsFinder = find.byKey(const Key('palette_category_item_Dynamics'));
+      if (dynamicsFinder.evaluate().isEmpty) {
+        await tester.scrollUntilVisible(
+          dynamicsFinder,
+          -100.0,
+          scrollable: find.byType(Scrollable).last,
+        );
+        await tester.pumpAndSettle();
+      }
+      await tester.ensureVisible(dynamicsFinder.last);
+      await tester.pumpAndSettle();
+      await tester.tap(dynamicsFinder.last);
       await tester.pumpAndSettle();
       expect(find.text('Dynamics'), findsOneWidget);
 

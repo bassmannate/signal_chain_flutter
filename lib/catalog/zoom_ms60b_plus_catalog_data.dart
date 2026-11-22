@@ -385,7 +385,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x02000010",
     name: "BassA-Wah",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -423,7 +423,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x02000020",
     name: "EnvFilter",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -461,7 +461,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x02000030",
     name: "A-Filter",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -500,7 +500,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x02000040",
     name: "Z TronFLT",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -538,7 +538,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x02000050",
     name: "Bass Cry",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -577,7 +577,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x02000060",
     name: "EG Filter",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -636,7 +636,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x02000070",
     name: "SeqFLTR",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -676,7 +676,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x02000080",
     name: "BassGEQ",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -761,7 +761,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x02000090",
     name: "St Ba GEQ",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -846,7 +846,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x020000A0",
     name: "BassPEQ",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -888,7 +888,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x020000B0",
     name: "Low EQ",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -930,7 +930,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x020000C0",
     name: "High EQ",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -972,7 +972,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x020000D0",
     name: "Splitter",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1014,7 +1014,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x020000E0",
     name: "Exciter",
-    category: "Filter / EQ",
+    category: "Filter",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1052,7 +1052,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x03000010",
     name: "EP Drive",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1090,7 +1090,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x03000020",
     name: "RC Drive",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1126,7 +1126,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x03000030",
     name: "BassTsDRV",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1162,7 +1162,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x03000040",
     name: "Bass OD",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1198,7 +1198,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x03000050",
     name: "BlueB DRV",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1234,7 +1234,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x03000060",
     name: "Dark OD",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1272,7 +1272,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x03000070",
     name: "SqueakDST",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1308,7 +1308,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x03000080",
     name: "VooDoo-B",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1344,7 +1344,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x03000090",
     name: "BassOctFZ",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1380,7 +1380,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x030000A0",
     name: "NYC Muff",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1416,7 +1416,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x030000B0",
     name: "BaFzSmile",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1452,7 +1452,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x030000C0",
     name: "BassMetal",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -1488,7 +1488,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x030000D0",
     name: "TS+Boost",
-    category: "Drive / Distortion",
+    category: "Overdrive/Distortion",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -2277,7 +2277,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x05000010",
     name: "FlipTop",
-    category: "Amp Model",
+    category: "Amps",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -2365,7 +2365,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x05000020",
     name: "AMPG SVT",
-    category: "Amp Model",
+    category: "Amps",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -2453,7 +2453,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x05000030",
     name: "AG 750",
-    category: "Amp Model",
+    category: "Amps",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -2535,7 +2535,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x05000040",
     name: "SMR400",
-    category: "Amp Model",
+    category: "Amps",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -2621,7 +2621,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x05000050",
     name: "EBH360",
-    category: "Amp Model",
+    category: "Amps",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -2700,7 +2700,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x05000060",
     name: "MiniMarkB",
-    category: "Amp Model",
+    category: "Amps",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -2750,7 +2750,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x05000070",
     name: "TE400SMX",
-    category: "Amp Model",
+    category: "Amps",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -2838,7 +2838,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x05000080",
     name: "B-MAN100",
-    category: "Amp Model",
+    category: "Amps",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -2925,7 +2925,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x05000090",
     name: "AC 370",
-    category: "Amp Model",
+    category: "Amps",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -3007,7 +3007,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x050000A0",
     name: "SUN CB",
-    category: "Amp Model",
+    category: "Amps",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -3084,7 +3084,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x050000B0",
     name: "MONOTONE",
-    category: "Amp Model",
+    category: "Amps",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -3591,7 +3591,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x07000010",
     name: "BaOctaver",
-    category: "Pitch / Octave",
+    category: "Pitch",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -3627,7 +3627,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x07000020",
     name: "Ba AnaOct",
-    category: "Pitch / Octave",
+    category: "Pitch",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -3663,7 +3663,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x07000028",
     name: "PolyOct",
-    category: "Pitch / Octave",
+    category: "Pitch",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -3699,7 +3699,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x07000040",
     name: "BaMnPitch",
-    category: "Pitch / Octave",
+    category: "Pitch",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -3738,7 +3738,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x07000050",
     name: "HPS",
-    category: "Pitch / Octave",
+    category: "Pitch",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -3778,7 +3778,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x07000070",
     name: "PolyShift",
-    category: "Pitch / Octave",
+    category: "Pitch",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -3814,17 +3814,9 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
     ],
   ),
   EffectDefinition(
-    effectId: "0x07000FF0",
-    name: "BPM",
-    category: "Pitch / Octave",
-    deviceFamily: DeviceFamily.zoomMs60bPlus,
-    parameters: [
-    ],
-  ),
-  EffectDefinition(
     effectId: "0x08000010",
     name: "BassSynth",
-    category: "Bass Synth",
+    category: "Synths",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -3897,7 +3889,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x08000020",
     name: "Z-Synth",
-    category: "Bass Synth",
+    category: "Synths",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -3970,7 +3962,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x08000030",
     name: "BaTalkSyn",
-    category: "Bass Synth",
+    category: "Synths",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -4043,7 +4035,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x09000010",
     name: "LoopRoll",
-    category: "Special / SFX",
+    category: "SFX",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -4084,7 +4076,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x09000020",
     name: "PH+Dist",
-    category: "Special / SFX",
+    category: "SFX",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -4121,7 +4113,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x09000030",
     name: "Fretless",
-    category: "Special / SFX",
+    category: "SFX",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -4159,7 +4151,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x09000040",
     name: "Bomber",
-    category: "Special / SFX",
+    category: "SFX",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -4198,7 +4190,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
   EffectDefinition(
     effectId: "0x09000F00",
     name: "LineSel",
-    category: "Special / SFX",
+    category: "SFX",
     deviceFamily: DeviceFamily.zoomMs60bPlus,
     parameters: [
       ParameterDescriptor(
@@ -4215,6 +4207,14 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
         max: 150.0,
         defaultValue: 100.0,
       ),
+    ],
+  ),
+  EffectDefinition(
+    effectId: "0x07000FF0",
+    name: "BPM",
+    category: "SFX",
+    deviceFamily: DeviceFamily.zoomMs60bPlus,
+    parameters: [
     ],
   ),
   EffectDefinition(

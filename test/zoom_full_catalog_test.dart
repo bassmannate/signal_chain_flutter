@@ -17,20 +17,20 @@ void main() {
       expect(registered.length, equals(98));
     });
 
-    test('covers all 11 MS-60B+ sound categories', () {
+    test('covers all 11 MS-60B+ sound categories in exact hardware order', () {
       final categories = ZoomMsPlusCatalog.categories;
-      expect(categories, containsAll([
-        'Amp Model',
-        'Bass Synth',
-        'Delay',
-        'Drive / Distortion',
+      expect(categories, equals(const [
         'Dynamics',
-        'Filter / EQ',
-        'Modulation',
-        'Pitch / Octave',
+        'Filter',
+        'Overdrive/Distortion',
         'Preamp',
+        'Amps',
+        'Modulation',
+        'Pitch',
+        'Synths',
+        'SFX',
+        'Delay',
         'Reverb',
-        'Special / SFX',
       ]));
     });
 
@@ -42,10 +42,10 @@ void main() {
         expect(e.effectId.startsWith('0x01'), isTrue);
       }
 
-      final amps = ZoomMsPlusCatalog.getByCategory('Amp Model');
+      final amps = ZoomMsPlusCatalog.getByCategory('Amps');
       expect(amps.length, equals(11));
       for (final e in amps) {
-        expect(e.category, equals('Amp Model'));
+        expect(e.category, equals('Amps'));
         expect(e.effectId.startsWith('0x05'), isTrue);
       }
 

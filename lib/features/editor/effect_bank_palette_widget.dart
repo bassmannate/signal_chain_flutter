@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../models/device_family.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
 import '../theme/responsive_layout.dart';
 import '../theme/studio_theme.dart';
+import 'custom_effects_dialog.dart';
+import 'effect_origin_badge.dart';
 import 'patch_editor_controller.dart';
 
 // Type alias EffectCatalogEntry is defined in effect_catalog.dart
@@ -42,64 +45,94 @@ class _EffectBankPaletteWidgetState extends State<EffectBankPaletteWidget> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _selectedCategory = 'All';
+  DeviceFamily? _lastDeviceFamily;
 
-  static const List<String> categories = [
-    'All',
-    'Dynamics',
-    'Filter',
-    'Drive',
-    'Amp',
-    'Cabinet',
-    'Modulation',
-    'SFX',
-    'Delay',
-    'Reverb',
-  ];
+  @override
+  void initState() {
+    super.initState();
+    final family = widget.controller.connectionController.activeFamily;
+    _lastDeviceFamily = family;
+    _syncCategoryForFamily(family);
+    widget.controller.connectionController.addListener(_handleConnectionChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant EffectBankPaletteWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller.connectionController !=
+        widget.controller.connectionController) {
+      oldWidget.controller.connectionController
+          .removeListener(_handleConnectionChanged);
+      widget.controller.connectionController
+          .addListener(_handleConnectionChanged);
+    }
+    _syncCategoryForFamily(
+      widget.controller.connectionController.activeFamily,
+    );
+  }
 
   @override
   void dispose() {
+    widget.controller.connectionController
+        .removeListener(_handleConnectionChanged);
     _searchController.dispose();
     super.dispose();
   }
 
+  void _handleConnectionChanged() {
+    _syncCategoryForFamily(
+      widget.controller.connectionController.activeFamily,
+      triggerSetState: true,
+    );
+  }
+
+  void _syncCategoryForFamily(
+    DeviceFamily family, {
+    bool triggerSetState = false,
+  }) {
+    if (_lastDeviceFamily == family) return;
+    _lastDeviceFamily = family;
+    final availableCategories = EffectCatalogRegistry.getCategories(family);
+    if (_selectedCategory != 'All') {
+      final matched = availableCategories.cast<String?>().firstWhere(
+            (cat) => cat!.toLowerCase() == _selectedCategory.toLowerCase(),
+            orElse: () => null,
+          );
+      _selectedCategory = matched ?? 'All';
+    }
+    if (triggerSetState && mounted) {
+      setState(() {});
+    }
+  }
+
   bool _matchesCategory(EffectDefinition def, String category) {
     if (category == 'All') return true;
-    final catLower = def.category.toLowerCase();
-    final filterLower = category.toLowerCase();
-
-    if (filterLower == 'dynamics') {
-      return catLower.contains('dyn') || catLower.contains('comp') || catLower.contains('limit');
-    } else if (filterLower == 'filter') {
-      return catLower.contains('filt') || catLower.contains('eq') || catLower.contains('wah');
-    } else if (filterLower == 'drive') {
-      return catLower.contains('drive') || catLower.contains('dist') || catLower.contains('fuzz') || catLower.contains('overdrive');
-    } else if (filterLower == 'amp') {
-      return catLower.contains('amp') || catLower.contains('preamp') || catLower.contains('stack');
-    } else if (filterLower == 'cabinet') {
-      return catLower.contains('cab');
-    } else if (filterLower == 'modulation') {
-      return catLower.contains('mod') || catLower.contains('chor') || catLower.contains('flang') || catLower.contains('phas') || catLower.contains('trem');
-    } else if (filterLower == 'sfx') {
-      return catLower.contains('sfx') || catLower.contains('synth') || catLower.contains('pitch') || catLower.contains('octav');
-    } else if (filterLower == 'delay') {
-      return catLower.contains('delay') || catLower.contains('echo');
-    } else if (filterLower == 'reverb') {
-      return catLower.contains('rev') || catLower.contains('space') || catLower.contains('hall');
-    }
-
-    return catLower.contains(filterLower);
+    return def.category.trim().toLowerCase() == category.trim().toLowerCase();
   }
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: widget.controller,
+      listenable: Listenable.merge([
+        widget.controller,
+        widget.controller.connectionController,
+        EffectCatalogRegistry.catalogRevision,
+      ]),
       builder: (context, _) {
         final family = widget.controller.connectionController.activeFamily;
+        final customCount = EffectCatalogRegistry.customEffectCountForFamily(family);
+        final dynamicCategories = <String>[
+          'All',
+          ...EffectCatalogRegistry.getCategories(family),
+        ];
+        final effectiveSelectedCategory =
+            dynamicCategories.contains(_selectedCategory)
+                ? _selectedCategory
+                : 'All';
         final allEffects = EffectCatalogRegistry.getEffectsForFamily(family);
 
         final filtered = allEffects.where((def) {
-          if (!_matchesCategory(def, _selectedCategory)) return false;
+          if (!_matchesCategory(def, effectiveSelectedCategory)) return false;
           if (_searchQuery.isEmpty) return true;
           final q = _searchQuery.toLowerCase();
           return def.name.toLowerCase().contains(q) ||
@@ -155,26 +188,27 @@ class _EffectBankPaletteWidgetState extends State<EffectBankPaletteWidget> {
                 children: [
               // Header
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 child: Row(
                   children: [
-                    const Icon(Icons.widgets, size: 16, color: StudioTheme.colorModulation),
-                    const SizedBox(width: 8),
-                    const Flexible(
+                    const Icon(Icons.widgets, size: 15, color: StudioTheme.colorModulation),
+                    const SizedBox(width: 6),
+                    const Expanded(
                       child: Text(
                         'EFFECT PALETTE',
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
-                          letterSpacing: 1.0,
+                          letterSpacing: 0.8,
                           color: Colors.white,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 4),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                       decoration: BoxDecoration(
                         color: StudioTheme.surfaceElevated,
                         borderRadius: BorderRadius.circular(10),
@@ -189,6 +223,78 @@ class _EffectBankPaletteWidgetState extends State<EffectBankPaletteWidget> {
                         ),
                       ),
                     ),
+                    if (family.isZoom6E) ...[
+                      const SizedBox(width: 4),
+                      Tooltip(
+                        message: 'Manage Custom Effects (.ZD2)',
+                        child: InkWell(
+                          key: const Key('palette_custom_effects_button'),
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () => CustomEffectsDialog.show(
+                            context: context,
+                            editorController: widget.controller,
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: customCount > 0
+                                  ? StudioTheme.colorCustom.withValues(alpha: 0.18)
+                                  : StudioTheme.surfaceElevated,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: customCount > 0
+                                    ? StudioTheme.colorCustom.withValues(alpha: 0.8)
+                                    : StudioTheme.surfaceBorder,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.extension,
+                                  size: 11,
+                                  color: StudioTheme.colorCustom,
+                                ),
+                                const SizedBox(width: 3),
+                                const Text(
+                                  '.ZD2',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: StudioTheme.colorCustom,
+                                  ),
+                                ),
+                                if (customCount > 0) ...[
+                                  const SizedBox(width: 3),
+                                  Container(
+                                    key: const Key('palette_custom_effects_count'),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 0.5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: StudioTheme.colorCustom,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '$customCount',
+                                      style: const TextStyle(
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.black,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     if (widget.onClose != null) ...[
                       const SizedBox(width: 4),
                       IconButton(
@@ -237,12 +343,7 @@ class _EffectBankPaletteWidgetState extends State<EffectBankPaletteWidget> {
               // Category Filter Dropdown
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                child: DropdownButtonFormField<String>(
-                  key: const Key('palette_category_dropdown'),
-                  initialValue: _selectedCategory,
-                  isDense: true,
-                  isExpanded: true,
-                  dropdownColor: StudioTheme.surfaceElevated,
+                child: InputDecorator(
                   decoration: InputDecoration(
                     labelText: 'Category',
                     labelStyle: const TextStyle(fontSize: 11, color: Colors.grey),
@@ -266,45 +367,55 @@ class _EffectBankPaletteWidgetState extends State<EffectBankPaletteWidget> {
                       borderSide: const BorderSide(color: StudioTheme.colorModulation),
                     ),
                   ),
-                  style: const TextStyle(fontSize: 12, color: Colors.white),
-                  items: categories.map((cat) {
-                    final catColor = cat == 'All'
-                        ? StudioTheme.colorModulation
-                        : StudioTheme.getCategoryColor(cat);
-                    return DropdownMenuItem<String>(
-                      key: Key('palette_category_item_$cat'),
-                      value: cat,
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: catColor,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              cat,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.white,
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      key: const Key('palette_category_dropdown'),
+                      value: effectiveSelectedCategory,
+                      isDense: true,
+                      isExpanded: true,
+                      menuMaxHeight: 360,
+                      dropdownColor: StudioTheme.surfaceElevated,
+                      style: const TextStyle(fontSize: 12, color: Colors.white),
+                      items: dynamicCategories.map((cat) {
+                        final catColor = cat == 'All'
+                            ? StudioTheme.colorModulation
+                            : StudioTheme.getCategoryColor(cat);
+                        return DropdownMenuItem<String>(
+                          key: Key('palette_category_item_$cat'),
+                          value: cat,
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: catColor,
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  cat,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() => _selectedCategory = val);
-                    }
-                  },
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => _selectedCategory = val);
+                        }
+                      },
+                    ),
+                  ),
                 ),
               ),
 
@@ -376,9 +487,27 @@ class _EffectBankPaletteWidgetState extends State<EffectBankPaletteWidget> {
               color: Colors.white,
             ),
           ),
-          Text(
-            '${effect.parameters.length} params',
-            style: const TextStyle(fontSize: 8.5, color: Colors.grey),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${effect.parameters.length} params',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 8.5, color: Colors.grey),
+                ),
+              ),
+              if (effect.origin == EffectOrigin.crossModel ||
+                  effect.origin == EffectOrigin.custom) ...[
+                const SizedBox(width: 4),
+                Flexible(
+                  child: EffectOriginBadge(
+                    definition: effect,
+                    compact: true,
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       ),

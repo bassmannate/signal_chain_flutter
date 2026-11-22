@@ -7,6 +7,7 @@ import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/responsive_layout.dart';
 import '../theme/studio_theme.dart';
 import 'effect_bank_palette_widget.dart';
+import 'effect_origin_badge.dart';
 import 'effect_picker_dialog.dart';
 import 'patch_editor_controller.dart';
 import 'patch_metadata_header_widget.dart';
@@ -32,7 +33,10 @@ class SignalChainStripWidget extends StatelessWidget {
     final double badgeHeight = stripHeight - 20.0;
 
     return ListenableBuilder(
-      listenable: controller,
+      listenable: Listenable.merge([
+        controller,
+        EffectCatalogRegistry.catalogRevision,
+      ]),
       builder: (context, _) {
         final patch = controller.patch;
         if (patch == null || patch.slots.isEmpty) {
@@ -866,10 +870,28 @@ class SignalChainStripWidget extends StatelessWidget {
               ),
             ),
 
-            // Parameter Count
-            Text(
-              '${slot.parameters.length} params',
-              style: const TextStyle(fontSize: 9.5, color: Colors.grey),
+            // Parameter Count & Origin Badge
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${slot.parameters.length} params',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 9.5, color: Colors.grey),
+                  ),
+                ),
+                if (def.origin == EffectOrigin.crossModel ||
+                    def.origin == EffectOrigin.custom) ...[
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: EffectOriginBadge(
+                      definition: def,
+                      compact: true,
+                    ),
+                  ),
+                ],
+              ],
             ),
             const Spacer(),
 

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/midi/midi_message.dart';
 import '../../core/midi/midi_transport.dart';
 import '../../core/midi/mock_midi_transport.dart';
+import '../../core/storage/custom_effect_repository.dart';
 import '../../models/device_family.dart';
 import '../../models/effect_slot.dart';
 import '../../models/parameter_descriptor.dart';
@@ -37,6 +38,7 @@ class PatchEditorController extends ChangeNotifier {
   Patch? _compareSlotA;
   Patch? _compareSlotB;
   PatchLibraryController? _libraryController;
+  CustomEffectRepository? _customEffectRepository;
 
   bool _isDisposed = false;
   bool _isRestoringBank = false;
@@ -96,6 +98,108 @@ class PatchEditorController extends ChangeNotifier {
   /// Binds an optional [PatchLibraryController] for "Save Copy As..." duplication.
   void setLibraryController(PatchLibraryController? libraryController) {
     _libraryController = libraryController;
+  }
+
+  /// Currently bound custom `.ZD2` effects repository, if set.
+  CustomEffectRepository? get customEffectRepository => _customEffectRepository;
+
+  /// Binds an optional [CustomEffectRepository] for Custom Effects (.ZD2) persistence.
+  void setCustomEffectRepository(CustomEffectRepository? repository) {
+    _customEffectRepository = repository;
+  }
+
+  /// Re-hydrates active patch slot names and parameter descriptors from
+  /// [EffectCatalogRegistry] (e.g., right after importing or removing a custom
+  /// `.ZD2` file) while preserving every slot's current parameter values,
+  /// trailing raw values, enabled state, and [isDirty] flag.
+  bool refreshEffectDefinitionsFromCatalog() {
+    final current = _patch;
+    if (current == null || current.slots.isEmpty) return false;
+
+    final family = connectionController.activeFamily != DeviceFamily.unknown
+        ? connectionController.activeFamily
+        : current.deviceFamily;
+
+    bool changed = false;
+    final updatedSlots = <EffectSlot>[];
+
+    for (final slot in current.slots) {
+      final def = EffectCatalogRegistry.getDefinition(family, slot.effectId);
+      final allValues = <double>[
+        for (final p in slot.parameters) p.currentValue,
+        if (slot.rawTrailingValues != null) ...slot.rawTrailingValues!,
+      ];
+
+      EffectSlot nextSlot = slot;
+
+      if (def.origin != EffectOrigin.unknown) {
+        final nextName = def.name;
+        if (def.parameters.isNotEmpty) {
+          final nextParams = <ParameterValue>[];
+          for (int p = 0; p < def.parameters.length; p++) {
+            final desc = def.parameters[p];
+            final val = p < allValues.length
+                ? allValues[p]
+                : desc.defaultValue.toDouble();
+            nextParams.add(ParameterValue(
+              descriptor: desc,
+              currentValue: val,
+            ));
+          }
+          final nextTrailing = allValues.length > def.parameters.length
+              ? allValues.sublist(def.parameters.length)
+              : null;
+          nextSlot = EffectSlot(
+            slotIndex: slot.slotIndex,
+            effectId: slot.effectId,
+            effectName: nextName,
+            isEnabled: slot.isEnabled,
+            parameters: nextParams,
+            rawTrailingValues: nextTrailing,
+          );
+        } else if (slot.effectName != nextName) {
+          nextSlot = slot.copyWith(effectName: nextName);
+        }
+      } else {
+        final wasResolved = !slot.effectName.startsWith('Unknown') &&
+            !slot.effectName.startsWith('Effect 0x') &&
+            slot.effectName != 'Bypass';
+        if (wasResolved) {
+          final nextParams = <ParameterValue>[];
+          for (int p = 0; p < allValues.length; p++) {
+            final is12Bit = p < 5 || p >= 8;
+            nextParams.add(ParameterValue(
+              descriptor: ParameterDescriptor(
+                id: 'param_$p',
+                name: 'Param ${p + 1}',
+                min: 0,
+                max: is12Bit ? 4095 : 255,
+                defaultValue: 0,
+              ),
+              currentValue: allValues[p],
+            ));
+          }
+          nextSlot = EffectSlot(
+            slotIndex: slot.slotIndex,
+            effectId: slot.effectId,
+            effectName: def.name,
+            isEnabled: slot.isEnabled,
+            parameters: nextParams,
+          );
+        }
+      }
+
+      if (nextSlot != slot) {
+        changed = true;
+      }
+      updatedSlots.add(nextSlot);
+    }
+
+    if (changed) {
+      _patch = current.copyWith(slots: updatedSlots);
+      notifyListeners();
+    }
+    return changed;
   }
 
   /// Marks the active patch as saved, clearing [isDirty] and updating

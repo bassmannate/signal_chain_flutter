@@ -38,13 +38,17 @@ class ZoomMsPlusCatalog {
   /// Returns all unique categories available in the Zoom MS-60B+ catalog.
   static List<String> get categories => categoriesForFamily(DeviceFamily.zoomMs60bPlus);
 
-  /// Returns all unique categories available for the specified Zoom MS Plus [family].
+  /// Returns all unique non-empty categories available for the specified
+  /// Zoom MS Plus [family] in catalog/first-seen order.
   static List<String> categoriesForFamily(DeviceFamily family) {
     final cats = <String>{};
     for (final e in effectsForFamily(family)) {
-      cats.add(e.category);
+      final cat = e.category.trim();
+      if (cat.isNotEmpty) {
+        cats.add(cat);
+      }
     }
-    return cats.toList()..sort();
+    return cats.toList(growable: false);
   }
 
   /// Looks up an effect definition by exact integer DSP ID for [family].

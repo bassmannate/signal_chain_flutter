@@ -14,6 +14,8 @@ import 'core/midi/midi_port_descriptor.dart';
 import 'core/midi/midi_transport.dart';
 import 'core/midi/mock_midi_transport.dart';
 import 'core/storage/app_preferences_repository.dart';
+import 'core/storage/custom_effect_repository.dart';
+import 'core/storage/file_system_custom_effect_repository.dart';
 import 'core/storage/file_system_patch_library_repository.dart';
 import 'core/storage/file_system_preferences_repository.dart';
 import 'core/storage/file_system_setlist_repository.dart';
@@ -52,6 +54,7 @@ class SignalChainApp extends StatefulWidget {
   final MidiTransport? transport;
   final PatchLibraryRepository? libraryRepository;
   final SetlistRepository? setlistRepository;
+  final CustomEffectRepository? customEffectRepository;
   final DeviceConnectionController? connectionController;
   final PatchEditorController? editorController;
   final PatchLibraryController? libraryController;
@@ -62,6 +65,7 @@ class SignalChainApp extends StatefulWidget {
     this.transport,
     this.libraryRepository,
     this.setlistRepository,
+    this.customEffectRepository,
     this.connectionController,
     this.editorController,
     this.libraryController,
@@ -76,6 +80,7 @@ class _SignalChainAppState extends State<SignalChainApp> {
   late final MidiTransport _transport;
   late final PatchLibraryRepository _libraryRepo;
   late final SetlistRepository _setlistRepo;
+  late final CustomEffectRepository _customEffectRepo;
   late final DeviceConnectionController _connectionController;
   late final PatchEditorController _editorController;
   late final PatchLibraryController _libraryController;
@@ -157,6 +162,12 @@ class _SignalChainAppState extends State<SignalChainApp> {
 
     _editorController.setLibraryController(_libraryController);
 
+    _customEffectRepo = widget.customEffectRepository ??
+        (_isRunningInWidgetTest
+            ? InMemoryCustomEffectRepository()
+            : _createDefaultCustomEffectRepository());
+    _editorController.setCustomEffectRepository(_customEffectRepo);
+
     _setlistRepo = widget.setlistRepository ??
         (_isRunningInWidgetTest
             ? InMemorySetlistRepository()
@@ -176,6 +187,7 @@ class _SignalChainAppState extends State<SignalChainApp> {
     _libraryController.refresh();
     _libraryController.loadPreferences();
     _setlistController.refresh();
+    _loadPersistedCustomEffects();
 
     // Seed filesystem repository if empty (at runtime outside widget tests)
     if (!_isRunningInWidgetTest && widget.libraryRepository == null) {
@@ -431,6 +443,41 @@ class _SignalChainAppState extends State<SignalChainApp> {
       return FileSystemPreferencesRepository(preferencesFile: _resolvePreferencesFile());
     } catch (_) {
       return InMemoryPreferencesRepository();
+    }
+  }
+
+  static CustomEffectRepository _createDefaultCustomEffectRepository() {
+    try {
+      final presetsDir = _resolvePresetsDirectory();
+      final customDir = Directory('${presetsDir.parent.path}/custom_effects');
+      if (!customDir.existsSync()) {
+        customDir.createSync(recursive: true);
+      }
+      return FileSystemCustomEffectRepository.inDirectory(customDir);
+    } catch (_) {
+      return InMemoryCustomEffectRepository();
+    }
+  }
+
+  Future<void> _loadPersistedCustomEffects() async {
+    try {
+      final entries = await _customEffectRepo.loadAll();
+      if (entries.isEmpty) return;
+      for (final entry in entries) {
+        EffectCatalogRegistry.registerCustomEffect(
+          entry.toEffectDefinition(),
+          generation: entry.generation,
+          notify: false,
+        );
+      }
+      // Emit a single catalog revision notification and re-hydrate active patch.
+      EffectCatalogRegistry.catalogRevision.value =
+          EffectCatalogRegistry.catalogRevision.value + 1;
+      if (mounted) {
+        _editorController.refreshEffectDefinitionsFromCatalog();
+      }
+    } catch (_) {
+      // Ignore startup custom-effects read errors in restricted environments.
     }
   }
 

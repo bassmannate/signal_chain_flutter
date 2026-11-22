@@ -15,10 +15,14 @@ class StudioTheme {
   static const Color colorDynamics = Color(0xFF00E676); // Green
   static const Color colorFilterEq = Color(0xFFFF9100); // Amber / Orange
   static const Color colorDrive = Color(0xFFFF3D00); // Crimson / Red-Orange
+  static const Color colorPreamp = Color(0xFFFFD740); // Warm Tube Gold
   static const Color colorAmpCab = Color(0xFFE040FB); // Violet / Purple
   static const Color colorModulation = Color(0xFF00E5FF); // Electric Cyan
   static const Color colorDelayReverb = Color(0xFF3D5AFE); // Royal Blue
   static const Color colorPitchSynth = Color(0xFFFF4081); // Bright Pink
+  static const Color colorSfx = Color(0xFF7C4DFF); // Deep Purple Accent
+  static const Color colorCustom = Color(0xFF26A69A); // Studio Teal
+  static const Color colorAcoustic = Color(0xFFD4A373); // Warm Acoustic Wood
   static const Color colorBypass = Color(0xFF78909C); // Neutral Slate
 
   // Status indicators
@@ -26,9 +30,55 @@ class StudioTheme {
   static const Color colorDisconnected = Color(0xFFFF5252);
   static const Color colorDirty = Color(0xFFFFAB00);
 
+  static final RegExp _modWordPattern = RegExp(r'\bmod\b');
+
+  static const Map<String, Color> _exactCategoryColors = {
+    // Zoom MS-60B+ hardware labels (0x01–0x0B)
+    'dynamics': colorDynamics,
+    'filter': colorFilterEq,
+    'overdrive/distortion': colorDrive,
+    'preamp': colorPreamp,
+    'amps': colorAmpCab,
+    'modulation': colorModulation,
+    'pitch': colorPitchSynth,
+    'synths': colorPitchSynth,
+    'sfx': colorSfx,
+    'delay': colorDelayReverb,
+    'reverb': colorDelayReverb,
+    // Other Zoom MS Plus, Zoom Four, ZDL7, and Line 6 category labels
+    'filter / eq': colorFilterEq,
+    'filter / synth': colorFilterEq,
+    'overdrive / distortion': colorDrive,
+    'drive / distortion': colorDrive,
+    'drive / fuzz': colorDrive,
+    'boost / drive': colorDrive,
+    'overdrive': colorDrive,
+    'distortion': colorDrive,
+    'fuzz': colorDrive,
+    'drive': colorDrive,
+    'amp': colorAmpCab,
+    'amp model': colorAmpCab,
+    'cabinet': colorAmpCab,
+    'pitch / octave': colorPitchSynth,
+    'bass synth': colorPitchSynth,
+    'synth': colorPitchSynth,
+    'pedal': colorPitchSynth,
+    'special / sfx': colorSfx,
+    'acoustic': colorAcoustic,
+    'custom': colorCustom,
+    'bypass': colorBypass,
+    'unknown': colorBypass,
+  };
+
   /// Resolves an accent color based on effect category name.
   static Color getCategoryColor(String category) {
     final cat = category.toLowerCase().trim();
+    final exact = _exactCategoryColors[cat];
+    if (exact != null) return exact;
+
+    if (cat.contains('bypass') || cat.contains('unknown')) {
+      return colorBypass;
+    }
     if (cat.contains('dyn') ||
         cat.contains('comp') ||
         cat.contains('limit') ||
@@ -45,13 +95,16 @@ class StudioTheme {
         cat.contains('boost')) {
       return colorDrive;
     }
+    if (cat.contains('preamp')) {
+      return colorPreamp;
+    }
     if (cat.contains('amp') ||
         cat.contains('cab') ||
-        cat.contains('preamp') ||
         cat.contains('stack')) {
       return colorAmpCab;
     }
-    if (cat.contains('mod') ||
+    if (cat.contains('modulation') ||
+        _modWordPattern.hasMatch(cat) ||
         cat.contains('chor') ||
         cat.contains('flang') ||
         cat.contains('phas') ||
@@ -66,13 +119,21 @@ class StudioTheme {
         cat.contains('hall')) {
       return colorDelayReverb;
     }
+    if (cat.contains('sfx') || cat.contains('special')) {
+      return colorSfx;
+    }
     if (cat.contains('pitch') ||
         cat.contains('synth') ||
         cat.contains('octav') ||
-        cat.contains('sfx') ||
         cat.contains('pedal') ||
         cat.contains('expr')) {
       return colorPitchSynth;
+    }
+    if (cat.contains('acoustic')) {
+      return colorAcoustic;
+    }
+    if (cat.contains('custom')) {
+      return colorCustom;
     }
     return colorBypass;
   }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/parameter_descriptor.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
 import '../theme/studio_theme.dart';
+import 'effect_origin_badge.dart';
 import 'effect_picker_dialog.dart';
 import 'patch_editor_controller.dart';
 import 'rotary_knob_widget.dart';
@@ -27,7 +28,10 @@ class _SlotInspectorWidgetState extends State<SlotInspectorWidget> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: widget.controller,
+      listenable: Listenable.merge([
+        widget.controller,
+        EffectCatalogRegistry.catalogRevision,
+      ]),
       builder: (context, _) {
         final slot = widget.controller.selectedSlot;
         if (slot == null) {
@@ -173,6 +177,9 @@ class _SlotInspectorWidgetState extends State<SlotInspectorWidget> {
                           ),
                         ),
                       ),
+                      if (currentDef.origin == EffectOrigin.crossModel ||
+                          currentDef.origin == EffectOrigin.custom)
+                        EffectOriginBadge(definition: currentDef),
                       if (hasHiddenParams)
                         InkWell(
                           borderRadius: BorderRadius.circular(4),

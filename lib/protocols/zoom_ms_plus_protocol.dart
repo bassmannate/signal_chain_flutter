@@ -870,11 +870,11 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
                 tableEffectId != null &&
                 tableEffectId != 0 &&
                 tableEffectId != resolvedDspId &&
-                effectDef.name.startsWith('Unknown')) {
+                effectDef.origin == EffectOrigin.unknown) {
               final tableHexId =
                   '0x${tableEffectId.toRadixString(16).padLeft(8, '0').toUpperCase()}';
               final tableDef = EffectCatalogRegistry.getDefinition(family, tableHexId);
-              if (!tableDef.name.startsWith('Unknown')) {
+              if (tableDef.origin != EffectOrigin.unknown) {
                 resolvedDspId = tableEffectId;
                 hexId = tableHexId;
                 effectDef = tableDef;
@@ -911,7 +911,8 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
                 ? rawValues.sublist(exposedCount)
                 : null;
 
-            final effectName = (resolvedDspId != 0 && !effectDef.name.startsWith('Unknown'))
+            final effectName = (resolvedDspId != 0 &&
+                    effectDef.origin != EffectOrigin.unknown)
                 ? effectDef.name
                 : _lookupEffectName(resolvedDspId, family: family);
 
@@ -1319,7 +1320,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
     final targetFamily = family ?? defaultFamily;
     final hexId = '0x${dspId.toRadixString(16).padLeft(8, '0').toUpperCase()}';
     final def = EffectCatalogRegistry.getDefinition(targetFamily, hexId);
-    if (!def.name.startsWith('Unknown')) {
+    if (def.origin != EffectOrigin.unknown) {
       return def.name;
     }
     if (targetFamily.isZoomFour) {

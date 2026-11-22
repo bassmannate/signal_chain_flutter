@@ -4,6 +4,7 @@ import '../../models/effect_slot.dart';
 import '../../models/patch.dart';
 import '../../models/setlist.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
+import '../editor/effect_origin_badge.dart';
 import '../editor/patch_editor_controller.dart';
 import '../theme/studio_theme.dart';
 import 'setlist_controller.dart';
@@ -99,6 +100,7 @@ class _SetlistPerformanceViewState extends State<SetlistPerformanceView> {
         setlistController,
         editorController,
         setlistController.connectionController,
+        EffectCatalogRegistry.catalogRevision,
       ]),
       builder: (context, _) {
         final setlist = setlistController.activeSetlist;
@@ -391,10 +393,11 @@ class _SetlistPerformanceViewState extends State<SetlistPerformanceView> {
                             spacing: 10,
                             runSpacing: 10,
                             children: List.generate(activePatch.slots.length, (i) {
-                              return _buildStageStompbox(
-                                activePatch.slots[i],
-                                () => editorController.toggleSlotEnabled(i),
-                              );
+                                return _buildStageStompbox(
+                                  activePatch,
+                                  activePatch.slots[i],
+                                  () => editorController.toggleSlotEnabled(i),
+                                );
                             }),
                           ),
                       ],
@@ -1002,28 +1005,40 @@ class _SetlistPerformanceViewState extends State<SetlistPerformanceView> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: StudioTheme.surface,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: isEnabled
-                          ? categoryColor.withValues(alpha: 0.7)
-                          : StudioTheme.surfaceBorder,
-                    ),
-                  ),
-                  child: Text(
-                    'SLOT ${slot.slotIndex + 1}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.0,
-                      color: isEnabled ? categoryColor : Colors.grey,
-                    ),
+                Flexible(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: StudioTheme.surface,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: isEnabled
+                                ? categoryColor.withValues(alpha: 0.7)
+                                : StudioTheme.surfaceBorder,
+                          ),
+                        ),
+                        child: Text(
+                          'SLOT ${slot.slotIndex + 1}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.0,
+                            color: isEnabled ? categoryColor : Colors.grey,
+                          ),
+                        ),
+                      ),
+                      if (def.origin == EffectOrigin.crossModel ||
+                          def.origin == EffectOrigin.custom)
+                        EffectOriginBadge(definition: def),
+                    ],
                   ),
                 ),
                 Container(
@@ -1207,7 +1222,11 @@ class _SetlistPerformanceViewState extends State<SetlistPerformanceView> {
     );
   }
 
-  Widget _buildStageStompbox(EffectSlot slot, VoidCallback onToggle) {
+  Widget _buildStageStompbox(Patch patch, EffectSlot slot, VoidCallback onToggle) {
+    final def = EffectCatalogRegistry.getDefinition(
+      patch.deviceFamily,
+      slot.effectId,
+    );
     final activeColor = StudioTheme.colorDynamics;
     return InkWell(
       key: Key('stage_stomp_${slot.slotIndex}'),
@@ -1246,6 +1265,11 @@ class _SetlistPerformanceViewState extends State<SetlistPerformanceView> {
                 color: slot.isEnabled ? Colors.white : Colors.grey,
               ),
             ),
+            if (def.origin == EffectOrigin.crossModel ||
+                def.origin == EffectOrigin.custom) ...[
+              const SizedBox(width: 6),
+              EffectOriginBadge(definition: def, compact: true),
+            ],
           ],
         ),
       ),

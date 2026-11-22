@@ -298,7 +298,17 @@ void main() {
         // Select 'Delay' from category dropdown
         await tester.tap(find.byKey(const Key('palette_category_dropdown')));
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('palette_category_item_Delay')).last);
+        final delayItem = find.byKey(const Key('palette_category_item_Delay'));
+        if (delayItem.evaluate().isEmpty) {
+          await tester.scrollUntilVisible(
+            delayItem,
+            100.0,
+            scrollable: find.byType(Scrollable).last,
+          );
+          await tester.pumpAndSettle();
+        }
+        await tester.ensureVisible(delayItem.last);
+        await tester.tap(delayItem.last);
         await tester.pumpAndSettle();
 
         expect(
@@ -313,7 +323,17 @@ void main() {
         // Reset back to 'All'
         await tester.tap(find.byKey(const Key('palette_category_dropdown')));
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('palette_category_item_All')).last);
+        final allItem = find.byKey(const Key('palette_category_item_All'));
+        if (allItem.evaluate().isEmpty) {
+          await tester.scrollUntilVisible(
+            allItem,
+            -100.0,
+            scrollable: find.byType(Scrollable).last,
+          );
+          await tester.pumpAndSettle();
+        }
+        await tester.ensureVisible(allItem.last);
+        await tester.tap(allItem.last);
         await tester.pumpAndSettle();
         expect(find.text('$allCount EFFECTS'), findsOneWidget);
       },

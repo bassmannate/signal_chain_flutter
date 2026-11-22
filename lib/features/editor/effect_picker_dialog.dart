@@ -6,6 +6,7 @@ import '../../models/device_family.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
 import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/studio_theme.dart';
+import 'effect_origin_badge.dart';
 
 /// Modal dialog for browsing, filtering by category, and searching the device effect catalog
 /// to select an effect algorithm for swapping or adding to the signal chain.
@@ -44,8 +45,8 @@ class EffectPickerDialog extends StatefulWidget {
 
 class _EffectPickerDialogState extends State<EffectPickerDialog> {
   late final TextEditingController _searchController;
-  late final List<EffectDefinition> _allEffects;
-  late final List<String> _categories;
+  late List<EffectDefinition> _allEffects;
+  late List<String> _categories;
 
   String _selectedCategory = 'ALL';
   String _searchQuery = '';
@@ -54,13 +55,27 @@ class _EffectPickerDialogState extends State<EffectPickerDialog> {
   void initState() {
     super.initState();
     _searchController = TextEditingController();
+    _reloadCatalog();
+    EffectCatalogRegistry.catalogRevision.addListener(_handleCatalogChanged);
+  }
+
+  void _reloadCatalog() {
     _allEffects = EffectCatalogRegistry.getEffectsForFamily(widget.deviceFamily);
     final rawCategories = EffectCatalogRegistry.getCategories(widget.deviceFamily);
     _categories = ['ALL', ...rawCategories];
+    if (!_categories.contains(_selectedCategory)) {
+      _selectedCategory = 'ALL';
+    }
+  }
+
+  void _handleCatalogChanged() {
+    if (!mounted) return;
+    setState(_reloadCatalog);
   }
 
   @override
   void dispose() {
+    EffectCatalogRegistry.catalogRevision.removeListener(_handleCatalogChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -233,6 +248,11 @@ class _EffectPickerDialogState extends State<EffectPickerDialog> {
                 ),
               ),
             ),
+            if (effect.origin == EffectOrigin.crossModel ||
+                effect.origin == EffectOrigin.custom) ...[
+              const SizedBox(width: 6),
+              EffectOriginBadge(definition: effect, compact: true),
+            ],
             if (isCurrent) ...[
               const SizedBox(width: 8),
               Container(

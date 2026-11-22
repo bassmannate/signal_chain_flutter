@@ -38,7 +38,7 @@ void main() {
       );
 
       expect(svt.name, equals('AMPG SVT'));
-      expect(svt.category, equals('Amp Model'));
+      expect(svt.category, equals('Amps'));
       expect(svt.parameters, isNotEmpty);
       expect(svt.parameters.any((p) => p.name == 'Gain'), isTrue);
     });
@@ -172,13 +172,21 @@ void main() {
   });
 
   group('Catalog Utilities & Categories', () {
-    test('extracts sorted unique categories for device family', () {
+    test('extracts unique categories in catalog order for device family', () {
       final zoomCategories = EffectCatalogRegistry.getCategories(DeviceFamily.zoomMs60bPlus);
-      expect(zoomCategories, contains('Dynamics'));
-      expect(zoomCategories, contains('Amp Model'));
-      expect(zoomCategories, contains('Modulation'));
-      expect(zoomCategories, contains('Delay'));
-      expect(zoomCategories, contains('Reverb'));
+      expect(zoomCategories, equals(const [
+        'Dynamics',
+        'Filter',
+        'Overdrive/Distortion',
+        'Preamp',
+        'Amps',
+        'Modulation',
+        'Pitch',
+        'Synths',
+        'SFX',
+        'Delay',
+        'Reverb',
+      ]));
 
       final line6Categories = EffectCatalogRegistry.getCategories(DeviceFamily.line6BassPodPro);
       expect(line6Categories, contains('Amp Model'));

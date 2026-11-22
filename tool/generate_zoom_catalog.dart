@@ -151,8 +151,25 @@ int _generatePedalCatalog(_PedalCatalogTarget target) {
   buffer.writeln('/// Complete built-in effect catalog data for ${target.description}.');
   buffer.writeln('const List<EffectDefinition> ${target.constantName} = [');
 
-  // Deterministic ordering by effect key
-  final sortedKeys = rawMap.keys.toList()..sort();
+  // Deterministic ordering by effect key (with ms60bp ordered by hardware category group)
+  final sortedKeys = rawMap.keys.toList();
+  if (target.pedalKey == 'ms60bp') {
+    sortedKeys.sort((a, b) {
+      final normA = a.toLowerCase().padLeft(8, '0');
+      final normB = b.toLowerCase().padLeft(8, '0');
+      final isBpmA = normA == '07000ff0';
+      final isBpmB = normB == '07000ff0';
+      final rankA = isBpmA ? 0x09 : int.parse(normA.substring(0, 2), radix: 16);
+      final rankB = isBpmB ? 0x09 : int.parse(normB.substring(0, 2), radix: 16);
+      final cmpRank = rankA.compareTo(rankB);
+      if (cmpRank != 0) return cmpRank;
+      final bpmOrder = (isBpmA ? 1 : 0).compareTo(isBpmB ? 1 : 0);
+      if (bpmOrder != 0) return bpmOrder;
+      return a.compareTo(b);
+    });
+  } else {
+    sortedKeys.sort();
+  }
 
   for (final key in sortedKeys) {
     final effectData = rawMap[key] as Map<String, dynamic>;
@@ -324,7 +341,8 @@ List<String> _parseCsvRow(String row) {
 }
 
 String _resolveCategory(String hexKey, String name, String pedalKey) {
-  final prefix = hexKey.substring(0, 2).toLowerCase();
+  final normalizedKey = hexKey.toLowerCase().padLeft(8, '0');
+  final prefix = normalizedKey.substring(0, 2);
 
   if (pedalKey == 'ms200dp') {
     switch (prefix) {
@@ -378,26 +396,29 @@ String _resolveCategory(String hexKey, String name, String pedalKey) {
     }
   }
 
-  // Default: MS-60B+
+  // Default: MS-60B+ hardware group labels (0x01–0x0B), with BPM in SFX
+  if (normalizedKey == '07000ff0') {
+    return 'SFX';
+  }
   switch (prefix) {
     case '01':
       return 'Dynamics';
     case '02':
-      return 'Filter / EQ';
+      return 'Filter';
     case '03':
-      return 'Drive / Distortion';
+      return 'Overdrive/Distortion';
     case '04':
       return 'Preamp';
     case '05':
-      return 'Amp Model';
+      return 'Amps';
     case '06':
       return 'Modulation';
     case '07':
-      return 'Pitch / Octave';
+      return 'Pitch';
     case '08':
-      return 'Bass Synth';
+      return 'Synths';
     case '09':
-      return 'Special / SFX';
+      return 'SFX';
     case '0a':
       return 'Delay';
     case '0b':
