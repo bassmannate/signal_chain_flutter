@@ -167,6 +167,7 @@ class _SignalChainAppState extends State<SignalChainApp> {
             ? InMemoryCustomEffectRepository()
             : _createDefaultCustomEffectRepository());
     _editorController.setCustomEffectRepository(_customEffectRepo);
+    _connectionController.setCustomEffectRepository(_customEffectRepo);
 
     _setlistRepo = widget.setlistRepository ??
         (_isRunningInWidgetTest

@@ -48,13 +48,22 @@ void main() {
       );
     });
 
-    test('places BPM (0x07000FF0) in SFX and verifies exact category counts', () {
+    test('places BPM (0x09000FF0) in SFX as MS-60B+ stock, resolves 0x07000FF0 via cross-model, and verifies exact category counts', () {
       final bpmMs60bp = EffectCatalogRegistry.getDefinition(
         DeviceFamily.zoomMs60bPlus,
-        '0x07000FF0',
+        '0x09000FF0',
       );
       expect(bpmMs60bp.name, equals('BPM'));
       expect(bpmMs60bp.category, equals('SFX'));
+      expect(bpmMs60bp.origin, equals(EffectOrigin.stock));
+
+      // Older patches referencing 0x07000FF0 still resolve cleanly via Tier 2 cross-model fallback
+      final legacyBpmOnMs60bp = EffectCatalogRegistry.getDefinition(
+        DeviceFamily.zoomMs60bPlus,
+        '0x07000FF0',
+      );
+      expect(legacyBpmOnMs60bp.name, equals('BPM'));
+      expect(legacyBpmOnMs60bp.origin, equals(EffectOrigin.crossModel));
 
       for (final otherFamily in const [
         DeviceFamily.zoomMs50gPlus,
@@ -67,6 +76,7 @@ void main() {
         );
         expect(bpm.name, equals('BPM'));
         expect(bpm.category, equals('Special / SFX'));
+        expect(bpm.origin, equals(EffectOrigin.stock));
       }
 
       final ms60Effects = EffectCatalogRegistry.getEffectsForFamily(
@@ -254,10 +264,10 @@ void main() {
         expect(find.byKey(const Key('palette_click_0x05000020')), findsOneWidget); // AMPG SVT
         expect(find.byKey(const Key('palette_click_0x04000010')), findsNothing);
 
-        // SFX includes BPM (0x07000FF0)
+        // SFX includes BPM (0x09000FF0)
         await selectPaletteCategory(tester, 'SFX');
         expect(find.text('6 EFFECTS'), findsOneWidget);
-        expect(find.byKey(const Key('palette_click_0x07000FF0')), findsOneWidget);
+        expect(find.byKey(const Key('palette_click_0x09000FF0')), findsOneWidget);
       },
     );
 

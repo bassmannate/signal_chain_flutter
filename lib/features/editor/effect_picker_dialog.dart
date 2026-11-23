@@ -6,7 +6,9 @@ import '../../models/device_family.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
 import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/studio_theme.dart';
+import 'custom_effects_dialog.dart';
 import 'effect_origin_badge.dart';
+import 'patch_editor_controller.dart';
 
 /// Modal dialog for browsing, filtering by category, and searching the device effect catalog
 /// to select an effect algorithm for swapping or adding to the signal chain.
@@ -14,12 +16,14 @@ class EffectPickerDialog extends StatefulWidget {
   final DeviceFamily deviceFamily;
   final String? currentEffectId;
   final String title;
+  final PatchEditorController? editorController;
 
   const EffectPickerDialog({
     super.key,
     required this.deviceFamily,
     this.currentEffectId,
     this.title = 'Select Effect',
+    this.editorController,
   });
 
   /// Displays the effect picker dialog modally.
@@ -28,6 +32,7 @@ class EffectPickerDialog extends StatefulWidget {
     required DeviceFamily deviceFamily,
     String? currentEffectId,
     String title = 'Select Effect',
+    PatchEditorController? editorController,
   }) {
     return showDialog<EffectDefinition>(
       context: context,
@@ -35,6 +40,7 @@ class EffectPickerDialog extends StatefulWidget {
         deviceFamily: deviceFamily,
         currentEffectId: currentEffectId,
         title: title,
+        editorController: editorController,
       ),
     );
   }
@@ -452,6 +458,35 @@ class _EffectPickerDialogState extends State<EffectPickerDialog> {
                       style: const TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ),
+                  if (widget.deviceFamily.isZoom6E &&
+                      widget.editorController != null)
+                    TextButton.icon(
+                      key: const Key('effect_picker_custom_effects_button'),
+                      icon: const Icon(
+                        Icons.extension,
+                        size: 14,
+                        color: StudioTheme.colorCustom,
+                      ),
+                      label: const Text(
+                        'Custom (.ZD2)',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: StudioTheme.colorCustom,
+                        ),
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () => CustomEffectsDialog.show(
+                        context: context,
+                        editorController: widget.editorController!,
+                      ),
+                    ),
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
                     child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontSize: 12)),

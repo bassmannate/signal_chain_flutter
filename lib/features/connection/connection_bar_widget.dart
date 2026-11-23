@@ -172,10 +172,16 @@ class ConnectionBarWidget extends StatelessWidget {
               ),
             );
 
+            final effectScanPill = _buildEffectDiscoveryPill(
+              isConnected: isConnected,
+              connectionController: connectionController,
+            );
+
             final buttonPadding = isCompact
                 ? const EdgeInsets.symmetric(horizontal: 8, vertical: 6)
                 : const EdgeInsets.symmetric(horizontal: 10, vertical: 6);
             final actionItems = <Widget>[
+              ?effectScanPill,
               if (editorController.isDirty)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -339,6 +345,111 @@ class ConnectionBarWidget extends StatelessWidget {
           },
         );
       },
+    );
+  }
+
+  Widget? _buildEffectDiscoveryPill({
+    required bool isConnected,
+    required DeviceConnectionController connectionController,
+  }) {
+    if (connectionController.isScanningEffects) {
+      final status =
+          connectionController.effectScanStatusMessage ?? 'Scanning effects...';
+      return Tooltip(
+        message: status,
+        child: Container(
+          key: const Key('effect_scan_status_pill'),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: StudioTheme.colorCustom.withValues(alpha: 0.14),
+            border: Border.all(
+              color: StudioTheme.colorCustom.withValues(alpha: 0.7),
+              width: 1,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 10,
+                height: 10,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.6,
+                  color: StudioTheme.colorCustom,
+                ),
+              ),
+              const SizedBox(width: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: Text(
+                  status,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: StudioTheme.colorCustom,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (!isConnected || connectionController.installedEffectIds == null) {
+      return null;
+    }
+
+    final crossCount = connectionController.discoveredCrossModelIds.length;
+    final customCount = connectionController.discoveredCustomIds.length;
+    if (crossCount == 0 && customCount == 0) {
+      return null;
+    }
+
+    final stockCount = connectionController.discoveredStockIds.length;
+    final parts = <String>[
+      if (crossCount > 0) '+$crossCount cross-model',
+      if (customCount > 0) '+$customCount custom',
+    ];
+    final tooltip =
+        'Onboard effects verified: $stockCount stock, $crossCount cross-model, $customCount custom';
+
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        key: const Key('onboard_effects_summary_pill'),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: StudioTheme.colorCustom.withValues(alpha: 0.12),
+          border: Border.all(
+            color: StudioTheme.colorCustom.withValues(alpha: 0.6),
+            width: 1,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.extension,
+              size: 11,
+              color: StudioTheme.colorCustom,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              parts.join(' • '),
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: StudioTheme.colorCustom,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

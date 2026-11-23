@@ -162,6 +162,7 @@ class EffectDefinition {
 class EffectCatalogRegistry {
   static final Map<DeviceFamily, Map<String, EffectDefinition>> _catalogs = {};
   static final List<RegisteredCustomEffect> _customEffects = [];
+  static final Map<DeviceFamily, Set<String>> _installedCrossModelIds = {};
   static bool _initialized = false;
 
   /// Monotonically increasing revision counter notified whenever custom effects
@@ -468,22 +469,20 @@ class EffectCatalogRegistry {
     return null;
   }
 
-  /// Resolves an [EffectDefinition] by [family] and [effectId] using 4-tier lookup:
-  /// 1. Active device built-in stock catalog ([EffectOrigin.stock])
-  /// 2. Same-generation cross-model sibling catalogs ([EffectOrigin.crossModel])
-  /// 3. Local custom `.ZD2` registry ([EffectOrigin.custom])
-  /// 4. Extended `ZoomZdl7MasterCatalog` on Zoom Four ([EffectOrigin.crossModel])
-  /// 5. Generic fallback definition ([EffectOrigin.unknown])
-  static EffectDefinition getDefinition(DeviceFamily family, String effectId) {
+  /// Returns true if [effectId] exists in [family]'s built-in stock catalog (Tier 1).
+  static bool isStockEffect(DeviceFamily family, String effectId) {
     ensureInitialized();
+    return _lookupInFamilyMap(_catalogs[family], effectId) != null;
+  }
 
-    // Tier 1: Active device built-in stock catalog
-    final stock = _lookupInFamilyMap(_catalogs[family], effectId);
-    if (stock != null) {
-      return stock;
-    }
-
-    // Tier 2: Same-generation cross-model sibling catalogs
+  /// Looks up [effectId] in same-generation sibling catalogs (Tier 2),
+  /// returning a definition tagged with [EffectOrigin.crossModel] and the
+  /// originating sibling's concise model label, or `null` if not found.
+  static EffectDefinition? lookupCrossModelSibling(
+    DeviceFamily family,
+    String effectId,
+  ) {
+    ensureInitialized();
     if (family.isZoomMsPlus) {
       for (final sibling in _msPlusSiblingOrder) {
         if (sibling == family) continue;
@@ -508,6 +507,98 @@ class EffectCatalogRegistry {
           );
         }
       }
+    }
+    return null;
+  }
+
+  /// Sets the runtime overlay of cross-model effect IDs confirmed installed on
+  /// a connected [family] pedal so they become selectable in the palette and
+  /// effect picker with their [EffectOrigin.crossModel] badge.
+  static void setInstalledCrossModelEffects(
+    DeviceFamily family,
+    Iterable<String> effectIds, {
+    bool notify = true,
+  }) {
+    ensureInitialized();
+    final nextSet = <String>{};
+    for (final rawId in effectIds) {
+      if (isStockEffect(family, rawId)) continue;
+      final cross = lookupCrossModelSibling(family, rawId);
+      if (cross != null) {
+        final key = _canonicalHexLower(cross.effectId) ??
+            cross.effectId.trim().toLowerCase();
+        nextSet.add(key);
+      }
+    }
+
+    final existing = _installedCrossModelIds[family];
+    final changed = existing == null
+        ? nextSet.isNotEmpty
+        : !setEquals(existing, nextSet);
+
+    if (nextSet.isEmpty) {
+      _installedCrossModelIds.remove(family);
+    } else {
+      _installedCrossModelIds[family] = nextSet;
+    }
+
+    if (notify && changed) {
+      _notifyCatalogChanged();
+    }
+  }
+
+  /// Clears runtime installed cross-model effects for [family] (or all families
+  /// when [family] is omitted), notifying listeners if any overlay was removed.
+  static void clearInstalledCrossModelEffects([DeviceFamily? family]) {
+    bool removed = false;
+    if (family == null) {
+      removed = _installedCrossModelIds.isNotEmpty;
+      _installedCrossModelIds.clear();
+    } else {
+      removed = _installedCrossModelIds.remove(family) != null;
+    }
+    if (removed) {
+      _notifyCatalogChanged();
+    }
+  }
+
+  /// Returns runtime-discovered installed cross-model [EffectDefinition]s
+  /// currently active for [family].
+  static List<EffectDefinition> getInstalledCrossModelEffectsForFamily(
+    DeviceFamily family,
+  ) {
+    ensureInitialized();
+    final ids = _installedCrossModelIds[family];
+    if (ids == null || ids.isEmpty) return const [];
+    final results = <EffectDefinition>[];
+    for (final id in ids) {
+      final def = lookupCrossModelSibling(family, id);
+      if (def != null) {
+        results.add(def);
+      }
+    }
+    return results;
+  }
+
+  /// Resolves an [EffectDefinition] by [family] and [effectId] using 4-tier lookup:
+  /// 1. Active device built-in stock catalog ([EffectOrigin.stock])
+  /// 2. Same-generation cross-model sibling catalogs ([EffectOrigin.crossModel])
+  /// 3. Local custom `.ZD2` registry ([EffectOrigin.custom])
+  /// 4. Extended `ZoomZdl7MasterCatalog` on Zoom Four ([EffectOrigin.crossModel])
+  /// 5. Generic fallback definition ([EffectOrigin.unknown])
+  static EffectDefinition getDefinition(DeviceFamily family, String effectId) {
+    ensureInitialized();
+
+    // Tier 1: Active device built-in stock catalog
+    final stock = _lookupInFamilyMap(_catalogs[family], effectId);
+    if (stock != null) {
+      return stock;
+    }
+
+    // Tier 2: Same-generation cross-model sibling catalogs
+    final crossModel = lookupCrossModelSibling(family, effectId);
+    if (crossModel != null) {
+      return crossModel;
     }
 
     // Tier 3: Local custom .ZD2 registry (beats param-less ZDL7 fallback on Zoom Four)
@@ -558,12 +649,14 @@ class EffectCatalogRegistry {
     );
   }
 
-  /// Returns all built-in + compatible custom [EffectDefinition]s for a given [family].
+  /// Returns all built-in + runtime installed cross-model + compatible custom
+  /// [EffectDefinition]s for a given [family].
   static List<EffectDefinition> getEffectsForFamily(DeviceFamily family) {
     ensureInitialized();
     final builtIn = _catalogs[family]?.values.toList() ?? const <EffectDefinition>[];
+    final crossModel = getInstalledCrossModelEffectsForFamily(family);
     final custom = getCustomEffectsForFamily(family);
-    if (custom.isEmpty) {
+    if (crossModel.isEmpty && custom.isEmpty) {
       return builtIn;
     }
 
@@ -572,6 +665,13 @@ class EffectCatalogRegistry {
         _canonicalHexLower(def.effectId) ?? def.effectId.toLowerCase(),
     };
     final merged = List<EffectDefinition>.from(builtIn);
+    for (final crossDef in crossModel) {
+      final key = _canonicalHexLower(crossDef.effectId) ??
+          crossDef.effectId.toLowerCase();
+      if (seenIds.add(key)) {
+        merged.add(crossDef);
+      }
+    }
     for (final customDef in custom) {
       final key = _canonicalHexLower(customDef.effectId) ??
           customDef.effectId.toLowerCase();
@@ -620,6 +720,7 @@ class EffectCatalogRegistry {
   static void reset() {
     _catalogs.clear();
     _customEffects.clear();
+    _installedCrossModelIds.clear();
     _initialized = false;
     _notifyCatalogChanged();
   }

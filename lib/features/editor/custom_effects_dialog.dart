@@ -8,6 +8,7 @@ import '../../core/storage/custom_effect_repository.dart';
 import '../../core/zd2/zd2_parser.dart';
 import '../../models/device_family.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
+import '../../protocols/zoom_file_transfer_service.dart';
 import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/studio_theme.dart';
 import 'patch_editor_controller.dart';
@@ -95,7 +96,48 @@ class _CustomEffectsDialogState extends State<CustomEffectsDialog> {
                 Platform.environment.containsKey('FLUTTER_TEST'))
             ? InMemoryImportFileSystem()
             : const LocalImportFileSystem());
+    widget.editorController.connectionController.addListener(_handleConnectionChanged);
+    EffectCatalogRegistry.catalogRevision.addListener(_handleCatalogRevisionChanged);
     _loadEntries();
+  }
+
+  @override
+  void dispose() {
+    widget.editorController.connectionController
+        .removeListener(_handleConnectionChanged);
+    EffectCatalogRegistry.catalogRevision
+        .removeListener(_handleCatalogRevisionChanged);
+    super.dispose();
+  }
+
+  void _handleConnectionChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  void _handleCatalogRevisionChanged() {
+    if (!mounted) return;
+    _syncEntriesFromRegistry();
+  }
+
+  Future<void> _rescanPedal() async {
+    final connection = widget.editorController.connectionController;
+    if (!connection.isConnected || !connection.activeFamily.isZoom6E) return;
+    setState(() {
+      _isBusy = true;
+      _importOutcomes = const [];
+      _lastRemovedEntry = null;
+    });
+    try {
+      await connection.scanInstalledEffects();
+      await _loadEntries();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+        });
+      }
+    }
   }
 
   Future<void> _loadEntries() async {
@@ -350,6 +392,10 @@ class _CustomEffectsDialogState extends State<CustomEffectsDialog> {
     final isCompact = mediaSize.width < 600;
     final isShort = mediaSize.height < 520;
     final dialogWidth = math.min(600.0, math.max(260.0, mediaSize.width - 32));
+    final connection = widget.editorController.connectionController;
+    final isZoomConnected =
+        connection.isConnected && connection.activeFamily.isZoom6E;
+    final isScanningPedal = connection.isScanningEffects;
 
     return AlertDialog(
       backgroundColor: StudioTheme.surfaceElevated,
@@ -411,24 +457,65 @@ class _CustomEffectsDialogState extends State<CustomEffectsDialog> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 alignment: WrapAlignment.spaceBetween,
                 children: [
-                  ElevatedButton.icon(
-                    key: const Key('custom_effects_import_button'),
-                    icon: Icon(
-                      _showFilePicker ? Icons.folder_off_outlined : Icons.file_upload_outlined,
-                      size: 16,
-                    ),
-                    label: Text(
-                      _showFilePicker ? 'Hide File Browser' : 'Import .ZD2 File(s)...',
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: StudioTheme.colorCustom,
-                      foregroundColor: Colors.black,
-                      textStyle: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        key: const Key('custom_effects_import_button'),
+                        icon: Icon(
+                          _showFilePicker
+                              ? Icons.folder_off_outlined
+                              : Icons.file_upload_outlined,
+                          size: 16,
+                        ),
+                        label: Text(
+                          _showFilePicker
+                              ? 'Hide File Browser'
+                              : 'Import .ZD2 File(s)...',
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: StudioTheme.colorCustom,
+                          foregroundColor: Colors.black,
+                          textStyle: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        onPressed:
+                            (_isBusy || isScanningPedal) ? null : _toggleFilePicker,
                       ),
-                    ),
-                    onPressed: _isBusy ? null : _toggleFilePicker,
+                      if (isZoomConnected)
+                        OutlinedButton.icon(
+                          key: const Key('custom_effects_rescan_pedal_button'),
+                          icon: isScanningPedal
+                              ? const SizedBox(
+                                  width: 13,
+                                  height: 13,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.8,
+                                    color: StudioTheme.colorModulation,
+                                  ),
+                                )
+                              : const Icon(Icons.sync, size: 15),
+                          label: Text(
+                            isScanningPedal ? 'Scanning...' : 'Rescan Pedal',
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: StudioTheme.colorModulation,
+                            side: const BorderSide(
+                              color: StudioTheme.colorModulation,
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          onPressed:
+                              (_isBusy || isScanningPedal) ? null : _rescanPedal,
+                        ),
+                    ],
                   ),
                   const Text(
                     'Zoom ZDLF (.ZD2) format',
@@ -436,6 +523,14 @@ class _CustomEffectsDialogState extends State<CustomEffectsDialog> {
                   ),
                 ],
               ),
+
+              if (isZoomConnected &&
+                  (isScanningPedal ||
+                      connection.installedEffectIds != null ||
+                      connection.effectScanError != null)) ...[
+                const SizedBox(height: 10),
+                _buildPedalInventorySummary(connection),
+              ],
 
               if (_showFilePicker) ...[
                 const SizedBox(height: 10),
@@ -549,6 +644,141 @@ class _CustomEffectsDialogState extends State<CustomEffectsDialog> {
           child: const Text('Close'),
         ),
       ],
+    );
+  }
+
+  Widget _buildPedalInventorySummary(dynamic connection) {
+    final bool scanning = connection.isScanningEffects as bool;
+    final Set<String>? installedIds = connection.installedEffectIds as Set<String>?;
+    final String? scanStatus = connection.effectScanStatusMessage as String?;
+    final String? scanError = connection.effectScanError as String?;
+    final int stockCount = (connection.discoveredStockIds as Set<String>).length;
+    final int crossCount =
+        (connection.discoveredCrossModelIds as Set<String>).length;
+    final int customCount =
+        (connection.discoveredCustomIds as Set<String>).length;
+    final DeviceEffectDiscoveryResult? discoveryResult =
+        connection.lastEffectDiscoveryResult as DeviceEffectDiscoveryResult?;
+    final List<FailedCustomEffectDiscovery> failedEffects =
+        discoveryResult?.failedCustomEffects ?? const [];
+
+    return Container(
+      key: const Key('custom_effects_pedal_summary'),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: StudioTheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: scanError != null && installedIds == null
+              ? StudioTheme.colorPreamp.withValues(alpha: 0.7)
+              : StudioTheme.surfaceBorder,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (scanning)
+            Row(
+              children: [
+                const SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.8,
+                    color: StudioTheme.colorCustom,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    scanStatus ?? 'Scanning onboard effects...',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: StudioTheme.colorCustom,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else if (installedIds != null)
+            Row(
+              children: [
+                const Icon(
+                  Icons.usb,
+                  size: 14,
+                  color: StudioTheme.colorConnected,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Onboard Pedal Effects: $stockCount stock • $crossCount cross-model • $customCount custom',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          if (!scanning &&
+              (failedEffects.isNotEmpty ||
+                  (scanError != null && scanError.isNotEmpty))) ...[
+            if (installedIds != null) const SizedBox(height: 6),
+            Row(
+              key: const Key('custom_effects_scan_warning'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 1),
+                  child: Icon(
+                    Icons.warning_amber_rounded,
+                    size: 14,
+                    color: StudioTheme.colorPreamp,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: failedEffects.isNotEmpty
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Could not read ${failedEffects.length} onboard effect file(s):',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: StudioTheme.colorPreamp,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            for (final f in failedEffects)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  '• ${f.filename} (${f.effectId}): ${f.reason}',
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: StudioTheme.colorPreamp,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        )
+                      : Text(
+                          scanError!,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: StudioTheme.colorPreamp,
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 

@@ -177,7 +177,12 @@ int _generatePedalCatalog(_PedalCatalogTarget target) {
     final override = overrides[normalizedKey];
 
     final name = override?.name ?? (effectData['name'] as String? ?? 'Unknown');
-    final hexId = '0x${key.toUpperCase()}';
+    // Real MS-60B+ hardware FLST_SEQ.ZT2 reports BPM_MDL.ZD2 in group 0x09 (SFX)
+    // as 0x09000FF0, whereas MS-50G+ / MS-70CDR+ / MS-200D+ use 0x07000FF0.
+    final emittedKey = (target.pedalKey == 'ms60bp' && normalizedKey == '07000ff0')
+        ? '09000FF0'
+        : key.toUpperCase();
+    final hexId = '0x$emittedKey';
     final category = override?.category ?? _resolveCategory(key, name, target.pedalKey);
     final rawParams = (effectData['parameters'] as List<dynamic>?) ?? [];
 

@@ -4210,7 +4210,7 @@ const List<EffectDefinition> zoomMs60bPlusCatalogData = [
     ],
   ),
   EffectDefinition(
-    effectId: "0x07000FF0",
+    effectId: "0x09000FF0",
     name: "BPM",
     category: "SFX",
     deviceFamily: DeviceFamily.zoomMs60bPlus,

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:signal_chain_flutter/core/import/import_file_system.dart';
+import 'package:signal_chain_flutter/core/midi/midi_port_descriptor.dart';
 import 'package:signal_chain_flutter/core/midi/mock_midi_transport.dart';
 import 'package:signal_chain_flutter/core/storage/custom_effect_repository.dart';
 import 'package:signal_chain_flutter/features/connection/device_connection_controller.dart';
@@ -19,6 +20,8 @@ import 'package:signal_chain_flutter/models/effect_slot.dart';
 import 'package:signal_chain_flutter/models/parameter_descriptor.dart';
 import 'package:signal_chain_flutter/models/patch.dart';
 import 'package:signal_chain_flutter/protocols/catalogs/effect_catalog.dart';
+
+import '../../core/zd2/flst_seq_parser_test.dart';
 
 Uint8List _makeZd2Bytes({
   required int effectId,
@@ -422,6 +425,176 @@ void main() {
         expect(
           EffectCatalogRegistry.getDefinition(DeviceFamily.zoomMs60bPlus, '0x04000999').origin,
           equals(EffectOrigin.custom),
+        );
+      },
+    );
+
+    testWidgets(
+      'CustomEffectsDialog hides Rescan Pedal when disconnected and shows + runs it when Zoom pedal is connected',
+      (tester) async {
+        const port = MidiPortDescriptor(
+          id: 'zoom_ms60bp',
+          name: 'ZOOM MS-60B+',
+          manufacturer: 'Zoom Corporation',
+          isInput: true,
+          isOutput: true,
+        );
+
+        final h = createHarness();
+        h.transport.addPort(port);
+        h.connection.setCustomEffectRepository(h.customRepo);
+        addTearDown(() async {
+          h.editor.dispose();
+          h.connection.dispose();
+          await h.transport.dispose();
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: StudioTheme.darkTheme,
+            home: Scaffold(
+              body: CustomEffectsDialog(
+                editorController: h.editor,
+                repository: h.customRepo,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        // Disconnected -> Rescan Pedal button is hidden!
+        expect(
+          find.byKey(const Key('custom_effects_rescan_pedal_button')),
+          findsNothing,
+        );
+
+        // Connect Zoom MS-60B+ with virtual FLST_SEQ.ZT2 + custom .ZD2
+        final flstBytes = buildSyntheticFlstSeq(
+          deviceName: 'MS-60B+',
+          groups: const [
+            (
+              groupByte: 0x01,
+              includeCloseMarker: true,
+              entries: [
+                (
+                  filename: 'COMP.ZD2',
+                  version: '1.00',
+                  effectId: 0x01000010,
+                  installed: true,
+                ),
+              ],
+            ),
+            (
+              groupByte: 0x03,
+              includeCloseMarker: true,
+              entries: [
+                (
+                  filename: 'TB_MK15.ZD2',
+                  version: '1.00',
+                  effectId: 0x030000E0,
+                  installed: true,
+                ),
+              ],
+            ),
+            (
+              groupByte: 0x04,
+              includeCloseMarker: true,
+              entries: [
+                (
+                  filename: 'MY_NAM.ZD2',
+                  version: '1.00',
+                  effectId: 0x04000999,
+                  installed: true,
+                ),
+              ],
+            ),
+          ],
+        );
+        h.transport.setVirtualZoomFiles({
+          'FLST_SEQ.ZT2': flstBytes,
+          'MY_NAM.ZD2': _makeZd2Bytes(
+            effectId: 0x04000999,
+            name: 'PEDAL NAM',
+            version: '1.00',
+          ),
+        });
+
+        await h.connection.connect(
+          port,
+          explicitFamily: DeviceFamily.zoomMs60bPlus,
+          fetchCurrentPatch: false,
+          autoSyncBank: false,
+          autoDiscoverEffects: false,
+        );
+        await tester.pumpAndSettle();
+
+        // Connected -> Rescan Pedal button is visible!
+        final rescanFinder = find.byKey(const Key('custom_effects_rescan_pedal_button'));
+        expect(rescanFinder, findsOneWidget);
+        expect(find.text('Rescan Pedal'), findsOneWidget);
+
+        // Tap Rescan Pedal -> discovers onboard stock + cross-model + custom .ZD2!
+        await tester.tap(rescanFinder);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('custom_effects_pedal_summary')), findsOneWidget);
+        expect(
+          find.textContaining('1 stock • 1 cross-model • 1 custom'),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('custom_effect_item_0x04000999')), findsOneWidget);
+        expect(find.text('PEDAL NAM'), findsOneWidget);
+
+        // Disconnect -> Rescan Pedal hides again!
+        await h.connection.disconnect();
+        await tester.pumpAndSettle();
+        expect(rescanFinder, findsNothing);
+      },
+    );
+
+    testWidgets(
+      'EffectPickerDialog shows Custom (.ZD2) shortcut for Zoom families and hides it for Line 6',
+      (tester) async {
+        final h = createHarness();
+        addTearDown(() async {
+          h.editor.dispose();
+          h.connection.dispose();
+          await h.transport.dispose();
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: StudioTheme.darkTheme,
+            home: Scaffold(
+              body: EffectPickerDialog(
+                deviceFamily: DeviceFamily.zoomMs60bPlus,
+                editorController: h.editor,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('effect_picker_custom_effects_button')),
+          findsOneWidget,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: StudioTheme.darkTheme,
+            home: Scaffold(
+              body: EffectPickerDialog(
+                deviceFamily: DeviceFamily.line6BassPodPro,
+                editorController: h.editor,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('effect_picker_custom_effects_button')),
+          findsNothing,
         );
       },
     );

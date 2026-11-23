@@ -1182,7 +1182,7 @@ class ZoomMsPlusProtocol extends DeviceProtocol {
         if (group == 4 || slot.effectName.toLowerCase().contains('preamp')) {
           prm2PreampBits |= (1 << i);
         }
-        if (dspId == 0x07000ff0) {
+        if (dspId == 0x07000ff0 || dspId == 0x09000ff0) {
           prm2BpmBits |= (1 << i);
         }
         if (dspId == 0x07000f00 || dspId == 0x09000f00) {

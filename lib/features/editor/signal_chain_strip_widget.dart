@@ -942,6 +942,7 @@ class SignalChainStripWidget extends StatelessWidget {
                       deviceFamily: family,
                       currentEffectId: slot.effectId,
                       title: 'Change Slot #${index + 1} Effect',
+                      editorController: controller,
                     );
                     if (selected != null) {
                       controller.changeSlotEffect(index, selected.effectId);
@@ -1099,6 +1100,7 @@ class SignalChainStripWidget extends StatelessWidget {
               context: context,
               deviceFamily: family,
               title: 'Add Effect to Signal Chain',
+              editorController: controller,
             );
             if (selected != null) {
               controller.addEffectSlot(effectId: selected.effectId);

@@ -313,6 +313,13 @@ class LinuxAlsaMidiTransport extends MidiTransport {
 
   void _consumeByte(int byte) {
     if (_inSysEx) {
+      if (byte >= 0xF8) {
+        // System Real-Time messages (MIDI Clock 0xF8, Active Sensing 0xFE, etc.)
+        // may be interleaved inside SysEx per the MIDI 1.0 spec and must not
+        // corrupt the SysEx payload.
+        _emitMessage(Uint8List.fromList([byte]));
+        return;
+      }
       _sysexBuffer.add(byte);
       if (byte == 0xF7) {
         // SysEx end

@@ -155,6 +155,7 @@ class _SlotInspectorWidgetState extends State<SlotInspectorWidget> {
                             deviceFamily: family,
                             currentEffectId: slot.effectId,
                             title: 'Change Slot #${slot.slotIndex + 1} Effect',
+                            editorController: widget.controller,
                           );
                           if (selected != null) {
                             widget.controller.changeSlotEffect(slot.slotIndex, selected.effectId);

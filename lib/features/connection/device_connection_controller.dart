@@ -2,15 +2,22 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 
+import '../../core/midi/composite_midi_transport.dart';
 import '../../core/midi/midi_port_descriptor.dart';
 import '../../core/midi/midi_message.dart';
 import '../../core/midi/midi_transport.dart';
+import '../../core/midi/mock_midi_transport.dart';
+import '../../core/storage/custom_effect_repository.dart';
+import '../../core/zd2/flst_seq_parser.dart';
+import '../../core/zd2/zd2_parser.dart';
 import '../../models/bank_slot_descriptor.dart';
 import '../../models/device_family.dart';
 import '../../models/patch.dart';
+import '../../protocols/catalogs/effect_catalog.dart';
 import '../../protocols/device_protocol.dart';
 import '../../protocols/line6_bass_pod_pro_protocol.dart';
 import '../../protocols/sysex_codec.dart';
+import '../../protocols/zoom_file_transfer_service.dart';
 import '../../protocols/zoom_ms_plus_protocol.dart';
 
 /// Callback signature for dispatching unsolicited incoming hardware updates.
@@ -47,11 +54,26 @@ class DeviceConnectionController extends ChangeNotifier {
 
   HardwareUpdateHandler? _hardwareUpdateHandler;
   dynamic _editor;
+  CustomEffectRepository? _customEffectRepository;
   StreamSubscription<MidiMessage>? _transportSubscription;
   Timer? _hotPlugTimer;
   bool _isHotPlugChecking = false;
 
   int? _activeHardwareSlotIndex;
+
+  // Live hardware onboard effect inventory (populated via read-only FLST_SEQ.ZT2
+  // discovery on Zoom MS+ and Zoom Four hardware; cleared on disconnect / Line 6).
+  Set<String>? _installedEffectIds;
+  List<FlstEffectEntry> _installedFlstEntries = const [];
+  Set<String> _discoveredStockIds = const {};
+  Set<String> _discoveredCrossModelIds = const {};
+  Set<String> _discoveredCustomIds = const {};
+  DeviceEffectDiscoveryResult? _lastEffectDiscoveryResult;
+  bool _isScanningEffects = false;
+  String? _effectScanStatusMessage;
+  String? _effectScanError;
+  bool _suppressIncomingHardwareEvents = false;
+  int _discoverySessionToken = 0;
 
   // Track incoming Bank Select (CC 0 MSB and CC 32 LSB) from hardware
   int _incomingBankMsb = 0;
@@ -62,6 +84,7 @@ class DeviceConnectionController extends ChangeNotifier {
 
   final Duration? pacingDelayOverride;
   final Duration? currentPatchTimeoutOverride;
+  final Duration? effectDiscoveryTimeoutOverride;
   final bool _isTest;
 
   /// Known hardware identification patterns for auto-discovery.
@@ -86,12 +109,15 @@ class DeviceConnectionController extends ChangeNotifier {
     bool enableHotPlugPolling = true,
     this.pacingDelayOverride,
     this.currentPatchTimeoutOverride,
+    this.effectDiscoveryTimeoutOverride,
+    CustomEffectRepository? customEffectRepository,
     bool? isTest,
   })  : _isTest = isTest ??
             (const bool.fromEnvironment('FLUTTER_TEST') ||
                 (Platform.environment['FLUTTER_TEST'] == 'true')),
         _activeFamily = defaultFamily,
         _activeProtocol = _resolveProtocolForFamily(defaultFamily) {
+    _customEffectRepository = customEffectRepository;
     _transportSubscription = transport.onMessageReceived.listen(_handleIncomingHardwareEvent);
     if (enableHotPlugPolling && !_isTest) {
       _startHotPlugPolling();
@@ -106,6 +132,26 @@ class DeviceConnectionController extends ChangeNotifier {
   Duration get currentPatchTimeout =>
       currentPatchTimeoutOverride ??
       (_isTest ? const Duration(milliseconds: 50) : const Duration(milliseconds: 800));
+
+  /// Per-packet timeout used during read-only Zoom `0x60` effect discovery.
+  Duration get effectDiscoveryPacketTimeout =>
+      effectDiscoveryTimeoutOverride ??
+      (_isTest ? const Duration(milliseconds: 25) : const Duration(milliseconds: 1200));
+
+  /// Currently bound [CustomEffectRepository], falling back to the bound editor's repository.
+  CustomEffectRepository? get customEffectRepository {
+    if (_customEffectRepository != null) return _customEffectRepository;
+    try {
+      final repo = _editor?.customEffectRepository;
+      if (repo is CustomEffectRepository) return repo;
+    } catch (_) {}
+    return null;
+  }
+
+  /// Binds a [CustomEffectRepository] used to cache newly discovered custom `.ZD2` effects.
+  void setCustomEffectRepository(CustomEffectRepository? repository) {
+    _customEffectRepository = repository;
+  }
 
   void _startHotPlugPolling() {
     _hotPlugTimer?.cancel();
@@ -295,6 +341,39 @@ class DeviceConnectionController extends ChangeNotifier {
   /// True when the hardware tuner is currently engaged.
   bool get isTunerActive => _isTunerActive;
 
+  /// Authoritative set of normalized uppercase `'0xXXXXXXXX'` effect IDs
+  /// verified installed on the connected Zoom pedal, or `null` when offline,
+  /// non-Zoom, or discovery failed/unsupported.
+  Set<String>? get installedEffectIds =>
+      _installedEffectIds == null ? null : Set.unmodifiable(_installedEffectIds!);
+
+  /// Installed `FLST_SEQ.ZT2` entries verified on the connected Zoom pedal.
+  List<FlstEffectEntry> get installedFlstEntries =>
+      List.unmodifiable(_installedFlstEntries);
+
+  /// Stock effect IDs confirmed installed on the connected Zoom pedal.
+  Set<String> get discoveredStockIds => Set.unmodifiable(_discoveredStockIds);
+
+  /// Cross-model sibling effect IDs confirmed installed on the connected Zoom pedal.
+  Set<String> get discoveredCrossModelIds =>
+      Set.unmodifiable(_discoveredCrossModelIds);
+
+  /// Custom `.ZD2` effect IDs confirmed installed on the connected Zoom pedal.
+  Set<String> get discoveredCustomIds => Set.unmodifiable(_discoveredCustomIds);
+
+  /// Result object from the most recent onboard effect discovery pass, or null.
+  DeviceEffectDiscoveryResult? get lastEffectDiscoveryResult =>
+      _lastEffectDiscoveryResult;
+
+  /// True while a read-only Zoom onboard effect discovery scan is running.
+  bool get isScanningEffects => _isScanningEffects;
+
+  /// Human-readable status message during an active onboard effect scan.
+  String? get effectScanStatusMessage => _effectScanStatusMessage;
+
+  /// Non-fatal warning/error message from the most recent effect discovery scan.
+  String? get effectScanError => _effectScanError;
+
   /// Engages or exits the hardware tuner and dispatches protocol MIDI commands.
   Future<void> setTunerActive(bool enabled) async {
     if (_isTunerActive == enabled) return;
@@ -378,12 +457,388 @@ class DeviceConnectionController extends ChangeNotifier {
 
   /// Explicitly selects a [DeviceFamily] and resolves the matching [DeviceProtocol].
   void selectDeviceFamily(DeviceFamily family) {
+    final switchedFamily = _activeFamily != family;
     _activeFamily = family;
     _activeProtocol = _resolveProtocolForFamily(family);
+    if (!isConnected || !family.isZoom6E || switchedFamily && !isConnected) {
+      _clearHardwareEffectInventory(notify: false);
+    }
     notifyListeners();
   }
 
-  /// Connects to [port], performs device identity inquiry handshake, and executes
+  void _clearHardwareEffectInventory({bool notify = true}) {
+    _installedEffectIds = null;
+    _installedFlstEntries = const [];
+    _discoveredStockIds = const {};
+    _discoveredCrossModelIds = const {};
+    _discoveredCustomIds = const {};
+    _lastEffectDiscoveryResult = null;
+    _isScanningEffects = false;
+    _effectScanStatusMessage = null;
+    _effectScanError = null;
+    EffectCatalogRegistry.clearInstalledCrossModelEffects();
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  /// Performs a strictly READ-ONLY Zoom USB-MIDI onboard effect discovery scan:
+  /// 1. Downloads and parses `FLST_SEQ.ZT2` in PC Mode (`0x52`).
+  /// 2. Classifies installed entries into Tier 1 stock, Tier 2 sibling cross-model,
+  ///    already-cached Tier 3 custom, or uncached custom `.ZD2` files.
+  /// 3. Downloads only uncached custom `.ZD2` files (or all custom `.ZD2`s when
+  ///    [forceRedownloadCustom] is true) inside the same PC-Mode session, parses
+  ///    each via [Zd2Parser], persists into [CustomEffectRepository], and registers
+  ///    in [EffectCatalogRegistry].
+  /// 4. Applies the runtime installed cross-model overlay to [EffectCatalogRegistry]
+  ///    and re-hydrates the active editor patch.
+  /// 5. Guarantees exit from PC Mode (`0x53`) and re-entry into Parameter Edit
+  ///    Mode (`0x50`) even on failure or timeout.
+  Future<DeviceEffectDiscoveryResult> scanInstalledEffects({
+    bool forceRedownloadCustom = false,
+  }) async {
+    if (!transport.isConnected || !_activeFamily.isZoom6E) {
+      if (!_activeFamily.isZoom6E) {
+        _clearHardwareEffectInventory(notify: true);
+      }
+      return DeviceEffectDiscoveryResult.failure(
+        'Onboard effect discovery is only available when connected to a Zoom pedal.',
+      );
+    }
+
+    if (_isScanningEffects) {
+      return _lastEffectDiscoveryResult ??
+          DeviceEffectDiscoveryResult.failure(
+            'Onboard effect scan is already in progress.',
+          );
+    }
+
+    final sessionToken = ++_discoverySessionToken;
+    final family = _activeFamily;
+    final repo = customEffectRepository;
+
+    _isScanningEffects = true;
+    _effectScanError = null;
+    _effectScanStatusMessage = 'Scanning onboard effects...';
+    notifyListeners();
+
+    final service = ZoomFileTransferService(
+      transport: transport,
+      modelId: ZoomMsPlusProtocol.familyIdByte,
+      packetTimeout: effectDiscoveryPacketTimeout,
+      pcModeAckTimeout: _isTest
+          ? const Duration(milliseconds: 15)
+          : const Duration(milliseconds: 250),
+      closeAckTimeout: _isTest
+          ? const Duration(milliseconds: 15)
+          : const Duration(milliseconds: 200),
+      pacingDelay: pacingDelay,
+      debugLogger: (kDebugMode && !_isTest)
+          ? (msg) => debugPrint('[ZoomFileTransfer] $msg')
+          : null,
+    );
+
+    bool isCancelled() =>
+        _isDisposed ||
+        sessionToken != _discoverySessionToken ||
+        !transport.isConnected;
+
+    try {
+      // Load existing cached custom effects (repository + registry) so already-cached
+      // .ZD2 binaries are not unnecessarily re-downloaded over MIDI.
+      final cachedVersionsById = <String, String?>{};
+      if (repo != null) {
+        try {
+          final persisted = await repo.loadAll();
+          for (final entry in persisted) {
+            final normId = CustomEffectEntry.normalizeEffectId(entry.effectId);
+            cachedVersionsById[normId] = entry.version;
+          }
+        } catch (_) {}
+      }
+      for (final reg in EffectCatalogRegistry.getRegisteredCustomEffects()) {
+        if (reg.isCompatibleWith(family)) {
+          final normId =
+              CustomEffectEntry.normalizeEffectId(reg.definition.effectId);
+          cachedVersionsById.putIfAbsent(normId, () => reg.definition.version);
+        }
+      }
+
+      late FlstParseResult flst;
+      final stockIds = <String>{};
+      final crossModelIds = <String>{};
+      final cachedCustomIds = <String>{};
+      final newlyCachedCustomIds = <String>{};
+      final failedCustomFilenames = <String>[];
+      final failedCustomEffects = <FailedCustomEffectDiscovery>[];
+      final customToDownload = <FlstEffectEntry>[];
+      bool anyCustomRegistered = false;
+
+      await service.runReadSession<void>(
+        (session) async {
+          final flstBytes = await session.downloadFile('FLST_SEQ.ZT2');
+          if (isCancelled()) return;
+
+          flst = FlstSeqParser.parse(flstBytes);
+
+          if (kDebugMode && !_isTest) {
+            final expectedBpmId = family == DeviceFamily.zoomMs60bPlus
+                ? '0x09000FF0'
+                : '0x07000FF0';
+            final hasBpmStock =
+                EffectCatalogRegistry.isStockEffect(family, expectedBpmId);
+            final hasBpmOnPedal =
+                flst.installedEffectIds.contains(expectedBpmId);
+            debugPrint(
+              '[ZoomEffectDiscovery] Parsed FLST_SEQ.ZT2 '
+              '(device=${flst.deviceName ?? "unknown"}, '
+              'installed=${flst.installedEntries.length}/${flst.allEntries.length}, '
+              '$expectedBpmId inStock=$hasBpmStock onPedal=$hasBpmOnPedal)',
+            );
+          }
+
+          for (final entry in flst.installedEntries) {
+            final normId = CustomEffectEntry.normalizeEffectId(entry.effectId);
+            if (EffectCatalogRegistry.isStockEffect(family, normId)) {
+              stockIds.add(normId);
+              continue;
+            }
+            if (EffectCatalogRegistry.lookupCrossModelSibling(family, normId) !=
+                null) {
+              crossModelIds.add(normId);
+              if (kDebugMode && !_isTest) {
+                debugPrint(
+                  '[ZoomEffectDiscovery] Non-stock entry (cross-model): '
+                  'filename="${entry.filename}", effectId=$normId, '
+                  'groupByte=0x${entry.groupByte.toRadixString(16).padLeft(2, '0')}, '
+                  'groupName="${entry.groupName}", version="${entry.version}", '
+                  'installed=${entry.installed}',
+                );
+              }
+              continue;
+            }
+
+            final hasCacheHit = !forceRedownloadCustom &&
+                cachedVersionsById.containsKey(normId) &&
+                (entry.version.isEmpty ||
+                    cachedVersionsById[normId] == null ||
+                    cachedVersionsById[normId]!.isEmpty ||
+                    cachedVersionsById[normId] == entry.version);
+            if (hasCacheHit) {
+              cachedCustomIds.add(normId);
+              if (kDebugMode && !_isTest) {
+                debugPrint(
+                  '[ZoomEffectDiscovery] Non-stock entry (cached custom): '
+                  'filename="${entry.filename}", effectId=$normId, '
+                  'groupByte=0x${entry.groupByte.toRadixString(16).padLeft(2, '0')}, '
+                  'groupName="${entry.groupName}", version="${entry.version}", '
+                  'installed=${entry.installed}',
+                );
+              }
+              continue;
+            }
+
+            if (kDebugMode && !_isTest) {
+              debugPrint(
+                '[ZoomEffectDiscovery] Non-stock entry (unmatched -> queued for .ZD2 download): '
+                'filename="${entry.filename}", effectId=$normId, '
+                'groupByte=0x${entry.groupByte.toRadixString(16).padLeft(2, '0')}, '
+                'groupName="${entry.groupName}", version="${entry.version}", '
+                'installed=${entry.installed}',
+              );
+            }
+            customToDownload.add(entry);
+          }
+
+          for (int i = 0; i < customToDownload.length; i++) {
+            if (isCancelled()) return;
+            final entry = customToDownload[i];
+            final entryNormId =
+                CustomEffectEntry.normalizeEffectId(entry.effectId);
+            _effectScanStatusMessage =
+                'Reading custom effect ${i + 1}/${customToDownload.length}: ${entry.filename}...';
+            notifyListeners();
+
+            try {
+              final zd2Bytes = await session.downloadFile(entry.filename);
+              if (isCancelled()) return;
+
+              final parsedZd2 = Zd2Parser.parse(
+                zd2Bytes,
+                sourceFilename: entry.filename,
+              );
+              var customEntry = CustomEffectEntry.fromParsedZd2(parsedZd2);
+              if ((customEntry.version == null ||
+                      customEntry.version!.isEmpty) &&
+                  entry.version.isNotEmpty) {
+                customEntry = customEntry.copyWith(version: entry.version);
+              }
+
+              if (repo != null) {
+                await repo.upsert(customEntry);
+              }
+              EffectCatalogRegistry.registerCustomEffect(
+                customEntry.toEffectDefinition(family),
+                generation: customEntry.generation,
+                notify: false,
+              );
+              anyCustomRegistered = true;
+
+              final normId =
+                  CustomEffectEntry.normalizeEffectId(customEntry.effectId);
+              newlyCachedCustomIds.add(normId);
+              cachedCustomIds.add(normId);
+              cachedVersionsById[normId] = customEntry.version;
+            } catch (err) {
+              final conciseReason = err is ZoomFileTransferException
+                  ? err.message
+                  : err is Zd2ParseException
+                      ? err.message
+                      : err is TimeoutException
+                          ? 'Timed out reading from pedal'
+                          : err.toString();
+              failedCustomFilenames.add(entry.filename);
+              failedCustomEffects.add(FailedCustomEffectDiscovery(
+                filename: entry.filename,
+                effectId: entryNormId,
+                reason: conciseReason,
+              ));
+              if (kDebugMode && !_isTest) {
+                debugPrint(
+                  '[ZoomEffectDiscovery] Failed reading "${entry.filename}" '
+                  '(effectId=$entryNormId, group=${entry.groupName}/0x${entry.groupByte.toRadixString(16)}, '
+                  'v${entry.version}): $err',
+                );
+              }
+            }
+          }
+        },
+        onSuppressLiveDispatch: (suppressed) {
+          _suppressIncomingHardwareEvents = suppressed;
+        },
+        isCancelled: isCancelled,
+      );
+
+      if (isCancelled()) {
+        return DeviceEffectDiscoveryResult.failure(
+          'Effect scan cancelled during disconnect.',
+        );
+      }
+
+      _installedEffectIds = Set<String>.unmodifiable(flst.installedEffectIds);
+      _installedFlstEntries =
+          List<FlstEffectEntry>.unmodifiable(flst.installedEntries);
+      _discoveredStockIds = Set<String>.unmodifiable(stockIds);
+      _discoveredCrossModelIds = Set<String>.unmodifiable(crossModelIds);
+      _discoveredCustomIds = Set<String>.unmodifiable(cachedCustomIds);
+
+      // Update runtime cross-model overlay (and notify catalog listeners if custom
+      // effects were registered even when crossModelIds was unchanged).
+      final revisionBefore = EffectCatalogRegistry.catalogRevision.value;
+      EffectCatalogRegistry.setInstalledCrossModelEffects(
+        family,
+        crossModelIds,
+      );
+      if (anyCustomRegistered &&
+          EffectCatalogRegistry.catalogRevision.value == revisionBefore) {
+        EffectCatalogRegistry.catalogRevision.value = revisionBefore + 1;
+      }
+
+      // Immediately re-hydrate any open editor patch so newly discovered custom
+      // effects upgrade from Unknown to their real name & parameters.
+      if (_editor != null) {
+        try {
+          _editor.refreshEffectDefinitionsFromCatalog();
+        } catch (_) {}
+      }
+
+      final warning = failedCustomEffects.isEmpty
+          ? null
+          : 'Could not read ${failedCustomEffects.length} custom effect '
+              'file(s): ${failedCustomEffects.map((f) => f.summary).join('; ')}';
+
+      final result = DeviceEffectDiscoveryResult(
+        success: true,
+        installedEntries: _installedFlstEntries,
+        installedEffectIds: _installedEffectIds!,
+        stockIds: _discoveredStockIds,
+        crossModelIds: _discoveredCrossModelIds,
+        cachedCustomIds: _discoveredCustomIds,
+        newlyCachedCustomIds: newlyCachedCustomIds,
+        failedCustomFilenames: failedCustomFilenames,
+        failedCustomEffects: failedCustomEffects,
+      );
+
+      _lastEffectDiscoveryResult = result;
+      _effectScanError = warning;
+      _effectScanStatusMessage = null;
+      _isScanningEffects = false;
+      notifyListeners();
+      return result;
+    } catch (e) {
+      if (!isCancelled()) {
+        _installedEffectIds = null;
+        _installedFlstEntries = const [];
+        _discoveredStockIds = const {};
+        _discoveredCrossModelIds = const {};
+        _discoveredCustomIds = const {};
+        EffectCatalogRegistry.clearInstalledCrossModelEffects(family);
+
+        final reason = e is TimeoutException
+            ? 'Pedal did not respond to onboard effect scan.'
+            : e is FlstParseException
+                ? e.message
+                : e is ZoomFileTransferException
+                    ? e.message
+                    : 'Onboard effect discovery failed: $e';
+
+        if (kDebugMode && !_isTest) {
+          debugPrint('[ZoomEffectDiscovery] $reason');
+        }
+
+        final failure = DeviceEffectDiscoveryResult.failure(reason);
+        _lastEffectDiscoveryResult = failure;
+        _effectScanError = reason;
+        _effectScanStatusMessage = null;
+        _isScanningEffects = false;
+        notifyListeners();
+        return failure;
+      }
+      _isScanningEffects = false;
+      _effectScanStatusMessage = null;
+      notifyListeners();
+      return DeviceEffectDiscoveryResult.failure('Effect scan cancelled.');
+    }
+  }
+
+  /// Re-classifies already-downloaded [_installedFlstEntries] when the active
+  /// Zoom family is refined after initial current-patch dump detection.
+  void _reclassifyInstalledEffectsForActiveFamily() {
+    if (_installedFlstEntries.isEmpty || !_activeFamily.isZoom6E) return;
+    final family = _activeFamily;
+    final stockIds = <String>{};
+    final crossModelIds = <String>{};
+    final customIds = <String>{};
+    for (final entry in _installedFlstEntries) {
+      final normId = CustomEffectEntry.normalizeEffectId(entry.effectId);
+      if (EffectCatalogRegistry.isStockEffect(family, normId)) {
+        stockIds.add(normId);
+      } else if (EffectCatalogRegistry.lookupCrossModelSibling(family, normId) !=
+          null) {
+        crossModelIds.add(normId);
+      } else {
+        customIds.add(normId);
+      }
+    }
+    _discoveredStockIds = Set<String>.unmodifiable(stockIds);
+    _discoveredCrossModelIds = Set<String>.unmodifiable(crossModelIds);
+    _discoveredCustomIds = Set<String>.unmodifiable(customIds);
+    EffectCatalogRegistry.clearInstalledCrossModelEffects();
+    EffectCatalogRegistry.setInstalledCrossModelEffects(family, crossModelIds);
+  }
+
+  /// Connects to [port], performs device identity inquiry handshake, runs
+  /// read-only onboard effect discovery on Zoom pedals, and executes
   /// the protocol's initialization sequence.
   ///
   /// If [explicitFamily] is provided, automatic identity inquiry is bypassed in
@@ -393,11 +848,14 @@ class DeviceConnectionController extends ChangeNotifier {
     DeviceFamily? explicitFamily,
     bool autoSyncBank = false,
     bool fetchCurrentPatch = true,
+    bool autoDiscoverEffects = true,
   }) async {
     _isConnecting = true;
     _errorMessage = null;
     _activeHardwareSlotIndex = null;
     _isTunerActive = false;
+    _discoverySessionToken++;
+    _clearHardwareEffectInventory(notify: false);
 
     final preDetected = explicitFamily ?? identifyFamilyFromPort(port);
     if (preDetected != null && preDetected != DeviceFamily.unknown) {
@@ -417,7 +875,24 @@ class DeviceConnectionController extends ChangeNotifier {
         await _performIdentityHandshake(port);
       }
 
+      // Strictly read-only onboard effect discovery on Zoom 0x6E pedals before
+      // reading the active edit buffer so custom .ZD2 & cross-model effects
+      // resolve immediately on the initial patch.
+      final currentTransport = transport;
+      final activeTransport = currentTransport is CompositeMidiTransport
+          ? currentTransport.activeTransport
+          : currentTransport;
+      final shouldAutoDiscover = autoDiscoverEffects &&
+          _activeFamily.isZoom6E &&
+          transport.isConnected &&
+          (activeTransport is! MockMidiTransport ||
+              activeTransport.hasZoomFileTransferHandler);
+      if (shouldAutoDiscover) {
+        await scanInstalledEffects();
+      }
+
       // Execute hardware initialization sequence with inter-command pacing
+      // (guarantees 0x53 -> 0x50 Parameter Edit Mode -> 0x33 current slot query).
       final initSequence = _activeProtocol.buildInitSequence();
       for (final msg in initSequence) {
         await transport.send(msg);
@@ -473,6 +948,7 @@ class DeviceConnectionController extends ChangeNotifier {
       }
     } catch (e) {
       _errorMessage = 'Connection failed: $e';
+      _clearHardwareEffectInventory(notify: false);
       try {
         await transport.disconnect();
       } catch (_) {}
@@ -486,9 +962,11 @@ class DeviceConnectionController extends ChangeNotifier {
   /// Disconnects from the currently connected MIDI device.
   Future<void> disconnect() async {
     cancelBankSync();
+    _discoverySessionToken++;
     _activeHardwareSlotIndex = null;
     _isTunerActive = false;
     _errorMessage = null;
+    _clearHardwareEffectInventory(notify: false);
     try {
       if (transport.isConnected) {
         final disableEditor =
@@ -757,12 +1235,18 @@ class DeviceConnectionController extends ChangeNotifier {
       if (decoded.deviceFamily.isZoomFour && !_activeFamily.isZoomFour) {
         selectDeviceFamily(decoded.deviceFamily);
         _ensureBankSlotsInitialized();
+        _reclassifyInstalledEffectsForActiveFamily();
       }
     } catch (_) {}
   }
 
   /// Routes unsolicited incoming MIDI events from hardware to registered editor controllers.
   void _handleIncomingHardwareEvent(MidiMessage message) {
+    // Suppress normal live SysEx dispatch while an exclusive PC-Mode 0x60 file
+    // transfer session is active so file chunks are never parsed as patch edits.
+    if (_suppressIncomingHardwareEvents) {
+      return;
+    }
     // Persistent memory slot dumps (0x45 / 0x08) strictly update bank slots only, never the editor buffer!
     if (_activeProtocol.isSlotPatchDump(message)) {
       final slotIndex = _activeProtocol.extractSlotIndex(message);
