@@ -281,6 +281,7 @@ class _CustomEffectsDialogState extends State<CustomEffectsDialog> {
 
     final outcomes = <_Zd2ImportOutcome>[];
     bool anyImported = false;
+    final log = widget.editorController.diagnosticsLog;
 
     for (final path in paths) {
       final filename = ImportFileSystem.baseName(path);
@@ -297,6 +298,10 @@ class _CustomEffectsDialogState extends State<CustomEffectsDialog> {
           generation: entry.generation,
         );
         anyImported = true;
+        log.info(
+          'CustomEffects',
+          'Imported "$filename" -> "${entry.name}" (${entry.effectId}, ${entry.parameters.length} params)',
+        );
         outcomes.add(_Zd2ImportOutcome(
           filename: filename,
           success: true,
@@ -304,12 +309,20 @@ class _CustomEffectsDialogState extends State<CustomEffectsDialog> {
               'Imported "${entry.name}" (${entry.effectId}, ${entry.parameters.length} params)',
         ));
       } on Zd2ParseException catch (e) {
+        log.error(
+          'CustomEffects',
+          'Failed to parse "$filename": ${e.message}',
+        );
         outcomes.add(_Zd2ImportOutcome(
           filename: filename,
           success: false,
           message: e.message,
         ));
       } catch (e) {
+        log.error(
+          'CustomEffects',
+          'Failed to import "$filename": $e',
+        );
         outcomes.add(_Zd2ImportOutcome(
           filename: filename,
           success: false,

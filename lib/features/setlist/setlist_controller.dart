@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/compatibility/patch_effect_compatibility.dart';
 import '../../core/midi/midi_message.dart';
 import '../../core/midi/midi_transport.dart';
 import '../../core/storage/setlist_repository.dart';
 import '../../models/device_family.dart';
 import '../../models/patch.dart';
 import '../../models/setlist.dart';
+import '../../protocols/catalogs/effect_catalog.dart';
 import '../connection/device_connection_controller.dart';
 import '../editor/patch_editor_controller.dart';
 import '../library/patch_library_controller.dart';
@@ -60,6 +62,8 @@ class SetlistController extends ChangeNotifier {
   bool _wrapAroundNavigation = false;
   bool _isLoading = false;
   String? _warningMessage;
+  String? _liveCompatibilityWarning;
+  List<MissingEffectSlot> _skippedLiveSlots = const [];
   String? _errorMessage;
   MidiFootControllerConfig _midiConfig = const MidiFootControllerConfig();
 
@@ -76,6 +80,7 @@ class SetlistController extends ChangeNotifier {
     DateTime Function()? nowProvider,
   }) : _nowProvider = nowProvider ?? DateTime.now {
     _midiSubscription = transport.onMessageReceived.listen(_handleIncomingMidi);
+    connectionController.addListener(_handleConnectionChanged);
   }
 
   List<Setlist> get setlists => List.unmodifiable(_setlists);
@@ -85,6 +90,9 @@ class SetlistController extends ChangeNotifier {
   bool get wrapAroundNavigation => _wrapAroundNavigation;
   bool get isLoading => _isLoading;
   String? get warningMessage => _warningMessage;
+  String? get liveCompatibilityWarning => _liveCompatibilityWarning;
+  List<MissingEffectSlot> get skippedLiveSlots =>
+      List.unmodifiable(_skippedLiveSlots);
   String? get errorMessage => _errorMessage;
   MidiFootControllerConfig get midiConfig => _midiConfig;
   bool get isTunerActive => connectionController.isTunerActive;
@@ -209,6 +217,8 @@ class SetlistController extends ChangeNotifier {
     _activeSetlistId = setlistId;
     _activeEntryIndex = 0;
     _warningMessage = null;
+    _liveCompatibilityWarning = null;
+    _skippedLiveSlots = const [];
     notifyListeners();
   }
 
@@ -321,8 +331,43 @@ class SetlistController extends ChangeNotifier {
   }
 
   void clearWarning() {
-    if (_warningMessage != null) {
+    if (_warningMessage != null ||
+        _liveCompatibilityWarning != null ||
+        _skippedLiveSlots.isNotEmpty) {
       _warningMessage = null;
+      _liveCompatibilityWarning = null;
+      _skippedLiveSlots = const [];
+      notifyListeners();
+    }
+  }
+
+  /// Checks [entry]'s resolved patch against the connected pedal's scanned
+  /// onboard effect list (or stock catalog fallback). Returns an empty report
+  /// when disconnected, missing from library, or incompatible generation.
+  PatchEffectCompatibilityReport analyzeEntryCompatibility(SetlistEntry entry) {
+    if (!connectionController.isConnected) {
+      return PatchEffectCompatibilityReport.empty;
+    }
+    final patch = resolvePatchForEntry(entry);
+    if (patch == null) {
+      return PatchEffectCompatibilityReport.empty;
+    }
+    final activeFamily = connectionController.activeFamily;
+    if (!_isCompatibleDevice(patch.deviceFamily, activeFamily)) {
+      return PatchEffectCompatibilityReport.empty;
+    }
+    return PatchEffectCompatibility.analyze(
+      patch,
+      activeFamily,
+      connectionController.installedEffectIds,
+    );
+  }
+
+  void _handleConnectionChanged() {
+    if (!connectionController.isConnected &&
+        (_liveCompatibilityWarning != null || _skippedLiveSlots.isNotEmpty)) {
+      _liveCompatibilityWarning = null;
+      _skippedLiveSlots = const [];
       notifyListeners();
     }
   }
@@ -339,6 +384,8 @@ class SetlistController extends ChangeNotifier {
 
     _activeEntryIndex = index;
     _warningMessage = null;
+    _liveCompatibilityWarning = null;
+    _skippedLiveSlots = const [];
     if (connectionController.isTunerActive) {
       await connectionController.setTunerActive(false);
     }
@@ -371,7 +418,29 @@ class SetlistController extends ChangeNotifier {
       if (!isConnected && targetPatch.deviceFamily != DeviceFamily.unknown) {
         connectionController.selectDeviceFamily(targetPatch.deviceFamily);
       }
-      editorController.activatePatchLive(targetPatch, syncHardware: true);
+      var patchToActivate = targetPatch;
+      if (isConnected) {
+        final compatReport = PatchEffectCompatibility.analyze(
+          targetPatch,
+          connectedFamily,
+          connectionController.installedEffectIds,
+        );
+        if (compatReport.hasMissingEffects) {
+          patchToActivate = PatchEffectCompatibility.stripMissingSlots(
+            targetPatch,
+            compatReport.missingSlotIndices,
+          );
+          _skippedLiveSlots = List.unmodifiable(compatReport.missingSlots);
+          final count = compatReport.missingSlots.length;
+          final deviceLabel =
+              EffectCatalogRegistry.conciseModelLabel(connectedFamily);
+          final names =
+              compatReport.missingSlots.map((m) => m.displayName).join(', ');
+          _liveCompatibilityWarning =
+              'Skipped $count effect${count == 1 ? '' : 's'} not installed on $deviceLabel: $names';
+        }
+      }
+      editorController.activatePatchLive(patchToActivate, syncHardware: true);
     }
     notifyListeners();
   }
@@ -458,6 +527,7 @@ class SetlistController extends ChangeNotifier {
 
   @override
   void dispose() {
+    connectionController.removeListener(_handleConnectionChanged);
     _midiSubscription?.cancel();
     super.dispose();
   }

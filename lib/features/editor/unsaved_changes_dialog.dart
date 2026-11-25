@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../core/compatibility/patch_effect_compatibility.dart';
+import '../../models/patch.dart';
 import '../connection/device_connection_controller.dart';
 import '../library/patch_library_controller.dart';
 import '../theme/studio_theme.dart';
+import 'missing_effects_dialog.dart';
 import 'patch_editor_controller.dart';
 import 'write_to_slot_dialog.dart';
 
@@ -163,8 +166,40 @@ Future<UnsavedChangesResolution> resolveUnsavedChanges({
           targetSlot != null && targetSlot >= 0 && targetSlot < totalSlots;
 
       if (hasValidSlot) {
+        Patch? strippedActiveCopy;
+        if (connectionController.isConnected) {
+          final report =
+              editorController.analyzePatchForConnectedDevice(currentPatch);
+          if (report.hasMissingEffects) {
+            if (!context.mounted) {
+              return UnsavedChangesResolution.cancelled;
+            }
+            final action = await resolveMissingEffectsForSingleWrite(
+              context: context,
+              patch: currentPatch,
+              targetFamily: connectionController.activeFamily,
+              report: report,
+            );
+            if (action == MissingEffectAction.cancel) {
+              return UnsavedChangesResolution.cancelled;
+            }
+            if (action == MissingEffectAction.stripAndProceed) {
+              strippedActiveCopy = PatchEffectCompatibility.stripMissingSlots(
+                currentPatch,
+                report.missingSlotIndices,
+              );
+            }
+          }
+        }
         try {
-          await editorController.savePatchToDeviceSlot(targetSlot);
+          if (strippedActiveCopy != null) {
+            await editorController.saveActivePatchCopyToDeviceSlot(
+              targetSlot,
+              strippedActiveCopy,
+            );
+          } else {
+            await editorController.savePatchToDeviceSlot(targetSlot);
+          }
           if (editorController.errorMessage != null || editorController.isDirty) {
             if (context.mounted) {
               ScaffoldMessenger.maybeOf(context)?.showSnackBar(

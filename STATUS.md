@@ -1,12 +1,32 @@
 # Project Status & Milestone Roadmap: `signal_chain_flutter`
 
-**Current Status:** v1.2.2 Release Prep Complete (Unsaved-Changes Protection & Zoom MS+ R-Out Routing)  
-**Active Milestone:** Release 1.2.2 Ready  
-**Last Updated:** 2026-11-21
+**Current Status:** v1.3.0 (`1.3.0+4`) Release Prep Complete (Hardware-Accurate Categorization, Zoom Onboard Effect Discovery, Custom `.ZD2` Effects, Missing-Effect Guards & In-App Diagnostics)  
+**Active Milestone:** Release 1.3.0 Ready  
+**Last Updated:** 2026-11-24
 
 ---
 
 ## 1. Milestone Roadmap
+
+### 🟢 Milestone 20: Hardware-Accurate Categorization, Zoom Onboard Effect Discovery, Custom `.ZD2` Support, Missing-Effect Guards & In-App Diagnostics (v1.3.0 / `1.3.0+4`)
+*Status:* **Completed**
+- [x] **Hardware-Accurate Effect Categorization & Dynamic Palettes (`lib/catalog/`, `lib/data/zoom_zdl7_master_catalog.dart`, `lib/features/editor/effect_bank_palette_widget.dart`, `lib/protocols/catalogs/effect_catalog.dart`):**
+  * Aligned MS-60B+ effects with the exact 11 hardware categories (placing `BPM` `0x09000FF0` in `SFX`), dynamically derived per-device palette categories with no empty tabs or misrouted amps, and fixed Zoom ZDL7 fallback categories.
+- [x] **Pure-Dart `.ZD2` Parser, Local Custom Effects Manager & 4-Tier Provenance Badges (`lib/core/zd2/zd2_parser.dart`, `lib/core/storage/custom_effect_repository.dart`, `lib/core/storage/file_system_custom_effect_repository.dart`, `lib/features/editor/custom_effects_dialog.dart`, `lib/features/editor/effect_origin_badge.dart`):**
+  * Added `Zd2Parser` for decoding `.ZD2` effect binaries in pure Dart, `CustomEffectRepository` (`FileSystemCustomEffectRepository` + in-memory repository) for offline `.ZD2` import and management, and 4-tier origin badges (`MS-50G+`, `MS-70CDR+`, `CUSTOM`, `UNKNOWN`) across the palette, signal chain, and inspector.
+- [x] **Read-Only Zoom USB-MIDI Onboard Effect Discovery (`lib/core/zd2/flst_seq_parser.dart`, `lib/protocols/zoom_file_transfer_service.dart`, `lib/features/connection/device_connection_controller.dart`, `lib/features/connection/connection_bar_widget.dart`):**
+  * Added `FlstSeqParser` and `ZoomFileTransferService` to scan `FLST_SEQ.ZT2` over read-only Zoom USB-MIDI file transfer on connect (plus manual **Rescan Pedal**), automatically identifying stock, cross-model sibling, and custom `.ZD2` effects installed on the pedal.
+- [x] **Missing-Effect Detection & Safety Guards (`lib/core/compatibility/`, `lib/features/editor/missing_effects_dialog.dart`, `write_to_slot_dialog.dart`, `bank_restore_dialog.dart`, `setlist_performance_view.dart`):**
+  * Added `PatchEffectCompatibility` analysis and `MissingEffectsDialog` with non-blocking editor/inspector/import warnings and Replace/Remove quick actions, pre-write single-patch and batch bank-restore resolution dialogs (preserving MS+ `R-Out` routing when stripping slots), live sync protection, and non-blocking Stage Mode warnings.
+- [x] **Offline Device Switching & In-App About / Diagnostics Log (`lib/core/app_info.dart`, `lib/core/diagnostics/`, `lib/features/about/about_diagnostics_dialog.dart`):**
+  * Ensured offline device-family switching and **New** patch creation cleanly tag patches with the active device family.
+  * Added `AppDiagnosticsLog` and `AboutDiagnosticsDialog` surfacing app version (`AppInfo.version`), hardware/storage environment summary, and a filterable live connection/transfer/discovery log with one-click **Copy Log**.
+- [x] **Release Metadata & Full Verification (`1.3.0+4`):**
+  * Bumped version metadata across `pubspec.yaml`, `lib/core/app_info.dart`, `linux/packaging/io.github.bassmannate.signal_chain.appdata.xml`, `tool/package_linux_appimage.sh`, `tool/package_linux_deb.sh`, `tool/package_windows_zip.ps1`, `windows/runner/Runner.rc`, and added Fastlane changelog `fastlane/metadata/android/en-US/changelogs/4.txt`.
+  * Added `AppInfo.version` ↔ `pubspec.yaml` drift guard in `test/packaging_config_test.dart`.
+  * Verified with `flutter analyze --no-pub` (0 issues), `appstreamcli validate --strict --no-net` (valid), and `flutter test --no-pub` (**476 passing tests**, 0 failures).
+
+---
 
 ### 🟢 Milestone 19B: Unsaved-Changes Protection & Zoom MS+ Right-Output (`R-Out`) Tap Routing (v1.2.2)
 *Status:* **Completed**

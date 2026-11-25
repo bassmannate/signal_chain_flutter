@@ -36,7 +36,19 @@ Total typed effect catalog coverage: **578** Zoom MS Plus definitions + **99** Z
 
 ---
 
-## Key Features (Through v1.2.2)
+## Key Features (Through v1.3.0)
+
+- **Hardware-Accurate Effect Categorization & Dynamic Palettes:** Exact 11-category MS-60B+ hardware grouping (with `BPM` `0x09000FF0` in `SFX`), dynamic per-device effect palette categories with no empty tabs or misrouted amps, and corrected Zoom ZDL7 fallback categories across all supported pedals.
+
+- **Read-Only Zoom USB-MIDI Onboard Effect Discovery:** Automatically scans `FLST_SEQ.ZT2` on connect (with a manual **Rescan Pedal** trigger) over read-only Zoom USB-MIDI file transfer to identify stock, cross-model sibling, and custom `.ZD2` effects installed on the physical pedal.
+
+- **Custom Effects (`.ZD2`) Parser, Offline Manager & 4-Tier Provenance Badges:** Pure-Dart `.ZD2` binary parser and local Custom Effects manager supporting offline `.ZD2` import alongside 4-tier effect origin badges (`MS-50G+`, `MS-70CDR+`, `CUSTOM`, `UNKNOWN`) in the palette, signal chain, and inspector.
+
+- **Missing-Effect Detection & Safety Guards:** Non-blocking editor, inspector, and import warnings with **Replace** / **Remove** quick actions; pre-write single-patch and batch bank-restore resolution dialogs (preserving Zoom MS+ `R-Out` routing when stripping missing slots); live hardware sync protection; and non-blocking Stage Mode warnings.
+
+- **Offline Device Switching & Clean Patch Tagging:** Switching the active device family offline and creating a **New** patch cleanly tags newly created patches with the active device family.
+
+- **In-App About & Diagnostics Log:** Built-in **About & Diagnostics Log** dialog displaying the app version, hardware/storage environment summary, and a filterable live connection, transfer, and effect-discovery log with one-click **Copy Log**.
 
 - **Unsaved-Changes Protection:** Proactively protects in-progress tone edits with modal warnings before closing the application (desktop Linux/Windows window close, Android system back gesture / back button) or navigating away (switching hardware slots, loading local presets, importing patches, or changing setlists). Prompts with **Save to Library**, **Save to Pedal** (enabled whenever connected to physical hardware), **Discard**, and **Cancel**, ensuring no adjustments are accidentally lost.
 

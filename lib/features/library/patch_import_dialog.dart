@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/compatibility/patch_effect_compatibility.dart';
 import '../../core/import/import_batch_result.dart';
 import '../../core/import/import_file_system.dart';
 import '../../core/import/import_format.dart';
@@ -10,6 +11,7 @@ import '../../core/import/imported_patch_entry.dart';
 import '../../core/import/patch_importer.dart';
 import '../../models/device_family.dart';
 import '../../models/patch_diff.dart';
+import '../../protocols/catalogs/effect_catalog.dart';
 import '../editor/patch_diff_dialog.dart';
 import '../editor/patch_editor_controller.dart';
 import '../editor/unsaved_changes_dialog.dart';
@@ -1094,6 +1096,17 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
                   final entry = entries[index];
                   final checked = _selectedIndices.contains(index);
                   final hasMismatch = entry.isDeviceMismatch(_activeFamily);
+                  final connection = widget.editorController.connectionController;
+                  final missingReport = (connection.isConnected &&
+                          (entry.patch.deviceFamily == DeviceFamily.unknown ||
+                              entry.patch.deviceFamily
+                                  .isSameGeneration(_activeFamily)))
+                      ? widget.editorController
+                          .analyzePatchForConnectedDevice(entry.patch)
+                      : PatchEffectCompatibilityReport.empty;
+                  final hasMissingEffects = missingReport.hasMissingEffects;
+                  final deviceLabel =
+                      EffectCatalogRegistry.conciseModelLabel(_activeFamily);
                   return CheckboxListTile(
                     key: Key('import_entry_checkbox_$index'),
                     value: checked,
@@ -1124,7 +1137,9 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
                             ),
                           ),
                         ),
-                        if (hasMismatch || entry.warnings.isNotEmpty)
+                        if (hasMismatch ||
+                            entry.warnings.isNotEmpty ||
+                            hasMissingEffects)
                           const Padding(
                             padding: EdgeInsets.only(left: 4),
                             child: Icon(
@@ -1152,13 +1167,33 @@ class _PatchImportDialogState extends State<PatchImportDialog> {
                           ),
                       ],
                     ),
-                    subtitle: Text(
-                      '${entry.inferredDeviceFamily.displayName} • '
-                      '${entry.patch.slots.length} slot${entry.patch.slots.length == 1 ? '' : 's'}'
-                      '${entry.patch.programNumber != null ? ' • #${entry.patch.programNumber.toString().padLeft(2, '0')}' : ''}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${entry.inferredDeviceFamily.displayName} • '
+                          '${entry.patch.slots.length} slot${entry.patch.slots.length == 1 ? '' : 's'}'
+                          '${entry.patch.programNumber != null ? ' • #${entry.patch.programNumber.toString().padLeft(2, '0')}' : ''}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              const TextStyle(fontSize: 10, color: Colors.grey),
+                        ),
+                        if (hasMissingEffects)
+                          Text(
+                            '${missingReport.missingSlots.length} effect${missingReport.missingSlots.length == 1 ? '' : 's'} not on $deviceLabel: '
+                            '${missingReport.missingSlots.map((m) => m.displayName).join(', ')}',
+                            key: Key('import_entry_missing_effects_$index'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.amberAccent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                      ],
                     ),
                   );
                 },

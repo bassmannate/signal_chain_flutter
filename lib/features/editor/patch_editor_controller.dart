@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 
+import '../../core/compatibility/patch_effect_compatibility.dart';
+import '../../core/diagnostics/app_diagnostics_log.dart';
 import '../../core/midi/midi_message.dart';
 import '../../core/midi/midi_transport.dart';
 import '../../core/midi/mock_midi_transport.dart';
@@ -13,6 +15,7 @@ import '../../models/patch.dart';
 import '../../models/patch_diff.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
 import '../../protocols/device_protocol.dart';
+import '../../protocols/line6_bass_pod_pro_protocol.dart';
 import '../connection/device_connection_controller.dart';
 import '../library/patch_library_controller.dart';
 import 'patch_edit_history.dart';
@@ -22,6 +25,7 @@ import 'patch_edit_history.dart';
 class PatchEditorController extends ChangeNotifier {
   final MidiTransport transport;
   final DeviceConnectionController connectionController;
+  final AppDiagnosticsLog diagnosticsLog;
 
   Patch? _patch;
   int _selectedSlotIndex = 0;
@@ -48,15 +52,23 @@ class PatchEditorController extends ChangeNotifier {
   int _bankRestoreCompletedCount = 0;
   int _bankRestoreTotalCount = 0;
 
+  DeviceFamily _lastObservedActiveFamily;
+  bool _isUntouchedDefaultPatch = false;
+  bool _isLoadedFromPreset = false;
+
   PatchEditorController({
     required this.transport,
     required this.connectionController,
     Patch? initialPatch,
     PatchEditHistory? history,
-  })  : _patch = initialPatch,
+    AppDiagnosticsLog? diagnosticsLog,
+  })  : diagnosticsLog = diagnosticsLog ?? connectionController.diagnosticsLog,
+        _patch = initialPatch,
         _history = history ?? PatchEditHistory(),
-        _compareSlotA = initialPatch {
+        _compareSlotA = initialPatch,
+        _lastObservedActiveFamily = connectionController.activeFamily {
     connectionController.setEditorController(this);
+    connectionController.addListener(_handleConnectionControllerChanged);
   }
 
   /// Currently loaded active preset.
@@ -215,6 +227,29 @@ class PatchEditorController extends ChangeNotifier {
   /// Resolved protocol engine from [connectionController].
   DeviceProtocol get protocol => connectionController.activeProtocol;
 
+  /// Evaluates [patch] against the connected hardware pedal's scanned onboard
+  /// effect list (or stock catalog fallback when onboard scan was unavailable).
+  ///
+  /// Returns [PatchEffectCompatibilityReport.empty] when disconnected.
+  PatchEffectCompatibilityReport analyzePatchForConnectedDevice(Patch patch) {
+    if (!connectionController.isConnected) {
+      return PatchEffectCompatibilityReport.empty;
+    }
+    return PatchEffectCompatibility.analyze(
+      patch,
+      connectionController.activeFamily,
+      connectionController.installedEffectIds,
+    );
+  }
+
+  /// Compatibility report for the currently loaded editor patch against the
+  /// connected hardware pedal (or [PatchEffectCompatibilityReport.empty] offline).
+  PatchEffectCompatibilityReport get activePatchCompatibilityReport {
+    final current = _patch;
+    if (current == null) return PatchEffectCompatibilityReport.empty;
+    return analyzePatchForConnectedDevice(current);
+  }
+
   /// True if additional effect slots can be added to the current patch.
   bool get canAddEffectSlot =>
       _patch != null &&
@@ -281,6 +316,7 @@ class PatchEditorController extends ChangeNotifier {
     required String label,
     String? coalesceKey,
   }) {
+    _isUntouchedDefaultPatch = false;
     _history.recordEdit(
       previousPatch: previousPatch,
       previousSelectedSlot: previousSelectedSlot,
@@ -467,12 +503,117 @@ class PatchEditorController extends ChangeNotifier {
     return PatchDiff.compute(a, b);
   }
 
+  /// Creates a clean, empty/default [Patch] initialized for [family] with the
+  /// proper default slot structure (4 fixed Amp/Cab/Comp/FX slots for Line 6 Bass
+  /// POD Pro; empty chain for Zoom pedals).
+  static Patch createBlankPatch(
+    DeviceFamily family, {
+    String? id,
+    String? name,
+  }) {
+    final resolvedId =
+        id ?? 'new_${family.name}_${DateTime.now().microsecondsSinceEpoch}';
+    final resolvedName = name ?? 'Init Patch';
+
+    if (family.isLine6BassPodPro) {
+      final buffer = Uint8List(Line6BassPodProProtocol.editBufferSize);
+      buffer[4] = 32; // Drive = 64
+      buffer[6] = 32; // Bass = 64
+      buffer[7] = 32; // Mid = 64
+      buffer[8] = 32; // Treble = 64
+      buffer[10] = 50; // Channel Volume = 100
+      buffer[49] = 10; // FX Type = Bypass
+      final decoded = const Line6BassPodProProtocol().decodeEditBuffer(buffer);
+      return decoded.copyWith(
+        id: resolvedId,
+        name: resolvedName,
+        deviceFamily: DeviceFamily.line6BassPodPro,
+        programNumber: null,
+      );
+    }
+
+    return Patch(
+      id: resolvedId,
+      name: resolvedName,
+      deviceFamily: family,
+      programNumber: null,
+      slots: const [],
+      rightOutputTapCode: RightOutputTap.endOfChain,
+      metadata: const {'tempo': 120},
+    );
+  }
+
+  /// Creates and loads a new clean patch for [family] (defaults to
+  /// [DeviceConnectionController.activeFamily]), resetting dirty state and history.
+  Patch createNewPatch({
+    DeviceFamily? family,
+    String? name,
+  }) {
+    final targetFamily = family ?? connectionController.activeFamily;
+    final blank = createBlankPatch(targetFamily, name: name);
+    _patch = blank;
+    _isDirty = false;
+    _selectedSlotIndex = 0;
+    _errorMessage = null;
+    _isUntouchedDefaultPatch = true;
+    _isLoadedFromPreset = false;
+    _resetSessionBaseline(blank);
+    notifyListeners();
+    return blank;
+  }
+
+  void _handleConnectionControllerChanged() {
+    if (_isDisposed) return;
+
+    final nextFamily = connectionController.activeFamily;
+    if (nextFamily == _lastObservedActiveFamily) return;
+    _lastObservedActiveFamily = nextFamily;
+
+    if (connectionController.isConnected) return;
+
+    final current = _patch;
+    if (current == null || current.deviceFamily == nextFamily) return;
+
+    if (!_isDirty &&
+        (_isUntouchedDefaultPatch ||
+            current.slots.isEmpty ||
+            !_isLoadedFromPreset)) {
+      createNewPatch(family: nextFamily);
+      return;
+    }
+
+    final sameGeneration = current.deviceFamily != DeviceFamily.unknown &&
+        nextFamily != DeviceFamily.unknown &&
+        current.deviceFamily.isSameGeneration(nextFamily);
+
+    if (sameGeneration) {
+      if (!_isLoadedFromPreset && current.programNumber == null) {
+        final nextTapCode = nextFamily.isZoomMsPlus
+            ? RightOutputTap.normalize(
+                current.rightOutputTapCode,
+                slotCount: current.slots.length,
+              )
+            : RightOutputTap.endOfChain;
+        _patch = current.copyWith(
+          deviceFamily: nextFamily,
+          rightOutputTapCode: nextTapCode,
+        );
+        notifyListeners();
+      }
+      return;
+    }
+
+    createNewPatch(family: nextFamily);
+  }
+
   /// Replaces the active editor patch and resets the dirty flag and edit history.
   void loadPatch(Patch patch) {
     _patch = patch;
     _isDirty = false;
     _selectedSlotIndex = 0;
     _errorMessage = null;
+    _isUntouchedDefaultPatch = false;
+    _isLoadedFromPreset = true;
     _resetSessionBaseline(patch);
     if (patch.programNumber != null) {
       connectionController.setActiveHardwareSlotIndex(
@@ -495,6 +636,8 @@ class PatchEditorController extends ChangeNotifier {
     _isDirty = false;
     _selectedSlotIndex = 0;
     _errorMessage = null;
+    _isUntouchedDefaultPatch = false;
+    _isLoadedFromPreset = true;
     _resetSessionBaseline(targetPatch);
 
     if (syncHardware && transport.isConnected && !_isHandlingIncoming) {
@@ -568,6 +711,8 @@ class PatchEditorController extends ChangeNotifier {
       _patch = decoded;
       _isDirty = false;
       _selectedSlotIndex = 0;
+      _isUntouchedDefaultPatch = false;
+      _isLoadedFromPreset = true;
       _resetSessionBaseline(decoded);
     } catch (e) {
       _errorMessage = 'Failed to pull patch from device: $e';
@@ -791,6 +936,7 @@ class PatchEditorController extends ChangeNotifier {
         'Cannot write ${patchDevice.displayName} patch to ${targetDevice.displayName}: '
         'incompatible hardware generation '
         '(${patchDevice.generation.displayName} vs ${targetDevice.generation.displayName}).';
+    diagnosticsLog.warn('Writes', _errorMessage!);
     notifyListeners();
   }
 
@@ -803,6 +949,36 @@ class PatchEditorController extends ChangeNotifier {
       return;
     }
 
+    final isExternalPatch =
+        _isRestoringBank || (patchToSave != null && !identical(patchToSave, _patch));
+
+    await _savePatchToDeviceSlotInternal(
+      slotIndex,
+      target,
+      isExternalPatch: isExternalPatch,
+    );
+  }
+
+  /// Writes a stripped/adjusted copy of the active editor patch to [slotIndex],
+  /// keeping active editor state, dirty flag, and Undo history consistent.
+  Future<void> saveActivePatchCopyToDeviceSlot(
+    int slotIndex,
+    Patch patchToWrite,
+  ) async {
+    await _savePatchToDeviceSlotInternal(
+      slotIndex,
+      patchToWrite,
+      isExternalPatch: _isRestoringBank,
+      recordStripHistory: true,
+    );
+  }
+
+  Future<void> _savePatchToDeviceSlotInternal(
+    int slotIndex,
+    Patch target, {
+    required bool isExternalPatch,
+    bool recordStripHistory = false,
+  }) async {
     final targetFamily = connectionController.activeFamily;
     if (targetFamily != DeviceFamily.unknown &&
         target.deviceFamily != DeviceFamily.unknown &&
@@ -819,9 +995,6 @@ class PatchEditorController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-
-    final isExternalPatch =
-        _isRestoringBank || (patchToSave != null && !identical(patchToSave, _patch));
 
     _isLoading = true;
     _errorMessage = null;
@@ -852,18 +1025,51 @@ class PatchEditorController extends ChangeNotifier {
 
       final updated = target.copyWith(programNumber: slotIndex);
       if (!isExternalPatch) {
+        final previousPatch = _patch;
+        final previousSlot = _selectedSlotIndex;
+        final previousDirty = _isDirty;
+        if (recordStripHistory &&
+            previousPatch != null &&
+            previousPatch != target) {
+          _recordUserEdit(
+            previousPatch: previousPatch,
+            previousSelectedSlot: previousSlot,
+            previousDirty: previousDirty,
+            label: 'Strip Missing Effects',
+          );
+        }
         _patch = updated;
         _isDirty = false;
+        if (updated.slots.isNotEmpty) {
+          _selectedSlotIndex =
+              _selectedSlotIndex.clamp(0, updated.slots.length - 1);
+        } else {
+          _selectedSlotIndex = 0;
+        }
         _compareSlotA = updated;
-        connectionController.setActiveHardwareSlotIndex(slotIndex);
+        connectionController.setActiveHardwareSlotIndex(
+          slotIndex,
+          syncEditorPatchProgramNumber: false,
+        );
       }
       connectionController.updateBankSlot(
         slotIndex,
         patchName: updated.name,
         patch: updated,
       );
+      if (!_isRestoringBank) {
+        diagnosticsLog.info(
+          'Writes',
+          'Saved "${updated.name}" to hardware slot '
+          '${targetFamily.formatHardwarePatchLabel(slotIndex)} (#$slotIndex)',
+        );
+      }
     } catch (e) {
       _errorMessage = 'Failed to write patch to slot $slotIndex: $e';
+      diagnosticsLog.error(
+        'Writes',
+        'Failed to write "${target.name}" to slot #$slotIndex: $e',
+      );
       rethrow;
     } finally {
       _isLoading = false;
@@ -953,6 +1159,7 @@ class PatchEditorController extends ChangeNotifier {
     if (compatiblePatches.isEmpty) {
       _errorMessage =
           'Cannot restore hardware bank: no patches compatible with ${targetFamily.displayName} (${targetFamily.generation.displayName}).';
+      diagnosticsLog.warn('Writes', _errorMessage!);
       notifyListeners();
       return 0;
     }
@@ -1006,10 +1213,21 @@ class PatchEditorController extends ChangeNotifier {
         _bankRestoreStatus =
             'Restored $_bankRestoreCompletedCount/$count hardware slots';
       }
+      diagnosticsLog.add(
+        'Writes',
+        _bankRestoreStatus!,
+        level: _cancelBankRestore
+            ? DiagnosticLogLevel.warn
+            : DiagnosticLogLevel.info,
+      );
       return _bankRestoreCompletedCount;
     } catch (e) {
       _errorMessage = 'Batch bank restore failed: $e';
       _bankRestoreStatus = _errorMessage;
+      diagnosticsLog.error(
+        'Writes',
+        'Batch bank restore failed after $_bankRestoreCompletedCount/$count slots: $e',
+      );
       rethrow;
     } finally {
       _isRestoringBank = false;
@@ -1048,7 +1266,7 @@ class PatchEditorController extends ChangeNotifier {
       label: 'Rename Patch',
       coalesceKey: 'patch_name',
     );
-    _syncStructureToDevice();
+    _syncStructureToDevice(affectedSlots: const []);
     notifyListeners();
   }
 
@@ -1073,7 +1291,7 @@ class PatchEditorController extends ChangeNotifier {
       label: 'Change Tempo',
       coalesceKey: 'patch_tempo',
     );
-    _syncStructureToDevice();
+    _syncStructureToDevice(affectedSlots: const []);
     notifyListeners();
   }
 
@@ -1149,16 +1367,11 @@ class PatchEditorController extends ChangeNotifier {
     if (!current.deviceFamily.isZoomMsPlus) {
       return RightOutputTap.endOfChain;
     }
-    final tap = current.rightOutputTapCode;
-    if (tap < RightOutputTap.minSlotTapCode) {
-      return RightOutputTap.normalize(tap, slotCount: newSlotCount);
-    }
-    final tapSlot = tap - RightOutputTap.minSlotTapCode;
-    if (tapSlot == removedIndex) {
-      return RightOutputTap.endOfChain;
-    }
-    final shifted = tapSlot > removedIndex ? tap - 1 : tap;
-    return RightOutputTap.normalize(shifted, slotCount: newSlotCount);
+    return RightOutputTap.adjustForRemovedSlot(
+      current.rightOutputTapCode,
+      removedIndex: removedIndex,
+      newSlotCount: newSlotCount,
+    );
   }
 
   int _normalizeRightOutputTap(Patch current, int slotCount) {
@@ -1561,22 +1774,48 @@ class PatchEditorController extends ChangeNotifier {
   }
 
   /// Dispatches live edit buffer structural updates to hardware when connected via 64 20 00 opcodes.
-  void _syncStructureToDevice({List<int>? affectedSlots, List<int>? clearedSlots}) {
+  ///
+  /// Skips slots referencing effects missing on the connected pedal unless
+  /// [forceSendMissing] is true.
+  void _syncStructureToDevice({
+    List<int>? affectedSlots,
+    List<int>? clearedSlots,
+    bool forceSendMissing = false,
+  }) {
     if (!transport.isConnected || _isHandlingIncoming) return;
     final current = _patch;
     if (current == null) return;
 
+    final missingIndices = forceSendMissing
+        ? const <int>{}
+        : analyzePatchForConnectedDevice(current).missingSlotIndices;
+
     _isSyncingStructure = true;
     try {
       final slotsToSync = affectedSlots ?? List.generate(current.slots.length, (i) => i);
+      final skippedLabels = <String>[];
       for (final slotIdx in slotsToSync) {
         if (slotIdx >= 0 && slotIdx < current.slots.length) {
+          if (missingIndices.contains(slotIdx)) {
+            final skippedSlot = current.slots[slotIdx];
+            skippedLabels.add(
+              '#${slotIdx + 1} ${skippedSlot.effectName} (${skippedSlot.effectId})',
+            );
+            continue;
+          }
           final slot = current.slots[slotIdx];
           final messages = protocol.buildSlotSyncSequence(slotIdx, slot);
           for (final msg in messages) {
             transport.send(msg);
           }
         }
+      }
+      if (skippedLabels.isNotEmpty) {
+        diagnosticsLog.warn(
+          'Writes',
+          'Skipped ${skippedLabels.length} missing effect slot(s) during live sync: '
+          '${skippedLabels.join(', ')}',
+        );
       }
 
       if (clearedSlots != null) {
@@ -1611,14 +1850,35 @@ class PatchEditorController extends ChangeNotifier {
   /// to connected hardware.
   ///
   /// On Zoom MS Plus (`0x6E`), dispatches targeted `64 20 00` slot/parameter/bypass
-  /// deltas (and when R-Out tap changes, sends `64 20 00 64 04`).
+  /// deltas (and when R-Out tap changes, sends `64 20 00 64 04`), skipping slots
+  /// whose effect IDs are missing from the connected pedal unless
+  /// [forceSendMissing] is true.
   /// On Line 6 Bass POD Pro (`0x0E41`), dispatches `encodePatch`.
-  void _syncPatchTransitionToDevice(Patch fromPatch, Patch targetPatch) {
+  void _syncPatchTransitionToDevice(
+    Patch fromPatch,
+    Patch targetPatch, {
+    bool forceSendMissing = false,
+  }) {
     if (!transport.isConnected || _isHandlingIncoming) return;
 
     if (connectionController.activeFamily.isLine6BassPodPro) {
       try {
-        final dump = protocol.encodePatch(targetPatch);
+        var patchToEncode = targetPatch;
+        if (!forceSendMissing) {
+          final report = analyzePatchForConnectedDevice(targetPatch);
+          if (report.hasMissingEffects) {
+            diagnosticsLog.warn(
+              'Writes',
+              'Stripped ${report.missingSlotIndices.length} missing effect slot(s) '
+              'for Line 6 live transition',
+            );
+            patchToEncode = PatchEffectCompatibility.stripMissingSlots(
+              targetPatch,
+              report.missingSlotIndices,
+            );
+          }
+        }
+        final dump = protocol.encodePatch(patchToEncode);
         unawaited(transport.send(dump));
       } catch (e) {
         _errorMessage = 'Failed to sync patch transition to device: $e';
@@ -1626,9 +1886,22 @@ class PatchEditorController extends ChangeNotifier {
       return;
     }
 
+    final missingIndices = forceSendMissing
+        ? const <int>{}
+        : analyzePatchForConnectedDevice(targetPatch).missingSlotIndices;
+    if (missingIndices.isNotEmpty) {
+      diagnosticsLog.warn(
+        'Writes',
+        'Skipped ${missingIndices.length} missing effect slot(s) during patch transition',
+      );
+    }
+
     _isSyncingStructure = true;
     try {
       for (int i = 0; i < targetPatch.slots.length; i++) {
+        if (missingIndices.contains(i)) {
+          continue;
+        }
         final targetSlot = targetPatch.slots[i];
         if (i >= fromPatch.slots.length ||
             fromPatch.slots[i].effectId != targetSlot.effectId) {
@@ -1789,6 +2062,8 @@ class PatchEditorController extends ChangeNotifier {
       _isDirty = false;
       _selectedSlotIndex = 0;
       _errorMessage = null;
+      _isUntouchedDefaultPatch = false;
+      _isLoadedFromPreset = true;
       _resetSessionBaseline(resolved);
       if (prog != null) {
         connectionController.setActiveHardwareSlotIndex(
@@ -1896,6 +2171,7 @@ class PatchEditorController extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
+    connectionController.removeListener(_handleConnectionControllerChanged);
     connectionController.setEditorController(null);
     _midiSubscription?.cancel();
     super.dispose();

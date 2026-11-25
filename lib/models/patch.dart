@@ -42,6 +42,24 @@ abstract final class RightOutputTap {
     return endOfChain;
   }
 
+  /// Adjusts [tapCode] after removing 0-based [removedIndex] from an MS+ chain,
+  /// resulting in [newSlotCount] remaining slots.
+  static int adjustForRemovedSlot(
+    int tapCode, {
+    required int removedIndex,
+    required int newSlotCount,
+  }) {
+    if (tapCode < minSlotTapCode) {
+      return normalize(tapCode, slotCount: newSlotCount);
+    }
+    final tapSlot = tapCode - minSlotTapCode;
+    if (tapSlot == removedIndex) {
+      return endOfChain;
+    }
+    final shifted = tapSlot > removedIndex ? tapCode - 1 : tapCode;
+    return normalize(shifted, slotCount: newSlotCount);
+  }
+
   /// Human-readable full label for menus and tooltips.
   static String describe(int tapCode, {List<EffectSlot> slots = const []}) {
     if (tapCode == endOfChain) return 'End of Chain (L+R Out)';

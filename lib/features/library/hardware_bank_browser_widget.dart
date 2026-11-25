@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../core/compatibility/patch_effect_compatibility.dart';
 import '../../core/storage/in_memory_patch_library_repository.dart';
 import '../../models/bank_slot_descriptor.dart';
 import '../../models/device_family.dart';
+import '../../models/patch.dart';
 import '../connection/device_connection_controller.dart';
+import '../editor/missing_effects_dialog.dart';
 import '../editor/patch_editor_controller.dart';
 import '../editor/unsaved_changes_dialog.dart';
 import '../editor/write_to_slot_dialog.dart';
@@ -675,7 +678,38 @@ class _HardwareBankBrowserWidgetState extends State<HardwareBankBrowserWidget> {
     );
 
     if (confirmed == true && mounted) {
-      await widget.editorController.savePatchToDeviceSlot(slotIndex);
+      final targetPatch = widget.editorController.patch;
+      if (targetPatch == null) return;
+
+      Patch? strippedActiveCopy;
+      if (widget.connectionController.isConnected) {
+        final report =
+            widget.editorController.analyzePatchForConnectedDevice(targetPatch);
+        if (report.hasMissingEffects) {
+          final action = await resolveMissingEffectsForSingleWrite(
+            context: context,
+            patch: targetPatch,
+            targetFamily: widget.connectionController.activeFamily,
+            report: report,
+          );
+          if (!mounted || action == MissingEffectAction.cancel) return;
+          if (action == MissingEffectAction.stripAndProceed) {
+            strippedActiveCopy = PatchEffectCompatibility.stripMissingSlots(
+              targetPatch,
+              report.missingSlotIndices,
+            );
+          }
+        }
+      }
+
+      if (strippedActiveCopy != null) {
+        await widget.editorController.saveActivePatchCopyToDeviceSlot(
+          slotIndex,
+          strippedActiveCopy,
+        );
+      } else {
+        await widget.editorController.savePatchToDeviceSlot(slotIndex);
+      }
       if (!mounted) return;
       final err = widget.editorController.errorMessage;
       ScaffoldMessenger.of(context).showSnackBar(

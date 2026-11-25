@@ -293,6 +293,41 @@ class _SetlistPerformanceViewState extends State<SetlistPerformanceView> {
                             ),
                           ),
                         ],
+                        if (setlistController.liveCompatibilityWarning != null) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            key: const Key('stage_live_compatibility_warning_banner'),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: StudioTheme.colorDirty.withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: StudioTheme.colorDirty),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.warning_amber_rounded,
+                                  size: 18,
+                                  color: Colors.amberAccent,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    setlistController.liveCompatibilityWarning!,
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      color: Colors.amberAccent,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
 
                         const SizedBox(height: 16),
 
@@ -681,6 +716,41 @@ class _SetlistPerformanceViewState extends State<SetlistPerformanceView> {
                         ),
                       ),
                     ],
+                    if (setlistController.liveCompatibilityWarning != null) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        key: const Key('stage_live_compatibility_warning_banner'),
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: StudioTheme.colorDirty.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: StudioTheme.colorDirty),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.warning_amber_rounded,
+                              size: 13,
+                              color: Colors.amberAccent,
+                            ),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: Text(
+                                setlistController.liveCompatibilityWarning!,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  color: Colors.amberAccent,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -786,6 +856,8 @@ class _SetlistPerformanceViewState extends State<SetlistPerformanceView> {
                       final entry = entries[index];
                       final resolved =
                           setlistController.resolvePatchForEntry(entry);
+                      final compat =
+                          setlistController.analyzeEntryCompatibility(entry);
                       final isSelected =
                           index == setlistController.activeEntryIndex;
                       final title = entry.songTitle?.trim().isNotEmpty == true
@@ -855,6 +927,21 @@ class _SetlistPerformanceViewState extends State<SetlistPerformanceView> {
                                     ),
                                   ),
                                 ),
+                                if (compat.hasMissingEffects) ...[
+                                  const SizedBox(width: 4),
+                                  Tooltip(
+                                    message:
+                                        'Missing on connected pedal: ${compat.missingSlots.map((m) => m.displayName).join(', ')}',
+                                    child: Icon(
+                                      Icons.warning_amber_rounded,
+                                      key: Key(
+                                        'stage_setlist_entry_missing_icon_$index',
+                                      ),
+                                      size: 14,
+                                      color: Colors.amberAccent,
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),

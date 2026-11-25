@@ -30,9 +30,12 @@ class _SlotInspectorWidgetState extends State<SlotInspectorWidget> {
     return ListenableBuilder(
       listenable: Listenable.merge([
         widget.controller,
+        widget.controller.connectionController,
         EffectCatalogRegistry.catalogRevision,
       ]),
       builder: (context, _) {
+        final patch = widget.controller.patch;
+        final selectedIndex = widget.controller.selectedSlotIndex;
         final slot = widget.controller.selectedSlot;
         if (slot == null) {
           return Container(
@@ -51,6 +54,12 @@ class _SlotInspectorWidgetState extends State<SlotInspectorWidget> {
         }
 
         final family = widget.controller.connectionController.activeFamily;
+        final deviceLabel = EffectCatalogRegistry.conciseModelLabel(family);
+        final missingSlot = patch != null
+            ? widget.controller
+                .analyzePatchForConnectedDevice(patch)
+                .missingSlotAt(selectedIndex)
+            : null;
         final currentDef = EffectCatalogRegistry.getDefinition(family, slot.effectId);
         final availableEffects = EffectCatalogRegistry.getEffectsForFamily(family);
         final categoryColor = StudioTheme.getCategoryColor(currentDef.category);
@@ -114,6 +123,127 @@ class _SlotInspectorWidgetState extends State<SlotInspectorWidget> {
                 mainAxisSize: hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (missingSlot != null) ...[
+                    Container(
+                      key: const Key('slot_inspector_missing_banner'),
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: StudioTheme.colorDirty.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: StudioTheme.colorDirty),
+                      ),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        alignment: WrapAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.warning_amber_rounded,
+                                size: 16,
+                                color: Colors.amberAccent,
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  missingSlot.originLabel != null
+                                      ? '${missingSlot.originLabel} effect — not installed on connected $deviceLabel'
+                                      : '${missingSlot.displayName} — not installed on connected $deviceLabel',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.amberAccent,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              OutlinedButton.icon(
+                                key: const Key(
+                                  'slot_inspector_replace_missing_button',
+                                ),
+                                icon: const Icon(Icons.swap_horiz, size: 14),
+                                label: const Text(
+                                  'Replace Effect...',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.amberAccent,
+                                  side: const BorderSide(
+                                    color: StudioTheme.colorDirty,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: () async {
+                                  final selected =
+                                      await EffectPickerDialog.show(
+                                    context: context,
+                                    deviceFamily: family,
+                                    currentEffectId: slot.effectId,
+                                    title:
+                                        'Replace Slot #${selectedIndex + 1} Effect',
+                                    editorController: widget.controller,
+                                  );
+                                  if (selected != null) {
+                                    widget.controller.changeSlotEffect(
+                                      selectedIndex,
+                                      selected.effectId,
+                                    );
+                                  }
+                                },
+                              ),
+                              TextButton.icon(
+                                key: const Key(
+                                  'slot_inspector_remove_missing_button',
+                                ),
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  size: 14,
+                                ),
+                                label: const Text(
+                                  'Remove Slot',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.redAccent,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: widget.controller.canRemoveEffectSlot
+                                    ? () => widget.controller
+                                        .removeEffectSlot(selectedIndex)
+                                    : null,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: isNarrow ? 10 : 12),
+                  ],
+
                   // Top Bar: Slot index, Algorithm Picker, Category Badge, Show Hidden Toggle
                   Wrap(
                     spacing: isNarrow ? 8 : 12,

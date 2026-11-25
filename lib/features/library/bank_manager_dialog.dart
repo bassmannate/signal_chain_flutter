@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../core/compatibility/patch_effect_compatibility.dart';
 import '../../models/bank_slot_descriptor.dart';
 import '../../models/device_family.dart';
 import '../../models/patch.dart';
 import '../connection/device_connection_controller.dart';
+import '../editor/missing_effects_dialog.dart';
 import '../editor/patch_editor_controller.dart';
 import '../editor/unsaved_changes_dialog.dart';
 import '../theme/horizontal_mouse_scroll_view.dart';
@@ -251,7 +253,29 @@ Future<bool> handleLibraryPatchDropToSlot(
     if (!proceed) return false;
   }
 
-  await editorController.savePatchToDeviceSlot(slotIndex, payload.patch);
+  Patch patchToWrite = payload.patch;
+  if (connectionController.isConnected) {
+    final report =
+        editorController.analyzePatchForConnectedDevice(payload.patch);
+    if (report.hasMissingEffects) {
+      if (!context.mounted) return false;
+      final action = await resolveMissingEffectsForSingleWrite(
+        context: context,
+        patch: payload.patch,
+        targetFamily: connectionController.activeFamily,
+        report: report,
+      );
+      if (action == MissingEffectAction.cancel) return false;
+      if (action == MissingEffectAction.stripAndProceed) {
+        patchToWrite = PatchEffectCompatibility.stripMissingSlots(
+          payload.patch,
+          report.missingSlotIndices,
+        );
+      }
+    }
+  }
+
+  await editorController.savePatchToDeviceSlot(slotIndex, patchToWrite);
   final ok = editorController.errorMessage == null;
   if (!context.mounted) return ok;
 
@@ -260,7 +284,7 @@ Future<bool> handleLibraryPatchDropToSlot(
     SnackBar(
       content: Text(
         ok
-            ? 'Wrote "${payload.patch.name}" to hardware slot #$padded'
+            ? 'Wrote "${patchToWrite.name}" to hardware slot #$padded'
             : (editorController.errorMessage ?? 'Failed to write to hardware slot #$padded'),
       ),
       backgroundColor: ok ? StudioTheme.surfaceElevated : Colors.redAccent,

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 
+import '../../core/diagnostics/app_diagnostics_log.dart';
 import '../../core/midi/composite_midi_transport.dart';
 import '../../core/midi/midi_port_descriptor.dart';
 import '../../core/midi/midi_message.dart';
@@ -35,6 +36,7 @@ typedef HardwareUpdateHandler = void Function({
 /// hardware identity handshake, and active protocol resolution.
 class DeviceConnectionController extends ChangeNotifier {
   final MidiTransport transport;
+  final AppDiagnosticsLog diagnosticsLog;
 
   List<MidiPortDescriptor> _availablePorts = [];
   MidiPortDescriptor? _connectedPort;
@@ -111,8 +113,10 @@ class DeviceConnectionController extends ChangeNotifier {
     this.currentPatchTimeoutOverride,
     this.effectDiscoveryTimeoutOverride,
     CustomEffectRepository? customEffectRepository,
+    AppDiagnosticsLog? diagnosticsLog,
     bool? isTest,
-  })  : _isTest = isTest ??
+  })  : diagnosticsLog = diagnosticsLog ?? AppDiagnosticsLog.instance,
+        _isTest = isTest ??
             (const bool.fromEnvironment('FLUTTER_TEST') ||
                 (Platform.environment['FLUTTER_TEST'] == 'true')),
         _activeFamily = defaultFamily,
@@ -449,6 +453,7 @@ class DeviceConnectionController extends ChangeNotifier {
       }
     } catch (e) {
       _errorMessage = 'Failed to scan ports: $e';
+      diagnosticsLog.error('Connection', _errorMessage!);
     } finally {
       _isScanning = false;
       notifyListeners();
@@ -533,9 +538,14 @@ class DeviceConnectionController extends ChangeNotifier {
           ? const Duration(milliseconds: 15)
           : const Duration(milliseconds: 200),
       pacingDelay: pacingDelay,
-      debugLogger: (kDebugMode && !_isTest)
-          ? (msg) => debugPrint('[ZoomFileTransfer] $msg')
-          : null,
+      debugLogger: (msg) {
+        final isErr = msg.startsWith('ERR ');
+        diagnosticsLog.add(
+          'ZoomFileTransfer',
+          msg,
+          level: isErr ? DiagnosticLogLevel.error : DiagnosticLogLevel.info,
+        );
+      },
     );
 
     bool isCancelled() =>
@@ -580,6 +590,11 @@ class DeviceConnectionController extends ChangeNotifier {
           if (isCancelled()) return;
 
           flst = FlstSeqParser.parse(flstBytes);
+          diagnosticsLog.info(
+            'Discovery',
+            'FLST_SEQ.ZT2 (${flst.deviceName ?? family.displayName}): '
+            '${flst.installedEntries.length}/${flst.allEntries.length} installed',
+          );
 
           if (kDebugMode && !_isTest) {
             final expectedBpmId = family == DeviceFamily.zoomMs60bPlus
@@ -773,6 +788,19 @@ class DeviceConnectionController extends ChangeNotifier {
       _effectScanError = warning;
       _effectScanStatusMessage = null;
       _isScanningEffects = false;
+      diagnosticsLog.add(
+        'Discovery',
+        'Onboard discovery complete: ${stockIds.length} stock, '
+        '${crossModelIds.length} cross-model, ${cachedCustomIds.length} custom '
+        '(${newlyCachedCustomIds.length} newly cached)'
+        '${failedCustomEffects.isEmpty ? '' : ', ${failedCustomEffects.length} failed'}',
+        level: failedCustomEffects.isNotEmpty
+            ? DiagnosticLogLevel.warn
+            : DiagnosticLogLevel.info,
+      );
+      for (final f in failedCustomEffects) {
+        diagnosticsLog.warn('Discovery', 'Failed custom .ZD2: ${f.summary}');
+      }
       notifyListeners();
       return result;
     } catch (e) {
@@ -795,6 +823,7 @@ class DeviceConnectionController extends ChangeNotifier {
         if (kDebugMode && !_isTest) {
           debugPrint('[ZoomEffectDiscovery] $reason');
         }
+        diagnosticsLog.error('Discovery', reason);
 
         final failure = DeviceEffectDiscoveryResult.failure(reason);
         _lastEffectDiscoveryResult = failure;
@@ -867,6 +896,17 @@ class DeviceConnectionController extends ChangeNotifier {
     try {
       await transport.connect(port.id);
       _connectedPort = port;
+      final activeTransportName = transport is CompositeMidiTransport
+          ? ((transport as CompositeMidiTransport)
+                  .activeTransport
+                  ?.runtimeType
+                  .toString() ??
+              transport.runtimeType.toString())
+          : transport.runtimeType.toString();
+      diagnosticsLog.info(
+        'Connection',
+        'Connected to "${port.name}" (${port.id}) via $activeTransportName',
+      );
 
       if (explicitFamily != null) {
         selectDeviceFamily(explicitFamily);
@@ -948,6 +988,10 @@ class DeviceConnectionController extends ChangeNotifier {
       }
     } catch (e) {
       _errorMessage = 'Connection failed: $e';
+      diagnosticsLog.error(
+        'Connection',
+        'Connection failed for "${port.name}": $e',
+      );
       _clearHardwareEffectInventory(notify: false);
       try {
         await transport.disconnect();
@@ -961,6 +1005,8 @@ class DeviceConnectionController extends ChangeNotifier {
 
   /// Disconnects from the currently connected MIDI device.
   Future<void> disconnect() async {
+    final previousPort = _connectedPort;
+    final wasConnected = transport.isConnected || previousPort != null;
     cancelBankSync();
     _discoverySessionToken++;
     _activeHardwareSlotIndex = null;
@@ -978,8 +1024,15 @@ class DeviceConnectionController extends ChangeNotifier {
         }
       }
       await transport.disconnect();
+      if (wasConnected) {
+        diagnosticsLog.info(
+          'Connection',
+          'Disconnected from "${previousPort?.name ?? 'MIDI device'}"',
+        );
+      }
     } catch (e) {
       _errorMessage = 'Disconnection error: $e';
+      diagnosticsLog.error('Connection', _errorMessage!);
     } finally {
       _connectedPort = null;
       notifyListeners();
@@ -1197,20 +1250,36 @@ class DeviceConnectionController extends ChangeNotifier {
             portDetected.isZoomFour &&
             !detected.isZoomFour) {
           selectDeviceFamily(portDetected);
+          diagnosticsLog.info(
+            'Connection',
+            'Identity detected: ${portDetected.displayName} (port override for "${port.name}")',
+          );
           return;
         }
         if (detected != DeviceFamily.unknown) {
           selectDeviceFamily(detected);
+          diagnosticsLog.info(
+            'Connection',
+            'Identity detected: ${detected.displayName} (port: "${port.name}")',
+          );
           return;
         }
         if (portDetected != null && portDetected != DeviceFamily.unknown) {
           selectDeviceFamily(portDetected);
+          diagnosticsLog.info(
+            'Connection',
+            'Identity detected from port name: ${portDetected.displayName} ("${port.name}")',
+          );
           return;
         }
       }
 
       if (line6Proto.matchesIdentityResponse(reply)) {
         selectDeviceFamily(DeviceFamily.line6BassPodPro);
+        diagnosticsLog.info(
+          'Connection',
+          'Identity detected: ${DeviceFamily.line6BassPodPro.displayName}',
+        );
         return;
       }
     } catch (_) {
@@ -1222,6 +1291,15 @@ class DeviceConnectionController extends ChangeNotifier {
     final portFamily = identifyFamilyFromPort(port);
     if (portFamily != null && portFamily != DeviceFamily.unknown) {
       selectDeviceFamily(portFamily);
+      diagnosticsLog.info(
+        'Connection',
+        'Identity handshake fell back to port heuristic: ${portFamily.displayName}',
+      );
+    } else {
+      diagnosticsLog.warn(
+        'Connection',
+        'Identity handshake timed out for "${port.name}"; keeping ${_activeFamily.displayName}',
+      );
     }
     // Otherwise keep current activeFamily
   }
@@ -1236,6 +1314,10 @@ class DeviceConnectionController extends ChangeNotifier {
         selectDeviceFamily(decoded.deviceFamily);
         _ensureBankSlotsInitialized();
         _reclassifyInstalledEffectsForActiveFamily();
+        diagnosticsLog.info(
+          'Connection',
+          'Refined device family from patch dump: ${decoded.deviceFamily.displayName}',
+        );
       }
     } catch (_) {}
   }

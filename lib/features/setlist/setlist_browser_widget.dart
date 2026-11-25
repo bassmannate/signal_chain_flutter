@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/patch.dart';
 import '../../models/setlist.dart';
+import '../../protocols/catalogs/effect_catalog.dart';
 import '../editor/unsaved_changes_dialog.dart';
 import '../theme/studio_theme.dart';
 import 'setlist_controller.dart';
@@ -21,6 +22,8 @@ class SetlistBrowserWidget extends StatelessWidget {
       listenable: Listenable.merge([
         setlistController,
         setlistController.libraryController,
+        setlistController.connectionController,
+        EffectCatalogRegistry.catalogRevision,
       ]),
       builder: (context, _) {
         final setlists = setlistController.setlists;
@@ -255,6 +258,8 @@ class SetlistBrowserWidget extends StatelessWidget {
         ? entry.songTitle!
         : (patch?.name ?? 'Missing Preset');
     final isMissing = patch == null;
+    final compat = setlistController.analyzeEntryCompatibility(entry);
+    final hasMissingEffects = !isMissing && compat.hasMissingEffects;
 
     return InkWell(
       key: Key('setlist_entry_${entry.id}'),
@@ -329,6 +334,20 @@ class SetlistBrowserWidget extends StatelessWidget {
                 ],
               ),
             ),
+            if (hasMissingEffects)
+              Tooltip(
+                message:
+                    'Missing on connected pedal: ${compat.missingSlots.map((m) => m.displayName).join(', ')}',
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(
+                    Icons.warning_amber_rounded,
+                    key: Key('setlist_browser_entry_missing_icon_${entry.id}'),
+                    size: 16,
+                    color: Colors.amberAccent,
+                  ),
+                ),
+              ),
             IconButton(
               icon: const Icon(Icons.arrow_upward, size: 15),
               tooltip: 'Move Up',

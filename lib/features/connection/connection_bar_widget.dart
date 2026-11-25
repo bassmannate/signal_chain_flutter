@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/midi/midi_port_descriptor.dart';
 import '../../models/device_family.dart';
+import '../about/about_diagnostics_dialog.dart';
 import '../editor/patch_editor_controller.dart';
 import '../editor/unsaved_changes_dialog.dart';
 import '../library/patch_library_controller.dart';
@@ -46,6 +47,14 @@ class ConnectionBarWidget extends StatelessWidget {
           builder: (context, constraints) {
             final isCompact = constraints.maxWidth < 600;
 
+            final compactIconStyle = isCompact
+                ? IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    minimumSize: const Size(30, 30),
+                    padding: EdgeInsets.zero,
+                  )
+                : null;
+
             final refreshButton = IconButton(
               icon: connectionController.isScanning
                   ? const SizedBox(
@@ -55,7 +64,11 @@ class ConnectionBarWidget extends StatelessWidget {
                     )
                   : const Icon(Icons.refresh, size: 20),
               tooltip: 'Refresh MIDI Ports',
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              style: compactIconStyle,
+              constraints: BoxConstraints(
+                minWidth: isCompact ? 30 : 36,
+                minHeight: isCompact ? 30 : 36,
+              ),
               padding: EdgeInsets.zero,
               onPressed: connectionController.isScanning
                   ? null
@@ -67,10 +80,34 @@ class ConnectionBarWidget extends StatelessWidget {
                     key: const Key('toggle_library_button'),
                     icon: const Icon(Icons.folder_special_outlined),
                     tooltip: 'Toggle Preset Library',
-                    constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                    style: compactIconStyle,
+                    constraints: BoxConstraints(
+                      minWidth: isCompact ? 32 : 38,
+                      minHeight: isCompact ? 32 : 38,
+                    ),
                     onPressed: onToggleLibrary,
                   )
                 : null;
+
+            final aboutButton = IconButton(
+              key: const Key('about_diagnostics_button'),
+              icon: const Icon(Icons.info_outline, size: 20),
+              tooltip: 'About & Diagnostics Log',
+              style: compactIconStyle,
+              constraints: BoxConstraints(
+                minWidth: isCompact ? 30 : 36,
+                minHeight: isCompact ? 30 : 36,
+              ),
+              padding: EdgeInsets.zero,
+              onPressed: () => AboutDiagnosticsDialog.show(
+                context: context,
+                connectionController: connectionController,
+                libraryController: libraryController,
+                customEffectRepository:
+                    editorController.customEffectRepository ??
+                    connectionController.customEffectRepository,
+              ),
+            );
 
             final deviceSelector = Row(
               mainAxisSize: MainAxisSize.min,
@@ -81,6 +118,7 @@ class ConnectionBarWidget extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 DropdownButton<DeviceFamily>(
+                  key: const Key('device_family_dropdown'),
                   value: connectionController.activeFamily,
                   dropdownColor: StudioTheme.surfaceElevated,
                   underline: const SizedBox.shrink(),
@@ -128,10 +166,31 @@ class ConnectionBarWidget extends StatelessWidget {
                       child: Text('Line 6 Bass Pod Pro'),
                     ),
                   ],
-                  onChanged: (family) {
-                    if (family != null) {
-                      connectionController.selectDeviceFamily(family);
+                  onChanged: (family) async {
+                    if (family == null ||
+                        family == connectionController.activeFamily) {
+                      return;
                     }
+                    if (!connectionController.isConnected) {
+                      final current = editorController.patch;
+                      final crossesGeneration = current != null &&
+                          current.deviceFamily != DeviceFamily.unknown &&
+                          family != DeviceFamily.unknown &&
+                          !current.deviceFamily.isSameGeneration(family);
+                      if (editorController.isDirty && crossesGeneration) {
+                        final confirmed =
+                            await confirmDiscardOrSaveUnsavedChanges(
+                          context: context,
+                          editorController: editorController,
+                          libraryController: libraryController,
+                          connectionController: connectionController,
+                          actionDescription:
+                              'switch device to ${family.displayName}',
+                        );
+                        if (!confirmed || !context.mounted) return;
+                      }
+                    }
+                    connectionController.selectDeviceFamily(family);
                   },
                 ),
               ],
@@ -162,9 +221,10 @@ class ConnectionBarWidget extends StatelessWidget {
                         ? Colors.amberAccent
                         : Colors.white70,
                   ),
-                  constraints: const BoxConstraints(
-                    minWidth: 34,
-                    minHeight: 34,
+                  style: compactIconStyle,
+                  constraints: BoxConstraints(
+                    minWidth: isCompact ? 30 : 34,
+                    minHeight: isCompact ? 30 : 34,
                   ),
                   padding: EdgeInsets.zero,
                   onPressed: () => connectionController.toggleTuner(),
@@ -207,6 +267,20 @@ class ConnectionBarWidget extends StatelessWidget {
                     ],
                   ),
                 ),
+
+              // New Patch Button
+              OutlinedButton.icon(
+                key: const Key('new_patch_button'),
+                icon: const Icon(Icons.note_add_outlined, size: 16),
+                label: const Text('New'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: StudioTheme.colorFilterEq,
+                  side: const BorderSide(color: StudioTheme.colorFilterEq),
+                  padding: buttonPadding,
+                  visualDensity: isCompact ? VisualDensity.compact : VisualDensity.standard,
+                ),
+                onPressed: () => _createNewPatch(context),
+              ),
 
               // Save to Library Button
               OutlinedButton.icon(
@@ -288,6 +362,7 @@ class ConnectionBarWidget extends StatelessWidget {
                             ),
                             refreshButton,
                             tunerButton,
+                            aboutButton,
                             ?libraryButton,
                           ],
                         ),
@@ -335,8 +410,10 @@ class ConnectionBarWidget extends StatelessWidget {
                             ],
                           ),
                         ),
+                        const SizedBox(width: 4),
+                        aboutButton,
                         if (libraryButton != null) ...[
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 4),
                           libraryButton,
                         ],
                       ],
@@ -568,6 +645,20 @@ class ConnectionBarWidget extends StatelessWidget {
       if (!confirmed || !context.mounted) return;
     }
     setlist.togglePerformanceMode();
+  }
+
+  Future<void> _createNewPatch(BuildContext context) async {
+    if (editorController.isDirty) {
+      final confirmed = await confirmDiscardOrSaveUnsavedChanges(
+        context: context,
+        editorController: editorController,
+        libraryController: libraryController,
+        connectionController: connectionController,
+        actionDescription: 'create a new patch',
+      );
+      if (!confirmed || !context.mounted) return;
+    }
+    editorController.createNewPatch();
   }
 
   Future<void> _saveCurrentToLibrary(BuildContext context) async {

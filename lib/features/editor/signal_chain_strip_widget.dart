@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/compatibility/patch_effect_compatibility.dart';
 import '../../models/effect_slot.dart';
 import '../../models/patch.dart';
 import '../../protocols/catalogs/effect_catalog.dart';
@@ -35,11 +36,12 @@ class SignalChainStripWidget extends StatelessWidget {
     return ListenableBuilder(
       listenable: Listenable.merge([
         controller,
+        controller.connectionController,
         EffectCatalogRegistry.catalogRevision,
       ]),
       builder: (context, _) {
         final patch = controller.patch;
-        if (patch == null || patch.slots.isEmpty) {
+        if (patch == null) {
           return Container(
             constraints: const BoxConstraints(minHeight: 160),
             alignment: Alignment.center,
@@ -57,6 +59,8 @@ class SignalChainStripWidget extends StatelessWidget {
         }
 
         final canAdd = controller.canAddEffectSlot;
+        final compatibilityReport =
+            controller.analyzePatchForConnectedDevice(patch);
 
         return Container(
           decoration: BoxDecoration(
@@ -162,6 +166,7 @@ class SignalChainStripWidget extends StatelessWidget {
                                 context,
                                 patch,
                                 canAdd,
+                                compatibilityReport: compatibilityReport,
                                 showRightOut: showRightOut,
                                 activeTapCode: activeTapCode,
                                 badgeHeight: badgeHeight,
@@ -171,6 +176,7 @@ class SignalChainStripWidget extends StatelessWidget {
                                 context,
                                 patch.slots,
                                 canAdd,
+                                compatibilityReport: compatibilityReport,
                                 badgeHeight: badgeHeight,
                                 cardHeight: stripHeight - 12.0,
                               ),
@@ -190,6 +196,7 @@ class SignalChainStripWidget extends StatelessWidget {
     BuildContext context,
     Patch patch,
     bool canAdd, {
+    required PatchEffectCompatibilityReport compatibilityReport,
     required bool showRightOut,
     required int activeTapCode,
     required double badgeHeight,
@@ -238,6 +245,7 @@ class SignalChainStripWidget extends StatelessWidget {
           i,
           isSelected,
           numSlots,
+          missingSlot: compatibilityReport.missingSlotAt(i),
           cardHeight: cardHeight,
         ),
       );
@@ -263,6 +271,7 @@ class SignalChainStripWidget extends StatelessWidget {
     BuildContext context,
     List<EffectSlot> slots,
     bool canAdd, {
+    required PatchEffectCompatibilityReport compatibilityReport,
     required double badgeHeight,
     required double cardHeight,
   }) {
@@ -286,6 +295,7 @@ class SignalChainStripWidget extends StatelessWidget {
           i,
           isSelected,
           numSlots,
+          missingSlot: compatibilityReport.missingSlotAt(i),
           cardHeight: cardHeight,
         ),
       );
@@ -667,6 +677,7 @@ class SignalChainStripWidget extends StatelessWidget {
     int index,
     bool isSelected,
     int totalSlots, {
+    MissingEffectSlot? missingSlot,
     required double cardHeight,
   }) {
     final family = controller.connectionController.activeFamily;
@@ -708,6 +719,7 @@ class SignalChainStripWidget extends StatelessWidget {
           categoryColor: categoryColor,
           def: def,
           isHovered: isHovered,
+          missingSlot: missingSlot,
         );
 
         if (!controller.canReorderSlots) {
@@ -730,6 +742,7 @@ class SignalChainStripWidget extends StatelessWidget {
               categoryColor: categoryColor,
               def: def,
               isHovered: false,
+              missingSlot: missingSlot,
               isDragging: true,
             ),
           ),
@@ -770,13 +783,19 @@ class SignalChainStripWidget extends StatelessWidget {
     required Color categoryColor,
     required EffectDefinition def,
     required bool isHovered,
+    MissingEffectSlot? missingSlot,
     bool isDragging = false,
   }) {
     final family = controller.connectionController.activeFamily;
+    final deviceLabel = EffectCatalogRegistry.conciseModelLabel(family);
+    final isMissingOnPedal = missingSlot != null;
     final borderColor = isHovered
         ? StudioTheme.colorModulation
-        : (isSelected ? categoryColor : StudioTheme.surfaceBorder);
-    final borderWidth = (isHovered || isSelected) ? 2.0 : 1.0;
+        : isMissingOnPedal
+            ? StudioTheme.colorDirty
+            : (isSelected ? categoryColor : StudioTheme.surfaceBorder);
+    final borderWidth =
+        (isHovered || isSelected || isMissingOnPedal) ? 2.0 : 1.0;
 
     return InkWell(
       key: Key('effect_slot_$index'),
@@ -797,10 +816,19 @@ class SignalChainStripWidget extends StatelessWidget {
             color: borderColor,
             width: borderWidth,
           ),
-          boxShadow: (isHovered || isSelected || isDragging)
+          boxShadow: (isHovered || isSelected || isDragging || isMissingOnPedal)
               ? [
                   BoxShadow(
-                    color: (isHovered ? StudioTheme.colorModulation : categoryColor).withValues(alpha: 0.35),
+                    color: (isHovered
+                            ? StudioTheme.colorModulation
+                            : isMissingOnPedal
+                                ? StudioTheme.colorDirty
+                                : categoryColor)
+                        .withValues(
+                          alpha: (isMissingOnPedal && !isSelected && !isHovered)
+                              ? 0.22
+                              : 0.35,
+                        ),
                     blurRadius: isHovered ? 12 : 8,
                     spreadRadius: isHovered ? 2 : 1,
                   ),
@@ -870,7 +898,7 @@ class SignalChainStripWidget extends StatelessWidget {
               ),
             ),
 
-            // Parameter Count & Origin Badge
+            // Parameter Count, Missing Badge & Origin Badge
             Row(
               children: [
                 Expanded(
@@ -881,7 +909,40 @@ class SignalChainStripWidget extends StatelessWidget {
                     style: const TextStyle(fontSize: 9.5, color: Colors.grey),
                   ),
                 ),
-                if (def.origin == EffectOrigin.crossModel ||
+                if (isMissingOnPedal) ...[
+                  const SizedBox(width: 4),
+                  Tooltip(
+                    message: missingSlot.originLabel != null
+                        ? 'Not installed on connected $deviceLabel (${missingSlot.originLabel})'
+                        : 'Not installed on connected $deviceLabel',
+                    child: Container(
+                      key: Key('missing_effect_badge_$index'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: StudioTheme.colorDirty.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(
+                          color: StudioTheme.colorDirty,
+                          width: 0.9,
+                        ),
+                      ),
+                      child: const Text(
+                        'MISSING',
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: 8.0,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.3,
+                          height: 1.1,
+                          color: Colors.amberAccent,
+                        ),
+                      ),
+                    ),
+                  ),
+                ] else if (def.origin == EffectOrigin.crossModel ||
                     def.origin == EffectOrigin.custom) ...[
                   const SizedBox(width: 4),
                   Flexible(

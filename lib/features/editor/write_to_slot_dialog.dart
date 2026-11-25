@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../core/compatibility/patch_effect_compatibility.dart';
 import '../../models/device_family.dart';
 import '../../models/patch.dart';
 import '../../models/patch_diff.dart';
 import '../connection/device_connection_controller.dart';
 import '../theme/studio_theme.dart';
+import 'missing_effects_dialog.dart';
 import 'patch_diff_dialog.dart';
 import 'patch_editor_controller.dart';
 
@@ -326,16 +328,58 @@ class _WriteToSlotDialogState extends State<WriteToSlotDialog> {
   }
 
   Future<void> _handleWrite() async {
+    final targetPatch = widget.patchOverride ?? widget.editorController.patch;
+    if (targetPatch == null) return;
+
+    Patch? patchToSave = widget.patchOverride;
+    bool saveAsStrippedActiveCopy = false;
+
+    if (widget.connectionController.isConnected) {
+      final report =
+          widget.editorController.analyzePatchForConnectedDevice(targetPatch);
+      if (report.hasMissingEffects) {
+        final action = await resolveMissingEffectsForSingleWrite(
+          context: context,
+          patch: targetPatch,
+          targetFamily: widget.connectionController.activeFamily,
+          report: report,
+        );
+        if (!mounted) return;
+        switch (action) {
+          case MissingEffectAction.cancel:
+            return;
+          case MissingEffectAction.stripAndProceed:
+            final stripped = PatchEffectCompatibility.stripMissingSlots(
+              targetPatch,
+              report.missingSlotIndices,
+            );
+            if (widget.patchOverride == null) {
+              saveAsStrippedActiveCopy = true;
+            }
+            patchToSave = stripped;
+          case MissingEffectAction.sendAnyway:
+            break;
+        }
+      }
+    }
+
     setState(() {
       _isSaving = true;
       _statusMessage = null;
     });
 
     try {
-      await widget.editorController.savePatchToDeviceSlot(
-        _selectedSlot,
-        widget.patchOverride,
-      );
+      if (saveAsStrippedActiveCopy && patchToSave != null) {
+        await widget.editorController.saveActivePatchCopyToDeviceSlot(
+          _selectedSlot,
+          patchToSave,
+        );
+      } else {
+        await widget.editorController.savePatchToDeviceSlot(
+          _selectedSlot,
+          patchToSave,
+        );
+      }
       if (mounted) {
         if (widget.editorController.errorMessage != null) {
           setState(() {

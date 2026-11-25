@@ -1,11 +1,15 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
+import '../../core/compatibility/patch_effect_compatibility.dart';
 import '../../core/import/import_batch_result.dart';
 import '../../core/import/import_file_system.dart';
 import '../../core/import/patch_importer.dart';
 import '../../models/device_family.dart';
 import '../../models/patch.dart';
 import '../connection/device_connection_controller.dart';
+import '../editor/missing_effects_dialog.dart';
 import '../editor/patch_editor_controller.dart';
 import '../theme/horizontal_mouse_scroll_view.dart';
 import '../theme/studio_theme.dart';
@@ -280,9 +284,17 @@ class _BankRestoreDialogState extends State<BankRestoreDialog> {
     if (patches.isEmpty) return;
 
     final targetFamily = widget.connectionController.activeFamily;
+    final totalMemorySlots = targetFamily.totalMemorySlots;
+    final clampedStart = _startSlotIndex.clamp(0, totalMemorySlots - 1);
+    final availableSlots = totalMemorySlots - clampedStart;
+    final candidateCount = math.min(patches.length, availableSlots);
+    if (candidateCount <= 0) return;
+
+    var restorePatches = patches.take(candidateCount).toList();
+
     Patch? firstModelMismatch;
     if (targetFamily != DeviceFamily.unknown) {
-      for (final patch in patches) {
+      for (final patch in restorePatches) {
         if (patch.deviceFamily != DeviceFamily.unknown &&
             patch.deviceFamily != targetFamily &&
             patch.deviceFamily.isSameGeneration(targetFamily)) {
@@ -301,20 +313,88 @@ class _BankRestoreDialogState extends State<BankRestoreDialog> {
       if (!proceed || !mounted) return;
     }
 
+    int skippedCount = 0;
+    int strippedCount = 0;
+
+    if (widget.connectionController.isConnected) {
+      final reports = <PatchEffectCompatibilityReport>[
+        for (final p in restorePatches)
+          widget.editorController.analyzePatchForConnectedDevice(p),
+      ];
+      final affected = <AffectedBatchPatch>[
+        for (int i = 0; i < restorePatches.length; i++)
+          if (reports[i].hasMissingEffects)
+            AffectedBatchPatch(
+              index: i,
+              patch: restorePatches[i],
+              report: reports[i],
+            ),
+      ];
+
+      if (affected.isNotEmpty) {
+        final isVerified = reports.any((r) => r.isVerifiedByHardwareScan);
+        final action = await resolveMissingEffectsForBatchRestore(
+          context: context,
+          totalPatchCount: restorePatches.length,
+          affectedPatches: affected,
+          targetFamily: targetFamily,
+          isVerifiedByHardwareScan: isVerified,
+        );
+        if (!mounted) return;
+
+        switch (action) {
+          case BatchMissingEffectAction.cancel:
+            return;
+          case BatchMissingEffectAction.stripAndRestoreAll:
+            strippedCount = affected.length;
+            restorePatches = [
+              for (int i = 0; i < restorePatches.length; i++)
+                reports[i].hasMissingEffects
+                    ? PatchEffectCompatibility.stripMissingSlots(
+                        restorePatches[i],
+                        reports[i].missingSlotIndices,
+                      )
+                    : restorePatches[i],
+            ];
+          case BatchMissingEffectAction.skipAffected:
+            skippedCount = affected.length;
+            restorePatches = [
+              for (int i = 0; i < restorePatches.length; i++)
+                if (!reports[i].hasMissingEffects) restorePatches[i],
+            ];
+            if (restorePatches.isEmpty) {
+              setState(() {
+                _completionSummary =
+                    'Restored 0 hardware slots ($skippedCount skipped due to missing effects).';
+              });
+              return;
+            }
+          case BatchMissingEffectAction.restoreAnyway:
+            break;
+        }
+      }
+    }
+
     setState(() {
       _completionSummary = null;
     });
 
     try {
       final written = await widget.editorController.restoreBankSlots(
-        patches: patches,
+        patches: restorePatches,
         startSlotIndex: _startSlotIndex,
         interSlotDelay: widget.interSlotDelay,
       );
       if (mounted) {
+        final baseSummary = widget.editorController.bankRestoreStatus ??
+            'Restored $written slot(s).';
+        final suffix = skippedCount > 0
+            ? ' ($skippedCount skipped due to missing effects)'
+            : strippedCount > 0
+                ? ' ($strippedCount stripped of missing effects)'
+                : '';
         setState(() {
-          _completionSummary = widget.editorController.bankRestoreStatus ??
-              'Restored $written slot(s).';
+          _completionSummary = '$baseSummary$suffix';
         });
       }
     } catch (e) {

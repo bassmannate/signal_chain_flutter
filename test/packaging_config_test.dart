@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:signal_chain_flutter/core/app_info.dart';
 
 void main() {
   group('Milestone 9: Platform Packaging & Release Distribution Configurations', () {
@@ -193,12 +194,49 @@ void main() {
       expect(File('$fastlaneDir/changelogs/1.txt').existsSync(), isTrue);
       expect(File('$fastlaneDir/changelogs/2.txt').existsSync(), isTrue);
       expect(File('$fastlaneDir/changelogs/3.txt').existsSync(), isTrue);
+      final changelog4 = File('$fastlaneDir/changelogs/4.txt');
+      expect(changelog4.existsSync(), isTrue);
+      expect(changelog4.readAsStringSync().trim().length, lessThanOrEqualTo(500));
 
       final fastlaneIcon = File('$fastlaneDir/images/icon.png');
       expect(fastlaneIcon.existsSync(), isTrue);
       final iconData = ByteData.sublistView(fastlaneIcon.readAsBytesSync());
       expect(iconData.getUint32(16), equals(512));
       expect(iconData.getUint32(20), equals(512));
+    });
+
+    test('AppInfo.version stays in sync with pubspec.yaml and release packaging metadata', () {
+      final pubspecFile = File('$projectRoot/pubspec.yaml');
+      expect(pubspecFile.existsSync(), isTrue);
+      final versionMatch = RegExp(
+        r'^version:\s*([^\s#]+)',
+        multiLine: true,
+      ).firstMatch(pubspecFile.readAsStringSync());
+      expect(versionMatch, isNotNull, reason: 'pubspec.yaml must declare version:');
+      final pubspecVersion = versionMatch!.group(1)!;
+      expect(AppInfo.version, equals(pubspecVersion));
+      expect(pubspecVersion, equals('1.3.0+4'));
+
+      final semver = pubspecVersion.split('+').first;
+      expect(semver, equals('1.3.0'));
+
+      final appstreamContent = File(
+        '$projectRoot/linux/packaging/io.github.bassmannate.signal_chain.appdata.xml',
+      ).readAsStringSync();
+      expect(appstreamContent, contains('<release version="$semver"'));
+
+      final debContent = File('$projectRoot/tool/package_linux_deb.sh').readAsStringSync();
+      expect(debContent, contains('VERSION="\${1:-$semver}"'));
+
+      final appImageContent = File('$projectRoot/tool/package_linux_appimage.sh').readAsStringSync();
+      expect(appImageContent, contains('VERSION="\${1:-$semver}"'));
+
+      final psContent = File('$projectRoot/tool/package_windows_zip.ps1').readAsStringSync();
+      expect(psContent, contains('[string]\$Version = "$semver"'));
+
+      final rcContent = File('$projectRoot/windows/runner/Runner.rc').readAsStringSync();
+      expect(rcContent, contains('#define VERSION_AS_NUMBER 1,3,0,4'));
+      expect(rcContent, contains('#define VERSION_AS_STRING "$semver"'));
     });
   });
 }

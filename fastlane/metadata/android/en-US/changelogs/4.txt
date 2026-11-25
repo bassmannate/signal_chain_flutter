@@ -1,0 +1,6 @@
+- Hardware-accurate effect categorization and dynamic per-device palettes.
+- Read-only Zoom USB-MIDI onboard effect discovery (FLST_SEQ.ZT2) with manual Rescan Pedal.
+- Pure-Dart .ZD2 parser, offline Custom Effects manager, and 4-tier origin badges.
+- Missing-effect warnings and write/restore safety guards preserving MS+ R-Out routing.
+- Offline device-family switching, clean New patch tagging, and an About & Diagnostics Log dialog with Copy Log.
+
